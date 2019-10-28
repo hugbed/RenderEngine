@@ -16,18 +16,27 @@ if (WIN32)
 endif ()
 
 # CMake modules
-# set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/modules/")
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/modules/")
 
-# ------ ACTUAL PROJECT ------ #
+# ------ RENDER ENGINE PROJECT ------ #
 
 project(RenderEngine)
 
-include_directories(${PROJECT_SOURCE_DIR})
+include_directories(
+  Source
+  ThirdParty/glm
+  ThirdParty/glfw/include
+)
 
 file(GLOB_RECURSE SRC_FILES
-    src/*.h
-    src/*.cpp)
+    Source/*.h
+    Source/*.cpp)
 
+# GLFW
+add_subdirectory(ThirdParty/glfw)
+include_directories(ThirdParty/glfw/include)
+
+# Vulkan
 find_package(Vulkan REQUIRED)
 
 add_executable(${PROJECT_NAME} ${SRC_FILES})
@@ -35,4 +44,4 @@ add_executable(${PROJECT_NAME} ${SRC_FILES})
 set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD 17)
 target_compile_definitions(${PROJECT_NAME} PRIVATE VK_USE_PLATFORM_WIN32_KHR)
 target_include_directories(${PROJECT_NAME} PRIVATE Vulkan::Vulkan)
-target_link_libraries(${PROJECT_NAME} Vulkan::Vulkan)
+target_link_libraries(${PROJECT_NAME} glfw ${GLFW_LIBRARIES} Vulkan::Vulkan)
