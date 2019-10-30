@@ -34,7 +34,6 @@ file(GLOB_RECURSE SRC_FILES
 
 # GLFW
 add_subdirectory(ThirdParty/glfw)
-include_directories(ThirdParty/glfw/include)
 
 # Vulkan
 find_package(Vulkan REQUIRED)
@@ -43,7 +42,7 @@ add_executable(${PROJECT_NAME} ${SRC_FILES})
 
 set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD 17)
 target_compile_definitions(${PROJECT_NAME} PRIVATE VK_USE_PLATFORM_WIN32_KHR)
-target_include_directories(${PROJECT_NAME} PRIVATE Vulkan::Vulkan)
+target_include_directories(${PROJECT_NAME} PRIVATE Vulkan::Vulkan "ThirdParty/glfw/include")
 target_link_libraries(${PROJECT_NAME} glfw ${GLFW_LIBRARIES} Vulkan::Vulkan)
 
 if (WIN32)

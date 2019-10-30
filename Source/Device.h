@@ -1,41 +1,25 @@
 #pragma once
 
+#include "Instance.h"
+
 #include <vulkan/vulkan.hpp>
 
-#include "Window.h" // todo: forward declare
-
 #include <optional>
+
+class PhysicalDevice;
 
 class Device
 {
 public:
-	Device(Window& window);
+	Device(const PhysicalDevice& physicalDevice);
 	
-protected:
-	struct QueueFamilyIndices {
-		std::optional<uint32_t> graphicsFamily;
-		std::optional<uint32_t> presentFamily;
-
-		bool IsComplete() {
-			return graphicsFamily.has_value() && presentFamily.has_value();
-		}
-	};
-	
-	void CreateInstance(Window& window);
-	
-	std::vector<const char*> GetRequiredExtensions();
-
-	QueueFamilyIndices FindQueueFamilies(vk::PhysicalDevice device);
-	vk::PhysicalDevice PickPhysicalDevice();
-	bool IsPhysicalDeviceSuitable(vk::PhysicalDevice physicalDevice);
-	void CreateLogicalDevice(vk::PhysicalDevice physicalDevice);
+	explicit operator vk::Device() { return m_device.get(); }
+	explicit operator vk::Device() const { return m_device.get(); }
 
 private:
-	Window& m_window;
+	const PhysicalDevice& m_physicalDevice;
 
-	vk::UniqueInstance m_instance;
 	vk::UniqueDevice m_device;
-	vk::UniqueSurfaceKHR m_surface;
 	vk::Queue m_graphicsQueue;
 	vk::Queue m_presentQueue;
 };

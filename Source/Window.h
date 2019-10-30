@@ -20,7 +20,7 @@ public:
 
 	~Window();
 
-	std::vector<const char*> GetRequiredExtensions();
+	std::vector<const char*> GetRequiredExtensions() const;
 
 	vk::UniqueSurfaceKHR CreateSurface(vk::Instance instance);
 
