@@ -2,6 +2,7 @@
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
+
 #include <vulkan/vulkan.hpp>
 
 #include "defines.h"
@@ -22,7 +23,7 @@ Window::~Window()
 	glfwTerminate();
 }
 
-std::vector<const char*> Window::GetRequiredExtensions()
+std::vector<const char*> Window::GetRequiredExtensions() const
 {
 	uint32_t glfwExtensionCount = 0;
 	const char** glfwExtensions;
