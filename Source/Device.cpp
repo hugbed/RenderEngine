@@ -11,7 +11,6 @@
 #include <set>
 
 Device::Device(const PhysicalDevice& physicalDevice)
-	: m_physicalDevice(physicalDevice)
 {
 	float queuePriority = 1.0f;
 
@@ -47,7 +46,9 @@ Device::Device(const PhysicalDevice& physicalDevice)
 	}
 
 	m_device = static_cast<vk::PhysicalDevice>(physicalDevice).createDeviceUnique(createInfo);
+}
 
-	m_graphicsQueue = m_device->getQueue(indices.graphicsFamily.value(), 0);
-	m_presentQueue = m_device->getQueue(indices.presentFamily.value(), 0);
+vk::Queue Device::GetQueue(uint32_t index)
+{
+	return m_device->getQueue(index, 0);
 }

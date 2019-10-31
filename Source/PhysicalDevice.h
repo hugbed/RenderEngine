@@ -3,11 +3,14 @@
 #include <vulkan/vulkan.hpp>
 
 #include <optional>
+#include <vector>
 #include <cstdint>
 
 class PhysicalDevice
 {
 public:
+	PhysicalDevice(vk::Instance instance, vk::SurfaceKHR surface);
+
 	struct QueueFamilyIndices {
 		std::optional<uint32_t> graphicsFamily;
 		std::optional<uint32_t> presentFamily;
@@ -17,19 +20,23 @@ public:
 		}
 	};
 
-	PhysicalDevice(vk::Instance instance, vk::SurfaceKHR surface);
+	QueueFamilyIndices GetQueueFamilies() const { return m_indices; }
 
-	const QueueFamilyIndices& GetQueueFamilies() const { return m_indices; }
+	struct SwapChainSupportDetails {
+		vk::SurfaceCapabilitiesKHR capabilities;
+		std::vector<vk::SurfaceFormatKHR> formats;
+		std::vector<vk::PresentModeKHR> presentModes;
+	};
+	SwapChainSupportDetails QuerySwapChainSupport() const;
 
 	explicit operator vk::PhysicalDevice() { return m_physicalDevice; }
 	explicit operator vk::PhysicalDevice() const { return m_physicalDevice; }
 
 protected:
-	QueueFamilyIndices FindQueueFamilies(vk::PhysicalDevice device);
-
 	vk::PhysicalDevice PickPhysicalDevice();
-
 	bool IsPhysicalDeviceSuitable(vk::PhysicalDevice physicalDevice);
+
+	QueueFamilyIndices FindQueueFamilies(vk::PhysicalDevice device) const;
 
 private:
 	vk::Instance m_instance;
