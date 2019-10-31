@@ -10,6 +10,7 @@
 #include "Instance.h"
 #include "Device.h"
 #include "PhysicalDevice.h"
+#include "Swapchain.h"
 
 int main()
 {
@@ -22,6 +23,18 @@ int main()
 	PhysicalDevice physicalDevice(static_cast<vk::Instance>(instance), surface.get());
 
 	Device device(physicalDevice);
+
+	// Queues (should this be done in Device?)
+	auto indices = physicalDevice.GetQueueFamilies();
+	auto graphicsQueue = device.GetQueue(indices.graphicsFamily.value());
+	auto presentQueue = device.GetQueue(indices.presentFamily.value());
+
+	Swapchain swapchain(
+		device,
+		physicalDevice,
+		surface.get(),
+		vk::Extent2D(800, 600)
+	);
 
 	window.MainLoop();
 
