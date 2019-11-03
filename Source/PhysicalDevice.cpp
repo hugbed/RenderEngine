@@ -2,6 +2,8 @@
 
 #include "defines.h"
 
+#include <set>
+
 PhysicalDevice::PhysicalDevice(vk::Instance instance, vk::SurfaceKHR surface)
 	: m_instance(instance)
 	, m_surface(surface)
@@ -32,7 +34,18 @@ vk::PhysicalDevice PhysicalDevice::PickPhysicalDevice()
 bool PhysicalDevice::IsPhysicalDeviceSuitable(vk::PhysicalDevice physicalDevice)
 {
 	QueueFamilyIndices indices = FindQueueFamilies(physicalDevice);
-	return indices.IsComplete();
+	if (indices.IsComplete() == false)
+		return false;
+
+	bool extensionsSupported = CheckDeviceExtensionSupport(physicalDevice);
+	if (extensionsSupported == false)
+		return false;
+
+	SwapChainSupportDetails swapChainSupport = QuerySwapchainSupport(physicalDevice);
+	if (swapChainSupport.formats.empty() || swapChainSupport.presentModes.empty())
+		return false;
+
+	return true;
 }
 
 PhysicalDevice::QueueFamilyIndices PhysicalDevice::FindQueueFamilies(vk::PhysicalDevice device) const
@@ -42,7 +55,8 @@ PhysicalDevice::QueueFamilyIndices PhysicalDevice::FindQueueFamilies(vk::Physica
 	std::vector<vk::QueueFamilyProperties> queueFamilies = device.getQueueFamilyProperties();
 
 	int i = 0;
-	for (const auto& queueFamily : queueFamilies) {
+	for (const auto& queueFamily : queueFamilies)
+	{
 		if (queueFamily.queueFlags & vk::QueueFlagBits::eGraphics)
 			indices.graphicsFamily = i;
 
@@ -58,10 +72,35 @@ PhysicalDevice::QueueFamilyIndices PhysicalDevice::FindQueueFamilies(vk::Physica
 	return indices;
 }
 
-PhysicalDevice::SwapChainSupportDetails PhysicalDevice::QuerySwapChainSupport() const {
+bool PhysicalDevice::CheckDeviceExtensionSupport(vk::PhysicalDevice device)
+{
+	auto availableExtensions = device.enumerateDeviceExtensionProperties();
+	auto deviceExtensions = GetDeviceExtensions();
+
+	std::set<std::string> requiredExtensions(deviceExtensions.begin(), deviceExtensions.end());
+	for (const auto& extension : availableExtensions)
+		requiredExtensions.erase(extension.extensionName);
+
+	return requiredExtensions.empty();
+}
+
+PhysicalDevice::SwapChainSupportDetails PhysicalDevice::QuerySwapchainSupport() const
+{
+	return QuerySwapchainSupport(m_physicalDevice);
+}
+
+PhysicalDevice::SwapChainSupportDetails PhysicalDevice::QuerySwapchainSupport(vk::PhysicalDevice physicalDevice) const
+{
 	SwapChainSupportDetails details;
-	details.capabilities = m_physicalDevice.getSurfaceCapabilitiesKHR(m_surface);
-	details.formats = m_physicalDevice.getSurfaceFormatsKHR(m_surface);
-	details.presentModes = m_physicalDevice.getSurfacePresentModesKHR(m_surface);
+	details.capabilities = physicalDevice.getSurfaceCapabilitiesKHR(m_surface);
+	details.formats = physicalDevice.getSurfaceFormatsKHR(m_surface);
+	details.presentModes = physicalDevice.getSurfacePresentModesKHR(m_surface);
 	return details;
+}
+
+std::vector<const char*> PhysicalDevice::GetDeviceExtensions() const
+{
+	return {
+		VK_KHR_SWAPCHAIN_EXTENSION_NAME
+	};
 }

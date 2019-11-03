@@ -1,5 +1,10 @@
 #include "SwapChain.h"
 
+#include "Device.h"
+#include "PhysicalDevice.h"
+
+#include "defines.h"
+
 namespace
 {
 	vk::SurfaceFormatKHR ChooseSwapSurfaceFormat(const std::vector<vk::SurfaceFormatKHR>& availableFormats)
@@ -41,7 +46,7 @@ namespace
 
 Swapchain::Swapchain(Device& device, PhysicalDevice& physicalDevice, vk::SurfaceKHR surface, vk::Extent2D desiredExtent)
 {
-	auto swapChainSupport = physicalDevice.QuerySwapChainSupport();
+	auto swapChainSupport = physicalDevice.QuerySwapchainSupport();
 
 	vk::SurfaceFormatKHR surfaceFormat = ChooseSwapSurfaceFormat(swapChainSupport.formats);
 	vk::PresentModeKHR presentMode = ChooseSwapPresentMode(swapChainSupport.presentModes);
@@ -87,15 +92,17 @@ Swapchain::Swapchain(Device& device, PhysicalDevice& physicalDevice, vk::Surface
 	// Create Swapchain
 	m_swapchain = vkDevice.createSwapchainKHRUnique(createInfo);
 
-	// Fetch images and image info (should this be done elsewhere?
+	// Fetch images and image info
 	m_images = vkDevice.getSwapchainImagesKHR(m_swapchain.get());
 	m_imageFormat = surfaceFormat.format;
 	m_imageExtent = imageExtent;
+	CreateImageViews(vkDevice);
 }
 
-std::vector<vk::ImageView> Swapchain::CreateImageViews(vk::Device device)
+void Swapchain::CreateImageViews(vk::Device device)
 {
-	std::vector<vk::ImageView> imageViews(m_images.size());
+	m_imageViews.clear();
+	m_imageViews.reserve(m_images.size());
 
 	for (size_t i = 0; i < m_images.size(); i++) {
 		vk::ImageViewCreateInfo createInfo(
@@ -113,8 +120,29 @@ std::vector<vk::ImageView> Swapchain::CreateImageViews(vk::Device device)
 			)
 		);
 
-		m_imageViews[i] = device.createImageView(createInfo); 
+		m_imageViews.push_back(device.createImageViewUnique(createInfo));
 	}
+}
 
-	return imageViews;
+void Swapchain::CreateFramebuffers(vk::Device device, vk::RenderPass renderPass)
+{
+	m_framebuffers.clear();
+	m_framebuffers.reserve(m_imageViews.size());
+
+	for (size_t i = 0; i < m_imageViews.size(); i++)
+	{
+		vk::ImageView attachments[] = {
+			m_imageViews[i].get()
+		};
+
+		vk::FramebufferCreateInfo frameBufferInfo(
+			vk::FramebufferCreateFlags(),
+			renderPass,
+			1, attachments,
+			m_imageExtent.width, m_imageExtent.height,
+			1 // layers
+		);
+
+		m_framebuffers.push_back(device.createFramebufferUnique(frameBufferInfo));
+	}
 }

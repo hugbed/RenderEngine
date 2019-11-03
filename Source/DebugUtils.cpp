@@ -12,7 +12,7 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
 	const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
 	void* pUserData)
 {
-	std::cerr << "validation layer: " << pCallbackData->pMessage << std::endl;
+	std::cout << "validation layer: " << pCallbackData->pMessage << std::endl;
 
 	return VK_FALSE;
 }
@@ -39,19 +39,14 @@ public:
 		: SystemError({}, message) {}
 };
 
-std::array<const char*, 1> kValidationLayers = {
-	"VK_LAYER_KHRONOS_validation"
-};
-
 bool CheckValidationLayerSupport()
 {
-	std::vector<vk::LayerProperties> layerProperties = vk::enumerateInstanceLayerProperties();
+	std::vector<vk::LayerProperties> availableLayers = vk::enumerateInstanceLayerProperties();
 
-	bool layerFound = false;
-	for (const char* layerName : kValidationLayers)
+	for (const char* layerName : DebugUtils::kValidationLayers)
 	{
 		bool layerFound = false;
-		for (auto& layerProperty : layerProperties)
+		for (auto& layerProperty : availableLayers)
 		{
 			if (strcmp(layerName, layerProperty.layerName) == 0)
 			{
@@ -59,35 +54,26 @@ bool CheckValidationLayerSupport()
 				break;
 			}
 		}
+		if (layerFound == false)
+			return false;
 	}
-	return layerFound;
+	return true;
 }
 
 namespace DebugUtils
 {
-	void SetupDebugMessenger(const vk::Instance& instance)
+	vk::UniqueDebugUtilsMessengerEXT SetupDebugMessenger(const vk::Instance& instance)
 	{
-		if (DebugUtils::kIsEnabled == false)
-		{
-			return;
-		}
-		else if (CheckValidationLayerSupport() == false)
-		{
-			ASSERT("validation layers requested, but not available!");
-			return;
-		}
+		if (CheckValidationLayerSupport() == false)
+			throw std::runtime_error("validation layers requested, but not available!");
 
 		pfnVkCreateDebugUtilsMessengerEXT = reinterpret_cast<PFN_vkCreateDebugUtilsMessengerEXT>(instance.getProcAddr("vkCreateDebugUtilsMessengerEXT"));
 		if (!pfnVkCreateDebugUtilsMessengerEXT)
-		{
 			throw DynamicLoadError("Error trying to load vkCreateDebugUtilsMessengerEXT. Is VK_EXT_DEBUG_UTILS_EXTENSION_NAME enabled?");
-		}
 
 		pfnVkDestroyDebugUtilsMessengerEXT = reinterpret_cast<PFN_vkDestroyDebugUtilsMessengerEXT>(instance.getProcAddr("vkDestroyDebugUtilsMessengerEXT"));
 		if (!pfnVkDestroyDebugUtilsMessengerEXT)
-		{
 			throw DynamicLoadError("Error trying to load vkCreateDebugUtilsMessengerEXT. Is VK_EXT_DEBUG_UTILS_EXTENSION_NAME enabled?");
-		}
 
 		vk::DebugUtilsMessageSeverityFlagsEXT severityFlags =
 			vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning |
@@ -98,7 +84,7 @@ namespace DebugUtils
 			vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance |
 			vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation;
 
-		vk::UniqueDebugUtilsMessengerEXT debugUtilsMessenger = instance.createDebugUtilsMessengerEXTUnique(
+		return instance.createDebugUtilsMessengerEXTUnique(
 			vk::DebugUtilsMessengerCreateInfoEXT({}, severityFlags, messageTypeFlags, &debugCallback)
 		);
 	}

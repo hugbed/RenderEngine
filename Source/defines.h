@@ -1,3 +1,5 @@
 #pragma once
 
-#define ASSERT assert // todo: put this somewhere else
+#include <cassert>
+
+#define ASSERT(expr) { assert(expr); } // todo: put this somewhere else

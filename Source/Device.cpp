@@ -36,14 +36,17 @@ Device::Device(const PhysicalDevice& physicalDevice)
 
 	vk::PhysicalDeviceFeatures deviceFeatures;
 	createInfo.pEnabledFeatures = &deviceFeatures;
-	createInfo.enabledExtensionCount = 0;
 
-	if (DebugUtils::kIsEnabled) {
-		createInfo.enabledLayerCount = static_cast<uint32_t>(DebugUtils::kValidationLayers.size());
-		createInfo.ppEnabledLayerNames = DebugUtils::kValidationLayers.data();
-	} else {
-		createInfo.enabledLayerCount = 0;
-	}
+	auto deviceExtensions = physicalDevice.GetDeviceExtensions();
+	createInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
+	createInfo.ppEnabledExtensionNames = deviceExtensions.data();
+
+#ifdef DEBUG_UTILS_ENABLED
+	createInfo.enabledLayerCount = static_cast<uint32_t>(DebugUtils::kValidationLayers.size());
+	createInfo.ppEnabledLayerNames = DebugUtils::kValidationLayers.data();
+#else
+	createInfo.enabledLayerCount = 0;
+#endif
 
 	m_device = static_cast<vk::PhysicalDevice>(physicalDevice).createDeviceUnique(createInfo);
 }
