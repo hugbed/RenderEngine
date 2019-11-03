@@ -16,8 +16,8 @@ public:
 	
 	vk::Queue GetQueue(uint32_t index);
 
-	explicit operator vk::Device() { return m_device.get(); }
-	explicit operator vk::Device() const { return m_device.get(); }
+	explicit operator vk::Device &() { return m_device.get(); }
+	explicit operator vk::Device const &() const { return m_device.get(); }
 
 private:
 	vk::UniqueDevice m_device;

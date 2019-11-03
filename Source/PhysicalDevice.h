@@ -27,16 +27,22 @@ public:
 		std::vector<vk::SurfaceFormatKHR> formats;
 		std::vector<vk::PresentModeKHR> presentModes;
 	};
-	SwapChainSupportDetails QuerySwapChainSupport() const;
+	SwapChainSupportDetails QuerySwapchainSupport() const;
 
-	explicit operator vk::PhysicalDevice() { return m_physicalDevice; }
-	explicit operator vk::PhysicalDevice() const { return m_physicalDevice; }
+	std::vector<const char*> GetDeviceExtensions() const;
+
+	explicit operator vk::PhysicalDevice &() { return m_physicalDevice; }
+	explicit operator vk::PhysicalDevice const &() const { return m_physicalDevice; }
 
 protected:
 	vk::PhysicalDevice PickPhysicalDevice();
 	bool IsPhysicalDeviceSuitable(vk::PhysicalDevice physicalDevice);
 
 	QueueFamilyIndices FindQueueFamilies(vk::PhysicalDevice device) const;
+
+	SwapChainSupportDetails QuerySwapchainSupport(vk::PhysicalDevice physicalDevice) const;
+
+	bool CheckDeviceExtensionSupport(vk::PhysicalDevice device);
 
 private:
 	vk::Instance m_instance;

@@ -2,31 +2,31 @@
 
 #include "Window.h"
 
-#include "DebugUtils.h"
+static char const* AppName = "RenderEngineTest";
+static char const* EngineName = "RenderEngine";
 
 Instance::Instance(const Window& window)
 {
-	vk::ApplicationInfo appInfo("RenderEngine");
+	vk::ApplicationInfo appInfo(AppName, 1, EngineName, 1, VK_API_VERSION_1_1);
 
 	auto extensions = GetRequiredExtensions(window);
-
-	vk::InstanceCreateInfo instanceInfo;
-	instanceInfo.pApplicationInfo = &appInfo;
-	instanceInfo.enabledExtensionCount = extensions.size();
-	instanceInfo.ppEnabledExtensionNames = extensions.data();
-	instanceInfo.enabledLayerCount = 0;
+	auto layers = DebugUtils::kValidationLayers;
+	vk::InstanceCreateInfo instanceInfo({}, &appInfo, layers.size(), layers.data(), extensions.size(), extensions.data());
 
 	m_instance = vk::createInstanceUnique(instanceInfo);
 
-	DebugUtils::SetupDebugMessenger(m_instance.get());
+#ifdef DEBUG_UTILS_ENABLED
+	m_debugUtilsMessenger = DebugUtils::SetupDebugMessenger(m_instance.get());
+#endif
 }
 
 std::vector<const char*> Instance::GetRequiredExtensions(const Window& window)
 {
 	auto extensions = window.GetRequiredExtensions();
 
-	if (DebugUtils::kIsEnabled)
+#ifdef DEBUG_UTILS_ENABLED
 		extensions.emplace_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+#endif
 
 	return extensions;
 }

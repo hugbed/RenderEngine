@@ -1,4 +1,7 @@
 #pragma once
+// todo: move into CPP when refactoring MainLoop
+#define GLFW_INCLUDE_VULKAN
+#include <GLFW/glfw3.h>
 
 #include <vulkan/vulkan.hpp>
 
@@ -10,13 +13,7 @@ class GLFWwindow;
 class Window
 {
 public:
-	struct Size
-	{
-		int height;
-		int width;
-	};
-
-	Window(Size size, std::string_view apiName);
+	Window(vk::Extent2D extent, std::string_view apiName);
 
 	~Window();
 
@@ -24,7 +21,14 @@ public:
 
 	vk::UniqueSurfaceKHR CreateSurface(vk::Instance instance);
 
-	void MainLoop();
+	template <class Func>
+	void MainLoop(Func f)
+	{
+		while (glfwWindowShouldClose(m_window) != GLFW_TRUE) {
+			glfwPollEvents();
+			f();
+		}
+	}
 
 private:
 	GLFWwindow* m_window;

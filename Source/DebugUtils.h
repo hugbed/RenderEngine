@@ -6,16 +6,15 @@
 
 namespace vk { class Instance; }
 
-namespace DebugUtils
-{
-	inline constexpr bool kIsEnabled =
 #ifdef _DEBUG
-		true;
-#else
-		false;
+#define DEBUG_UTILS_ENABLED
 #endif
 
-	void SetupDebugMessenger(const vk::Instance& instance);
+namespace DebugUtils
+{
+	vk::UniqueDebugUtilsMessengerEXT SetupDebugMessenger(const vk::Instance& instance);
 
-	static const std::array<const char*, 1> kValidationLayers;
+	inline constexpr std::array<const char*, 1> kValidationLayers = {
+		"VK_LAYER_KHRONOS_validation"
+	};
 }
