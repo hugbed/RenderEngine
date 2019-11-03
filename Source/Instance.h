@@ -11,8 +11,8 @@ class Instance
 public:
 	explicit Instance(const Window& window);
 
-	explicit operator vk::Instance &() { return m_instance.get(); }
-	explicit operator vk::Instance const &() const { return m_instance.get(); }
+	vk::Instance Get() { return m_instance.get(); }
+	vk::Instance Get() const { return m_instance.get(); }
 
 private:
 	static std::vector<const char*> GetRequiredExtensions(const Window& window);
