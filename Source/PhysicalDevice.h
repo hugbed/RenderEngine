@@ -31,8 +31,8 @@ public:
 
 	std::vector<const char*> GetDeviceExtensions() const;
 
-	explicit operator vk::PhysicalDevice &() { return m_physicalDevice; }
-	explicit operator vk::PhysicalDevice const &() const { return m_physicalDevice; }
+	vk::PhysicalDevice Get() { return m_physicalDevice; }
+	vk::PhysicalDevice Get() const { return m_physicalDevice; }
 
 protected:
 	vk::PhysicalDevice PickPhysicalDevice();

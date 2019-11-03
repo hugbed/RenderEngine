@@ -48,7 +48,7 @@ Device::Device(const PhysicalDevice& physicalDevice)
 	createInfo.enabledLayerCount = 0;
 #endif
 
-	m_device = static_cast<vk::PhysicalDevice>(physicalDevice).createDeviceUnique(createInfo);
+	m_device = physicalDevice.Get().createDeviceUnique(createInfo);
 }
 
 vk::Queue Device::GetQueue(uint32_t index)

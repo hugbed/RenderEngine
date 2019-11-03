@@ -87,16 +87,14 @@ Swapchain::Swapchain(Device& device, PhysicalDevice& physicalDevice, vk::Surface
 		createInfo.pQueueFamilyIndices = queueFamilyIndices;
 	}
 
-	vk::Device vkDevice = static_cast<vk::Device>(device);
-
 	// Create Swapchain
-	m_swapchain = vkDevice.createSwapchainKHRUnique(createInfo);
+	m_swapchain = device.Get().createSwapchainKHRUnique(createInfo);
 
 	// Fetch images and image info
-	m_images = vkDevice.getSwapchainImagesKHR(m_swapchain.get());
+	m_images = device.Get().getSwapchainImagesKHR(m_swapchain.get());
 	m_imageFormat = surfaceFormat.format;
 	m_imageExtent = imageExtent;
-	CreateImageViews(vkDevice);
+	CreateImageViews(device.Get());
 }
 
 void Swapchain::CreateImageViews(vk::Device device)
@@ -121,28 +119,5 @@ void Swapchain::CreateImageViews(vk::Device device)
 		);
 
 		m_imageViews.push_back(device.createImageViewUnique(createInfo));
-	}
-}
-
-void Swapchain::CreateFramebuffers(vk::Device device, vk::RenderPass renderPass)
-{
-	m_framebuffers.clear();
-	m_framebuffers.reserve(m_imageViews.size());
-
-	for (size_t i = 0; i < m_imageViews.size(); i++)
-	{
-		vk::ImageView attachments[] = {
-			m_imageViews[i].get()
-		};
-
-		vk::FramebufferCreateInfo frameBufferInfo(
-			vk::FramebufferCreateFlags(),
-			renderPass,
-			1, attachments,
-			m_imageExtent.width, m_imageExtent.height,
-			1 // layers
-		);
-
-		m_framebuffers.push_back(device.createFramebufferUnique(frameBufferInfo));
 	}
 }
