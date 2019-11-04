@@ -13,6 +13,8 @@ public:
 
 	void SendRenderCommands(vk::CommandBuffer commandBuffer, uint32_t imageIndex) const;
 
+	size_t GetFrameBufferCount() const { return m_framebuffers.size(); }
+
 private:
 	vk::Extent2D m_imageExtent;
 	vk::UniquePipelineLayout m_pipelineLayout;

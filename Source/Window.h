@@ -30,6 +30,18 @@ public:
 		}
 	}
 
+	vk::Extent2D GetFramebufferSize() const;
+
+	void WaitForEvents() const;
+
+	using FramebufferResizedCallback = void (*)(void *obj, int w, int h);
+	void SetWindowResizeCallback(void* obj, FramebufferResizedCallback callback);
+
 private:
+	static void OnResize(GLFWwindow* window, int, int);
+
 	GLFWwindow* m_window;
+
+	FramebufferResizedCallback m_resizeCallback{ nullptr };
+	void* m_resizeSubscriber{ nullptr };
 };

@@ -9,8 +9,8 @@ Window::Window(vk::Extent2D extent, std::string_view apiName)
 	glfwInit();
 
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-	glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
-
+	glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
+	
 	m_window = glfwCreateWindow(extent.width, extent.height, apiName.data(), nullptr, nullptr);
 }
 
@@ -36,4 +36,33 @@ vk::UniqueSurfaceKHR Window::CreateSurface(vk::Instance instance)
 	
 	vk::ObjectDestroy<vk::Instance, vk::DispatchLoaderStatic> surfaceDeleter(instance);
 	return vk::UniqueSurfaceKHR(vk::SurfaceKHR(surfaceKHR), surfaceDeleter );
+}
+
+vk::Extent2D Window::GetFramebufferSize() const
+{
+	int width, height;
+	glfwGetFramebufferSize(m_window, &width, &height);
+	return vk::Extent2D(width, height);
+}
+
+void Window::WaitForEvents() const
+{
+	glfwWaitEvents();
+}
+
+void Window::OnResize(GLFWwindow* glfwWindow, int w, int h)
+{
+	auto window = reinterpret_cast<Window*>(glfwGetWindowUserPointer(glfwWindow));
+
+	if (window->m_resizeCallback != nullptr)
+		window->m_resizeCallback(window->m_resizeSubscriber, w, h);
+}
+
+void Window::SetWindowResizeCallback(void* obj, Window::FramebufferResizedCallback callback)
+{
+	m_resizeSubscriber = obj;
+	m_resizeCallback = callback;
+
+	glfwSetWindowUserPointer(m_window, this);
+	glfwSetFramebufferSizeCallback(m_window, OnResize);
 }

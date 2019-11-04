@@ -17,10 +17,10 @@ public:
 		vk::Extent2D desiredExtent
 	);
 
-	void CreateFramebuffers(vk::Device device, vk::RenderPass renderPass);
-
 	vk::Format GetImageFormat() const { return m_imageFormat; }
+
 	vk::Extent2D GetImageExtent() const { return m_imageExtent; }
+
 	uint32_t GetImageCount() const { return m_images.size(); }
 	
 	std::vector<vk::ImageView> GetImageViews() const
