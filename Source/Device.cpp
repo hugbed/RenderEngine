@@ -2,12 +2,9 @@
 
 #include "PhysicalDevice.h"
 
-#include "DebugUtils.h"
-
+#include "debug_utils.h"
 #include "defines.h"
 
-#include <cassert>
-#include <iostream>
 #include <set>
 
 Device::Device(const PhysicalDevice& physicalDevice)
@@ -42,8 +39,8 @@ Device::Device(const PhysicalDevice& physicalDevice)
 	createInfo.ppEnabledExtensionNames = deviceExtensions.data();
 
 #ifdef DEBUG_UTILS_ENABLED
-	createInfo.enabledLayerCount = static_cast<uint32_t>(DebugUtils::kValidationLayers.size());
-	createInfo.ppEnabledLayerNames = DebugUtils::kValidationLayers.data();
+	createInfo.enabledLayerCount = static_cast<uint32_t>(debug_utils::kValidationLayers.size());
+	createInfo.ppEnabledLayerNames = debug_utils::kValidationLayers.data();
 #else
 	createInfo.enabledLayerCount = 0;
 #endif

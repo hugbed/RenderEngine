@@ -1,8 +1,5 @@
-#include "DebugUtils.h"
-
+#include "debug_utils.h"
 #include "defines.h"
-
-#include <vulkan/vulkan.hpp>
 
 #include <iostream>
 
@@ -43,7 +40,7 @@ bool CheckValidationLayerSupport()
 {
 	std::vector<vk::LayerProperties> availableLayers = vk::enumerateInstanceLayerProperties();
 
-	for (const char* layerName : DebugUtils::kValidationLayers)
+	for (const char* layerName : debug_utils::kValidationLayers)
 	{
 		bool layerFound = false;
 		for (auto& layerProperty : availableLayers)
@@ -60,7 +57,7 @@ bool CheckValidationLayerSupport()
 	return true;
 }
 
-namespace DebugUtils
+namespace debug_utils
 {
 	vk::UniqueDebugUtilsMessengerEXT SetupDebugMessenger(const vk::Instance& instance)
 	{

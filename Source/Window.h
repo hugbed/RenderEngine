@@ -1,7 +1,4 @@
 #pragma once
-// todo: move into CPP when refactoring MainLoop
-#define GLFW_INCLUDE_VULKAN
-#include <GLFW/glfw3.h>
 
 #include <vulkan/vulkan.hpp>
 
@@ -21,21 +18,14 @@ public:
 
 	vk::UniqueSurfaceKHR CreateSurface(vk::Instance instance);
 
-	template <class Func>
-	void MainLoop(Func f)
-	{
-		while (glfwWindowShouldClose(m_window) != GLFW_TRUE) {
-			glfwPollEvents();
-			f();
-		}
-	}
-
 	vk::Extent2D GetFramebufferSize() const;
 
+	bool ShouldClose() const;
+	void PollEvents() const;
 	void WaitForEvents() const;
 
 	using FramebufferResizedCallback = void (*)(void *obj, int w, int h);
-	void SetWindowResizeCallback(void* obj, FramebufferResizedCallback callback);
+	void SetWindowResizeCallback(void* subscriber, FramebufferResizedCallback callback);
 
 private:
 	static void OnResize(GLFWwindow* window, int, int);

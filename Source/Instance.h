@@ -2,7 +2,7 @@
 
 #include <vulkan/vulkan.hpp>
 
-#include "DebugUtils.h"
+#include "debug_utils.h"
 
 class Window;
 

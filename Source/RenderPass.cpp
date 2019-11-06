@@ -1,5 +1,7 @@
 #include "RenderPass.h"
 
+#include <fstream>
+
 static std::vector<char> ReadFile(const std::string& filename) {
 	std::ifstream file(filename, std::ios::ate | std::ios::binary);
 	if (!file.is_open())
@@ -175,7 +177,7 @@ RenderPass::RenderPass(vk::Device device, const Swapchain& swapchain)
 	}
 }
 
-void RenderPass::SendRenderCommands(vk::CommandBuffer commandBuffer, uint32_t imageIndex) const
+void RenderPass::AddRenderCommands(vk::CommandBuffer commandBuffer, uint32_t imageIndex) const
 {
 	vk::ClearValue clearValue(
 		vk::ClearColorValue(std::array{ 0.0f, 0.0f, 0.0f, 1.0f })

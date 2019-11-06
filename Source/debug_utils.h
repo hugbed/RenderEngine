@@ -10,7 +10,7 @@ namespace vk { class Instance; }
 #define DEBUG_UTILS_ENABLED
 #endif
 
-namespace DebugUtils
+namespace debug_utils
 {
 	vk::UniqueDebugUtilsMessengerEXT SetupDebugMessenger(const vk::Instance& instance);
 
