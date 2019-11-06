@@ -10,13 +10,13 @@ Instance::Instance(const Window& window)
 	vk::ApplicationInfo appInfo(AppName, 1, EngineName, 1, VK_API_VERSION_1_1);
 
 	auto extensions = GetRequiredExtensions(window);
-	auto layers = DebugUtils::kValidationLayers;
+	auto layers = debug_utils::kValidationLayers;
 	vk::InstanceCreateInfo instanceInfo({}, &appInfo, layers.size(), layers.data(), extensions.size(), extensions.data());
 
 	m_instance = vk::createInstanceUnique(instanceInfo);
 
 #ifdef DEBUG_UTILS_ENABLED
-	m_debugUtilsMessenger = DebugUtils::SetupDebugMessenger(m_instance.get());
+	m_debugUtilsMessenger = debug_utils::SetupDebugMessenger(m_instance.get());
 #endif
 }
 

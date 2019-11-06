@@ -4,14 +4,14 @@
 
 #include <vulkan/vulkan.hpp>
 
-#include <fstream>
+#include <vector>
 
 class RenderPass
 {
 public:
 	RenderPass(vk::Device device, const Swapchain& swapchain);
 
-	void SendRenderCommands(vk::CommandBuffer commandBuffer, uint32_t imageIndex) const;
+	void AddRenderCommands(vk::CommandBuffer commandBuffer, uint32_t imageIndex) const;
 
 	size_t GetFrameBufferCount() const { return m_framebuffers.size(); }
 

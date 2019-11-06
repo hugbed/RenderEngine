@@ -41,13 +41,16 @@ public:
 		
 		window.SetWindowResizeCallback(reinterpret_cast<void*>(this), OnResize);
 
-		RecordRenderPass();
+		RecordRenderPassCommands();
 	}
 
 	void Run()
 	{
-		window.MainLoop([this]() { Render(); });
-
+		while (window.ShouldClose() == false)
+		{
+			window.PollEvents();
+			Render();
+		}
 		vkDeviceWaitIdle(device.Get());
 	}
 
@@ -57,14 +60,14 @@ public:
 		app->frameBufferResized = true;
 	}
 
-	void RecordRenderPass()
+	void RecordRenderPassCommands()
 	{
 		// Record commands
 		for (size_t i = 0; i < swapchain->GetImageCount(); i++)
 		{
 			auto& commandBuffer = commandBuffers.Get(i);
 			commandBuffer.begin(vk::CommandBufferBeginInfo());
-			renderPass->SendRenderCommands(commandBuffer, i);
+			renderPass->AddRenderCommands(commandBuffer, i);
 			commandBuffer.end();
 		}
 	}
@@ -99,15 +102,6 @@ public:
 		);
 		device.Get().resetFences(frameFence); // reset right before submit
 		graphicsQueue.submit(submitInfo, frameFence);
-
-		// Subpass dependencies
-		vk::SubpassDependency dependency;
-		dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
-		dependency.dstSubpass = 0;
-		dependency.srcStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput;
-		dependency.srcAccessMask = vk::AccessFlags();
-		dependency.dstStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput;
-		dependency.dstAccessMask = vk::AccessFlagBits::eColorAttachmentRead | vk::AccessFlagBits::eColorAttachmentWrite;
 
 		// Presentation
 		vk::PresentInfoKHR presentInfo = {};
@@ -164,7 +158,8 @@ public:
 		renderPass = std::make_unique<RenderPass>(device.Get(), *swapchain);
 
 		commandBuffers.Reset(device.Get(), swapchain->GetImageCount());
-		RecordRenderPass();
+
+		RecordRenderPassCommands();
 	}
 
 private:

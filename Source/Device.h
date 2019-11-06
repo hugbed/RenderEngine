@@ -4,7 +4,6 @@
 
 #include <vulkan/vulkan.hpp>
 
-#include <optional>
 #include <cstdint>
 
 class PhysicalDevice;

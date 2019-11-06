@@ -1,6 +1,7 @@
 #include "Window.h"
 
-#include <vulkan/vulkan.hpp>
+#define GLFW_INCLUDE_VULKAN
+#include <GLFW/glfw3.h>
 
 #include "defines.h"
 
@@ -45,6 +46,16 @@ vk::Extent2D Window::GetFramebufferSize() const
 	return vk::Extent2D(width, height);
 }
 
+bool Window::ShouldClose() const
+{
+	return glfwWindowShouldClose(m_window) == GLFW_TRUE;
+}
+
+void Window::PollEvents() const
+{
+	glfwPollEvents();
+}
+
 void Window::WaitForEvents() const
 {
 	glfwWaitEvents();
@@ -58,9 +69,9 @@ void Window::OnResize(GLFWwindow* glfwWindow, int w, int h)
 		window->m_resizeCallback(window->m_resizeSubscriber, w, h);
 }
 
-void Window::SetWindowResizeCallback(void* obj, Window::FramebufferResizedCallback callback)
+void Window::SetWindowResizeCallback(void* subscriber, FramebufferResizedCallback callback)
 {
-	m_resizeSubscriber = obj;
+	m_resizeSubscriber = subscriber;
 	m_resizeCallback = callback;
 
 	glfwSetWindowUserPointer(m_window, this);
