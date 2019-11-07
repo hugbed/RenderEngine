@@ -12,41 +12,40 @@
 class Buffer
 {
 public:
-	Buffer(vk::Device device, const PhysicalDevice& physicalDevice, size_t size, vk::BufferUsageFlags bufferUsage, vk::SharingMode sharingMode)
+	Buffer(size_t size, vk::BufferUsageFlags bufferUsage, vk::SharingMode sharingMode)
 		: m_size(size)
-		, device(device)
 	{
 		vk::BufferCreateInfo bufferInfo({}, size, bufferUsage, sharingMode);
-		m_buffer = device.createBufferUnique(bufferInfo);
+		m_buffer = g_device->Get().createBufferUnique(bufferInfo);
 
 		// We could have a memory allocator or something that knows about the device
 		// and the physical device instead of passing it around
-		vk::MemoryRequirements memRequirements = device.getBufferMemoryRequirements(m_buffer.get());
+		vk::MemoryRequirements memRequirements = g_device->Get().getBufferMemoryRequirements(m_buffer.get());
 		vk::MemoryAllocateInfo allocInfo(
 			memRequirements.size,
-			physicalDevice.FindMemoryType(
+			g_physicalDevice->FindMemoryType(
 				memRequirements.memoryTypeBits,
 				vk::MemoryPropertyFlagBits::eHostVisible |
 				vk::MemoryPropertyFlagBits::eHostCoherent
 			)
 		);
-		m_deviceMemory = device.allocateMemoryUnique(allocInfo);
-		device.bindBufferMemory(m_buffer.get(), m_deviceMemory.get(), 0);
+		m_deviceMemory = g_device->Get().allocateMemoryUnique(allocInfo);
+		g_device->Get().bindBufferMemory(m_buffer.get(), m_deviceMemory.get(), 0);
 	}
 
 	void Overwrite(void* dataToCopy)
 	{
 		void* data;
-		device.mapMemory(m_deviceMemory.get(), 0, m_size, {}, &data);
-		memcpy(data, dataToCopy, m_size);
-		device.unmapMemory(m_deviceMemory.get());
+		g_device->Get().mapMemory(m_deviceMemory.get(), 0, m_size, {}, &data);
+		{
+			memcpy(data, dataToCopy, m_size);
+		}
+		g_device->Get().unmapMemory(m_deviceMemory.get());
 	}
 
 	vk::Buffer Get() const { return m_buffer.get(); }
 
 private:
-	vk::Device device; // Ok, we should be able to access the device from anywhere
-
 	size_t m_size;
 	vk::UniqueBuffer m_buffer;
 	vk::UniqueDeviceMemory m_deviceMemory;
@@ -55,9 +54,9 @@ private:
 class RenderPass
 {
 public:
-	RenderPass(vk::Device device, const PhysicalDevice& physicalDevice, const Swapchain& swapchain);
+	RenderPass(const Swapchain& swapchain);
 
-	void AddRenderCommands(vk::CommandBuffer commandBuffer, uint32_t imageIndex) const;
+	void PopulateRenderCommands(vk::CommandBuffer commandBuffer, uint32_t imageIndex) const;
 
 	size_t GetFrameBufferCount() const { return m_framebuffers.size(); }
 

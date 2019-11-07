@@ -11,8 +11,6 @@ class Swapchain
 {
 public:
 	Swapchain(
-		Device& device,
-		PhysicalDevice& physicalDevice,
 		vk::SurfaceKHR surface,
 		vk::Extent2D desiredExtent
 	);

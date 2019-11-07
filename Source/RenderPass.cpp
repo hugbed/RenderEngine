@@ -57,8 +57,8 @@ static std::vector<char> ReadFile(const std::string& filename) {
 	return buffer;
 }
 
-vk::UniqueShaderModule CreateShaderModule(vk::Device device, const std::vector<char>& code) {
-	return device.createShaderModuleUnique(
+vk::UniqueShaderModule CreateShaderModule(const std::vector<char>& code) {
+	return g_device->Get().createShaderModuleUnique(
 		vk::ShaderModuleCreateInfo(
 			vk::ShaderModuleCreateFlags(),
 			code.size(),
@@ -67,8 +67,8 @@ vk::UniqueShaderModule CreateShaderModule(vk::Device device, const std::vector<c
 	);
 }
 
-RenderPass::RenderPass(vk::Device device, const PhysicalDevice& physicalDevice /* global please */, const Swapchain& swapchain)
-	: m_vertexBuffer(device, physicalDevice, sizeof(Vertex)*vertices.size(), vk::BufferUsageFlagBits::eVertexBuffer, vk::SharingMode::eExclusive)
+RenderPass::RenderPass(const Swapchain& swapchain)
+	: m_vertexBuffer(sizeof(Vertex)*vertices.size(), vk::BufferUsageFlagBits::eVertexBuffer, vk::SharingMode::eExclusive)
 {
 	// Shaders
 
@@ -78,7 +78,7 @@ RenderPass::RenderPass(vk::Device device, const PhysicalDevice& physicalDevice /
 	vk::Format imageFormat = swapchain.GetImageFormat();
 
 	auto vertShaderCode = ReadFile("vert.spv");
-	vk::UniqueShaderModule vertShaderModule = CreateShaderModule(device, vertShaderCode);
+	vk::UniqueShaderModule vertShaderModule = CreateShaderModule(vertShaderCode);
 	vk::PipelineShaderStageCreateInfo vertexShaderStateInfo(
 		vk::PipelineShaderStageCreateFlags(),
 		vk::ShaderStageFlagBits::eVertex,
@@ -86,7 +86,7 @@ RenderPass::RenderPass(vk::Device device, const PhysicalDevice& physicalDevice /
 		"main"
 	);
 	auto fragShaderCode = ReadFile("frag.spv");
-	vk::UniqueShaderModule fragShaderModule = CreateShaderModule(device, fragShaderCode);
+	vk::UniqueShaderModule fragShaderModule = CreateShaderModule(fragShaderCode);
 	vk::PipelineShaderStageCreateInfo fragmentShaderStateInfo(
 		vk::PipelineShaderStageCreateFlags(),
 		vk::ShaderStageFlagBits::eFragment,
@@ -149,7 +149,7 @@ RenderPass::RenderPass(vk::Device device, const PhysicalDevice& physicalDevice /
 	);
 
 	vk::PipelineLayoutCreateInfo pipelineLayoutCreateInfo;
-	m_pipelineLayout = device.createPipelineLayoutUnique(pipelineLayoutCreateInfo);
+	m_pipelineLayout = g_device->Get().createPipelineLayoutUnique(pipelineLayoutCreateInfo);
 
 	// Render passes
 
@@ -182,7 +182,7 @@ RenderPass::RenderPass(vk::Device device, const PhysicalDevice& physicalDevice /
 		1, &subpass
 	);
 
-	m_renderPass = device.createRenderPassUnique(renderPassCreateInfo);
+	m_renderPass = g_device->Get().createRenderPassUnique(renderPassCreateInfo);
 
 	vk::GraphicsPipelineCreateInfo graphicsPipelineCreateInfo(
 		vk::PipelineCreateFlags(),
@@ -201,7 +201,7 @@ RenderPass::RenderPass(vk::Device device, const PhysicalDevice& physicalDevice /
 		m_renderPass.get()
 	);
 
-	m_graphicsPipeline = device.createGraphicsPipelineUnique({}, graphicsPipelineCreateInfo);
+	m_graphicsPipeline = g_device->Get().createGraphicsPipelineUnique({}, graphicsPipelineCreateInfo);
 
 	// Framebuffers
 
@@ -224,11 +224,11 @@ RenderPass::RenderPass(vk::Device device, const PhysicalDevice& physicalDevice /
 			1 // layers
 		);
 
-		m_framebuffers.push_back(device.createFramebufferUnique(frameBufferInfo));
+		m_framebuffers.push_back(g_device->Get().createFramebufferUnique(frameBufferInfo));
 	}
 }
 
-void RenderPass::AddRenderCommands(vk::CommandBuffer commandBuffer, uint32_t imageIndex) const
+void RenderPass::PopulateRenderCommands(vk::CommandBuffer commandBuffer, uint32_t imageIndex) const
 {
 	vk::ClearValue clearValue(
 		vk::ClearColorValue(std::array{ 0.0f, 0.0f, 0.0f, 1.0f })

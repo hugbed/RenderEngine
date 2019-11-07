@@ -44,9 +44,9 @@ namespace
 	}
 }
 
-Swapchain::Swapchain(Device& device, PhysicalDevice& physicalDevice, vk::SurfaceKHR surface, vk::Extent2D desiredExtent)
+Swapchain::Swapchain(vk::SurfaceKHR surface, vk::Extent2D desiredExtent)
 {
-	auto swapChainSupport = physicalDevice.QuerySwapchainSupport();
+	auto swapChainSupport = g_physicalDevice->QuerySwapchainSupport();
 
 	vk::SurfaceFormatKHR surfaceFormat = ChooseSwapSurfaceFormat(swapChainSupport.formats);
 	vk::PresentModeKHR presentMode = ChooseSwapPresentMode(swapChainSupport.presentModes);
@@ -78,7 +78,7 @@ Swapchain::Swapchain(Device& device, PhysicalDevice& physicalDevice, vk::Surface
 	);
 
 	// Handle having a different queue for graphics and presentation
-	auto queueFamilies = physicalDevice.GetQueueFamilies();
+	auto queueFamilies = g_physicalDevice->GetQueueFamilies();
 	uint32_t queueFamilyIndices[] = { queueFamilies.graphicsFamily.value(), queueFamilies.presentFamily.value() };
 	if (queueFamilies.graphicsFamily != queueFamilies.presentFamily)
 	{
@@ -88,13 +88,13 @@ Swapchain::Swapchain(Device& device, PhysicalDevice& physicalDevice, vk::Surface
 	}
 
 	// Create Swapchain
-	m_swapchain = device.Get().createSwapchainKHRUnique(createInfo);
+	m_swapchain = g_device->Get().createSwapchainKHRUnique(createInfo);
 
 	// Fetch images and image info
-	m_images = device.Get().getSwapchainImagesKHR(m_swapchain.get());
+	m_images = g_device->Get().getSwapchainImagesKHR(m_swapchain.get());
 	m_imageFormat = surfaceFormat.format;
 	m_imageExtent = imageExtent;
-	CreateImageViews(device.Get());
+	CreateImageViews(g_device->Get());
 }
 
 void Swapchain::CreateImageViews(vk::Device device)

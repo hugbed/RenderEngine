@@ -9,6 +9,18 @@
 
 Device* g_device;
 
+void Device::Init(const PhysicalDevice& physicalDevice)
+{
+	if (g_device == nullptr)
+		g_device = new Device(physicalDevice);
+}
+
+void Device::Term()
+{
+	if (g_device != nullptr)
+		delete g_device;
+}
+
 Device::Device(const PhysicalDevice& physicalDevice)
 {
 	float queuePriority = 1.0f;

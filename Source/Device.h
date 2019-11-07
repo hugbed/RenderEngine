@@ -8,11 +8,13 @@
 
 class PhysicalDevice;
 
-// This should be a singleton, we won't have 2 devices
+// Physical Device singleton implementation. Init/Term is not thread-safe
+// however, all other public functions should be const and thus thread-safe.
 class Device
 {
 public:
-	Device(const PhysicalDevice& physicalDevice);
+	static void Init(const PhysicalDevice& physicalDevice);
+	static void Term();
 	
 	vk::Queue GetQueue(uint32_t index);
 
@@ -20,5 +22,9 @@ public:
 	vk::Device Get() const { return m_device.get(); }
 
 private:
+	Device(const PhysicalDevice& physicalDevice);
+
 	vk::UniqueDevice m_device;
 };
+
+extern Device* g_device;
