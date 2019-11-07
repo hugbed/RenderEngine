@@ -7,6 +7,8 @@
 
 #include <set>
 
+Device* g_device;
+
 Device::Device(const PhysicalDevice& physicalDevice)
 {
 	float queuePriority = 1.0f;

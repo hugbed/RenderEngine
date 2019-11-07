@@ -8,6 +8,7 @@
 
 class PhysicalDevice;
 
+// This should be a singleton, we won't have 2 devices
 class Device
 {
 public:
