@@ -1,6 +1,47 @@
 #include "RenderPass.h"
 
+#define GLM_FORCE_RADIANS
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
+#include <glm/vec4.hpp>
+#include <glm/mat4x4.hpp>
+
 #include <fstream>
+
+#include <array>
+
+#include "PhysicalDevice.h"
+
+struct Vertex {
+	glm::vec2 pos;
+	glm::vec3 color;
+
+	static vk::VertexInputBindingDescription GetBindingDescription()
+	{
+		return { 0, sizeof(Vertex) };
+	}
+
+	static std::array<vk::VertexInputAttributeDescription, 2> GetAttributeDescriptions() {
+		std::array<vk::VertexInputAttributeDescription, 2> attributeDescriptions;
+
+		attributeDescriptions[0].binding = 0;
+		attributeDescriptions[0].location = 0;
+		attributeDescriptions[0].format = vk::Format::eR32G32B32Sfloat;
+		attributeDescriptions[0].offset = offsetof(Vertex, pos);
+
+		attributeDescriptions[1].binding = 0;
+		attributeDescriptions[1].location = 1;
+		attributeDescriptions[1].format = vk::Format::eR32G32B32Sfloat;
+		attributeDescriptions[1].offset = offsetof(Vertex, color);
+
+		return attributeDescriptions;
+	}
+};
+
+std::vector<Vertex> vertices = {
+	{{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+	{{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
+	{{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
+};
 
 static std::vector<char> ReadFile(const std::string& filename) {
 	std::ifstream file(filename, std::ios::ate | std::ios::binary);
@@ -26,9 +67,12 @@ vk::UniqueShaderModule CreateShaderModule(vk::Device device, const std::vector<c
 	);
 }
 
-RenderPass::RenderPass(vk::Device device, const Swapchain& swapchain)
+RenderPass::RenderPass(vk::Device device, const PhysicalDevice& physicalDevice /* global please */, const Swapchain& swapchain)
+	: m_vertexBuffer(device, physicalDevice, sizeof(Vertex)*vertices.size(), vk::BufferUsageFlagBits::eVertexBuffer, vk::SharingMode::eExclusive)
 {
 	// Shaders
+
+	m_vertexBuffer.Overwrite(vertices.data());
 
 	m_imageExtent = swapchain.GetImageExtent();
 	vk::Format imageFormat = swapchain.GetImageFormat();
@@ -51,7 +95,14 @@ RenderPass::RenderPass(vk::Device device, const Swapchain& swapchain)
 	);
 	vk::PipelineShaderStageCreateInfo shaderStages[] = { vertexShaderStateInfo, fragmentShaderStateInfo };
 
-	vk::PipelineVertexInputStateCreateInfo vertexInputInfo;
+	// Vertex shader inputs
+	auto bindingDescription = Vertex::GetBindingDescription();
+	auto attributeDescription = Vertex::GetAttributeDescriptions();
+	vk::PipelineVertexInputStateCreateInfo vertexInputInfo(
+		{},
+		1, &bindingDescription,
+		static_cast<uint32_t>(attributeDescription.size()), attributeDescription.data()
+	);
 
 	vk::PipelineInputAssemblyStateCreateInfo inputAssembly = {};
 	inputAssembly.topology = vk::PrimitiveTopology::eTriangleList;
@@ -191,6 +242,11 @@ void RenderPass::AddRenderCommands(vk::CommandBuffer commandBuffer, uint32_t ima
 	commandBuffer.beginRenderPass(renderPassBeginInfo, vk::SubpassContents::eInline);
 	{
 		commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, m_graphicsPipeline.get());
+
+		vk::Buffer buffers[] = { m_vertexBuffer.Get() };
+		VkDeviceSize offsets[] = { 0 };
+		commandBuffer.bindVertexBuffers(0, 1, buffers, offsets);
+		
 		commandBuffer.draw(3, 1, 0, 0);
 	}
 	commandBuffer.endRenderPass();

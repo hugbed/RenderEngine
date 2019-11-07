@@ -1,8 +1,3 @@
-#define GLM_FORCE_RADIANS
-#define GLM_FORCE_DEPTH_ZERO_TO_ONE
-#include <glm/vec4.hpp>
-#include <glm/mat4x4.hpp>
-
 #include <iostream>
 
 #include "Window.h"
@@ -27,7 +22,7 @@ public:
 		, physicalDevice(instance.Get(), surface.get())
 		, device(physicalDevice)
 		, swapchain(std::make_unique<Swapchain>(device, physicalDevice, surface.get(), extent))
-		, renderPass(std::make_unique<RenderPass>(device.Get(), *swapchain))
+		, renderPass(std::make_unique<RenderPass>(device.Get(), physicalDevice, *swapchain))
 		, commandBuffers(
 			device.Get(),
 			renderPass->GetFrameBufferCount(),
@@ -155,7 +150,7 @@ public:
 		);
 		extent = swapchain->GetImageExtent();
 
-		renderPass = std::make_unique<RenderPass>(device.Get(), *swapchain);
+		renderPass = std::make_unique<RenderPass>(device.Get(), physicalDevice, *swapchain);
 
 		commandBuffers.Reset(device.Get(), swapchain->GetImageCount());
 
@@ -178,7 +173,6 @@ private:
 	vk::Queue graphicsQueue;
 	vk::Queue presentQueue;
 
-	// Synchronization
 	SynchronizationPrimitives syncPrimitives;
 };
 
