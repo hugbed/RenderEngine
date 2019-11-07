@@ -4,6 +4,20 @@
 
 #include <set>
 
+PhysicalDevice* g_physicalDevice;
+
+void PhysicalDevice::Init(vk::Instance instance, vk::SurfaceKHR surface)
+{
+	if (g_physicalDevice == nullptr)
+		g_physicalDevice = new PhysicalDevice(instance, surface);
+}
+
+void PhysicalDevice::Term()
+{
+	if (g_physicalDevice != nullptr)
+		delete g_physicalDevice;
+}
+
 PhysicalDevice::PhysicalDevice(vk::Instance instance, vk::SurfaceKHR surface)
 	: m_instance(instance)
 	, m_surface(surface)
@@ -31,7 +45,7 @@ vk::PhysicalDevice PhysicalDevice::PickPhysicalDevice()
 	return suitablePhysicalDevice;
 }
 
-bool PhysicalDevice::IsPhysicalDeviceSuitable(vk::PhysicalDevice physicalDevice)
+bool PhysicalDevice::IsPhysicalDeviceSuitable(vk::PhysicalDevice physicalDevice) const
 {
 	QueueFamilyIndices indices = FindQueueFamilies(physicalDevice);
 	if (indices.IsComplete() == false)
@@ -72,7 +86,7 @@ PhysicalDevice::QueueFamilyIndices PhysicalDevice::FindQueueFamilies(vk::Physica
 	return indices;
 }
 
-bool PhysicalDevice::CheckDeviceExtensionSupport(vk::PhysicalDevice device)
+bool PhysicalDevice::CheckDeviceExtensionSupport(vk::PhysicalDevice device) const
 {
 	auto availableExtensions = device.enumerateDeviceExtensionProperties();
 	auto deviceExtensions = GetDeviceExtensions();
@@ -103,4 +117,21 @@ std::vector<const char*> PhysicalDevice::GetDeviceExtensions() const
 	return {
 		VK_KHR_SWAPCHAIN_EXTENSION_NAME
 	};
+}
+
+uint32_t PhysicalDevice::FindMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties) const
+{
+	vk::PhysicalDeviceMemoryProperties memProperties = m_physicalDevice.getMemoryProperties();
+
+	for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++)
+	{
+		if ((typeFilter & (1 << i)) &&
+			(memProperties.memoryTypes[i].propertyFlags & properties) == properties)
+		{
+			return i;
+		}
+	}
+
+	throw std::runtime_error("failed to find suitable memory type");
+	return UINT32_MAX;
 }

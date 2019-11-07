@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Device.h"
+
 #include <vulkan/vulkan.hpp>
 
 #include <vector>
@@ -7,9 +9,8 @@
 class SynchronizationPrimitives
 {
 public:
-	SynchronizationPrimitives(vk::Device device, uint32_t swapchainImagesCount, size_t maxFramesInFlight)
+	SynchronizationPrimitives(uint32_t swapchainImagesCount, size_t maxFramesInFlight)
 		: m_maxFramesInFlight(maxFramesInFlight)
-		, device(device)
 	{
 		m_imageAvailableSemaphores.reserve(maxFramesInFlight);
 		m_renderFinishedSemaphores.reserve(maxFramesInFlight);
@@ -18,9 +19,9 @@ public:
 
 		for (size_t i = 0; i < maxFramesInFlight; ++i)
 		{
-			m_imageAvailableSemaphores.push_back(device.createSemaphoreUnique({}));
-			m_renderFinishedSemaphores.push_back(device.createSemaphoreUnique({}));
-			m_inFlightFences.push_back(device.createFenceUnique(
+			m_imageAvailableSemaphores.push_back(g_device->Get().createSemaphoreUnique({}));
+			m_renderFinishedSemaphores.push_back(g_device->Get().createSemaphoreUnique({}));
+			m_inFlightFences.push_back(g_device->Get().createFenceUnique(
 				vk::FenceCreateInfo(vk::FenceCreateFlagBits::eSignaled)
 			));
 		}
@@ -39,7 +40,7 @@ public:
 	vk::Fence& WaitForFrame()
 	{
 		auto& frameFence = m_inFlightFences[m_currentFrame].get();
-		device.waitForFences(
+		g_device->Get().waitForFences(
 			frameFence,
 			true, // wait for all fences (we only have 1 though)
 			UINT64_MAX // indefinitely
@@ -52,7 +53,7 @@ public:
 		// Check if a previous frame is using this image (i.e. there is its fence to wait on)
 		if (m_imagesInFlight[imageIndex])
 		{
-			device.waitForFences(m_imagesInFlight[imageIndex], true, UINT64_MAX);
+			g_device->Get().waitForFences(m_imagesInFlight[imageIndex], true, UINT64_MAX);
 		}
 
 		// Mark the image as now being in use by this frame
@@ -70,8 +71,6 @@ public:
 	}
 
 private:
-	vk::Device device;
-
 	size_t m_currentFrame = 0;
 	int m_maxFramesInFlight = 2;
 	std::vector<vk::UniqueSemaphore> m_imageAvailableSemaphores;

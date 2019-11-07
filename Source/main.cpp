@@ -14,25 +14,18 @@ class App
 public:
 	static constexpr size_t kMaxFramesInFlight = 2;
 
-	App()
-		: extent(800, 600)
-		, window(extent, "Vulkan")
-		, instance(window)
-		, surface(window.CreateSurface(instance.Get()))
-		, physicalDevice(instance.Get(), surface.get())
-		, device(physicalDevice)
-		, swapchain(std::make_unique<Swapchain>(device, physicalDevice, surface.get(), extent))
-		, renderPass(std::make_unique<RenderPass>(device.Get(), physicalDevice, *swapchain))
-		, commandBuffers(
-			device.Get(),
-			renderPass->GetFrameBufferCount(),
-			physicalDevice.GetQueueFamilies().graphicsFamily.value()
-		 )
-		, syncPrimitives(device.Get(), swapchain->GetImageCount(), kMaxFramesInFlight)
+	App(vk::SurfaceKHR surface, vk::Extent2D extent, Window& window)
+		: window(window)
+		, surface(surface)
+		, extent(extent)
+		, swapchain(std::make_unique<Swapchain>(surface, extent))
+		, renderPass(std::make_unique<RenderPass>(*swapchain))
+		, commandBuffers(renderPass->GetFrameBufferCount(), g_physicalDevice->GetQueueFamilies().graphicsFamily.value())
+		, syncPrimitives(swapchain->GetImageCount(), kMaxFramesInFlight)
 	{
-		auto indices = physicalDevice.GetQueueFamilies();
-		graphicsQueue = device.GetQueue(indices.graphicsFamily.value());
-		presentQueue = device.GetQueue(indices.presentFamily.value());
+		auto indices = g_physicalDevice->GetQueueFamilies();
+		graphicsQueue = g_device->GetQueue(indices.graphicsFamily.value());
+		presentQueue = g_device->GetQueue(indices.presentFamily.value());
 		
 		window.SetWindowResizeCallback(reinterpret_cast<void*>(this), OnResize);
 
@@ -46,7 +39,7 @@ public:
 			window.PollEvents();
 			Render();
 		}
-		vkDeviceWaitIdle(device.Get());
+		vkDeviceWaitIdle(g_device->Get());
 	}
 
 	static void OnResize(void* data, int w, int h)
@@ -62,7 +55,7 @@ public:
 		{
 			auto& commandBuffer = commandBuffers.Get(i);
 			commandBuffer.begin(vk::CommandBufferBeginInfo());
-			renderPass->AddRenderCommands(commandBuffer, i);
+			renderPass->PopulateRenderCommands(commandBuffer, i);
 			commandBuffer.end();
 		}
 	}
@@ -71,7 +64,7 @@ public:
 	{
 		auto frameFence = syncPrimitives.WaitForFrame();
 
-		auto [result, imageIndex] = device.Get().acquireNextImageKHR(
+		auto [result, imageIndex] = g_device->Get().acquireNextImageKHR(
 			swapchain->Get(),
 			UINT64_MAX, // max timeout
 			syncPrimitives.GetImageAvailableSemaphore(),
@@ -95,7 +88,7 @@ public:
 			1, &commandBuffers.Get(imageIndex),
 			1, renderFinishedSemaphores
 		);
-		device.Get().resetFences(frameFence); // reset right before submit
+		g_device->Get().resetFences(frameFence); // reset right before submit
 		graphicsQueue.submit(submitInfo, frameFence);
 
 		// Presentation
@@ -136,35 +129,27 @@ public:
 			window.WaitForEvents();
 		}
 
-		device.Get().waitIdle();
+		g_device->Get().waitIdle();
 
 		// Recreate swapchain and render pass
 		renderPass.reset();
 		swapchain.reset();
 
-		swapchain = std::make_unique<Swapchain>(
-			device,
-			physicalDevice,
-			surface.get(),
-			extent
-		);
+		swapchain = std::make_unique<Swapchain>(surface, extent);
 		extent = swapchain->GetImageExtent();
 
-		renderPass = std::make_unique<RenderPass>(device.Get(), physicalDevice, *swapchain);
+		renderPass = std::make_unique<RenderPass>(*swapchain);
 
-		commandBuffers.Reset(device.Get(), swapchain->GetImageCount());
+		commandBuffers.Reset(swapchain->GetImageCount());
 
 		RecordRenderPassCommands();
 	}
 
 private:
 	vk::Extent2D extent;
-	Window window;
+	Window& window;
 	bool frameBufferResized{ false };
-	Instance instance;
-	vk::UniqueSurfaceKHR surface;
-	PhysicalDevice physicalDevice;
-	Device device;
+	vk::SurfaceKHR surface;
 	
 	std::unique_ptr<Swapchain> swapchain;
 	std::unique_ptr<RenderPass> renderPass;
@@ -178,7 +163,19 @@ private:
 
 int main()
 {
-	App app;
-	app.Run();
+	vk::Extent2D extent(800, 600);
+	Window window(extent, "Vulkan");
+	Instance instance(window);
+	vk::UniqueSurfaceKHR surface(window.CreateSurface(instance.Get()));
+
+	PhysicalDevice::Init(instance.Get(), surface.get());
+	Device::Init(*g_physicalDevice);
+	{
+		App app(surface.get(), extent, window);
+		app.Run();
+	}
+	Device::Term();
+	PhysicalDevice::Term();
+
 	return 0;
 }

@@ -6,12 +6,19 @@
 #include <vector>
 #include <cstdint>
 
-// This should be a singleton, we won't have 2 devices
+// Physical Device singleton implementation. Init/Term is not thread-safe
+// however, all other public functions should be const and thus thread-safe.
 class PhysicalDevice
 {
 public:
-	PhysicalDevice(vk::Instance instance, vk::SurfaceKHR surface);
+	// Singleton
+	static void Init(vk::Instance instance, vk::SurfaceKHR surface);
+	static void Term();
 
+	PhysicalDevice(const PhysicalDevice& other) = delete;
+	PhysicalDevice& operator=(const PhysicalDevice) = delete;
+
+public:
 	struct QueueFamilyIndices {
 		std::optional<uint32_t> graphicsFamily;
 		std::optional<uint32_t> presentFamily;
@@ -32,40 +39,28 @@ public:
 
 	std::vector<const char*> GetDeviceExtensions() const;
 
-	uint32_t FindMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties) const
-	{
-	 	vk::PhysicalDeviceMemoryProperties memProperties = m_physicalDevice.getMemoryProperties();
+	uint32_t FindMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties) const;
 
-		for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++)
-		{
-			if ((typeFilter & (1 << i)) &&
-				(memProperties.memoryTypes[i].propertyFlags & properties) == properties)
-			{
-				return i;
-			}
-		}
-
-		throw std::runtime_error("failed to find suitable memory type");
-		return UINT32_MAX;
-	}
-
-	vk::PhysicalDevice Get() { return m_physicalDevice; }
 	vk::PhysicalDevice Get() const { return m_physicalDevice; }
 
 protected:
 	vk::PhysicalDevice PickPhysicalDevice();
-	bool IsPhysicalDeviceSuitable(vk::PhysicalDevice physicalDevice);
+	bool IsPhysicalDeviceSuitable(vk::PhysicalDevice physicalDevice) const;
 
 	QueueFamilyIndices FindQueueFamilies(vk::PhysicalDevice device) const;
 
 	SwapChainSupportDetails QuerySwapchainSupport(vk::PhysicalDevice physicalDevice) const;
 
-	bool CheckDeviceExtensionSupport(vk::PhysicalDevice device);
+	bool CheckDeviceExtensionSupport(vk::PhysicalDevice device) const;
 
 private:
+	PhysicalDevice(vk::Instance instance, vk::SurfaceKHR surface);
+
 	vk::Instance m_instance;
 	vk::SurfaceKHR m_surface;
 	vk::PhysicalDevice m_physicalDevice;
 
 	QueueFamilyIndices m_indices;
 };
+
+extern PhysicalDevice* g_physicalDevice;
