@@ -9,15 +9,20 @@
 class CommandBuffers
 {
 public:
-	CommandBuffers(size_t count, uint32_t queueFamily)
+	CommandBuffers(size_t count, uint32_t queueFamily, vk::CommandPoolCreateFlags flags = {})
 	{
 		// Pool
-		vk::CommandPoolCreateInfo poolInfo({}, queueFamily);
+		vk::CommandPoolCreateInfo poolInfo(flags, queueFamily);
 		m_commandPool = g_device->Get().createCommandPoolUnique(poolInfo);
 		Reset(count);
 	}
 
-	vk::CommandBuffer Get(uint32_t imageIndex)
+	vk::CommandBuffer Get(uint32_t imageIndex) const
+	{
+		return m_commandBuffers[imageIndex].get();
+	}
+
+	vk::CommandBuffer operator[](uint32_t imageIndex) const
 	{
 		return m_commandBuffers[imageIndex].get();
 	}
@@ -28,6 +33,9 @@ public:
 		vk::CommandBufferAllocateInfo commandBufferAllocateInfo(
 			m_commandPool.get(), vk::CommandBufferLevel::ePrimary, static_cast<uint32_t>(count)
 		);
+
+		// todo: use VulkanMemoryAllocator instead using separate memory allocations every time
+		// or we'll run out very soon
 
 		// Command buffers
 		m_commandBuffers = g_device->Get().allocateCommandBuffersUnique(commandBufferAllocateInfo);

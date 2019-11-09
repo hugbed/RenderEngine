@@ -68,7 +68,11 @@ vk::UniqueShaderModule CreateShaderModule(const std::vector<char>& code) {
 }
 
 RenderPass::RenderPass(const Swapchain& swapchain)
-	: m_vertexBuffer(sizeof(Vertex)*vertices.size(), vk::BufferUsageFlagBits::eVertexBuffer, vk::SharingMode::eExclusive)
+	: m_vertexBuffer(
+		sizeof(Vertex)*vertices.size(),
+		vk::BufferUsageFlagBits::eVertexBuffer)
+		//vk::MemoryPropertyFlagBits::eHostVisible |
+			//vk::MemoryPropertyFlagBits::eHostCoherent)
 {
 	// Shaders
 
