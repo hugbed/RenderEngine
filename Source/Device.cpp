@@ -62,7 +62,20 @@ Device::Device(const PhysicalDevice& physicalDevice)
 	m_device = physicalDevice.Get().createDeviceUnique(createInfo);
 }
 
-vk::Queue Device::GetQueue(uint32_t index)
+// Could be in header
+vk::Queue Device::GetQueue(uint32_t index) const
 {
 	return m_device->getQueue(index, 0);
+}
+
+vk::Queue Device::GetGraphicsQueue() const
+{
+	auto queueFamilies = g_physicalDevice->GetQueueFamilies();
+	return GetQueue(queueFamilies.graphicsFamily.value());
+}
+
+vk::Queue Device::GetPresentQueue() const
+{
+	auto queueFamilies = g_physicalDevice->GetQueueFamilies();
+	return GetQueue(queueFamilies.presentFamily.value());
 }

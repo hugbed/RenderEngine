@@ -16,7 +16,9 @@ public:
 	static void Init(const PhysicalDevice& physicalDevice);
 	static void Term();
 	
-	vk::Queue GetQueue(uint32_t index);
+	vk::Queue GetQueue(uint32_t index) const;
+	vk::Queue GetGraphicsQueue() const;
+	vk::Queue GetPresentQueue() const;
 
 	vk::Device Get() { return m_device.get(); }
 	vk::Device Get() const { return m_device.get(); }

@@ -23,10 +23,6 @@ public:
 		, commandBuffers(renderPass->GetFrameBufferCount(), g_physicalDevice->GetQueueFamilies().graphicsFamily.value())
 		, syncPrimitives(swapchain->GetImageCount(), kMaxFramesInFlight)
 	{
-		auto indices = g_physicalDevice->GetQueueFamilies();
-		graphicsQueue = g_device->GetQueue(indices.graphicsFamily.value());
-		presentQueue = g_device->GetQueue(indices.presentFamily.value());
-		
 		window.SetWindowResizeCallback(reinterpret_cast<void*>(this), OnResize);
 
 		RecordRenderPassCommands();
@@ -53,7 +49,7 @@ public:
 		// Record commands
 		for (size_t i = 0; i < swapchain->GetImageCount(); i++)
 		{
-			auto& commandBuffer = commandBuffers.Get(i);
+			auto& commandBuffer = commandBuffers[i];
 			commandBuffer.begin(vk::CommandBufferBeginInfo());
 			renderPass->PopulateRenderCommands(commandBuffer, i);
 			commandBuffer.end();
@@ -89,7 +85,7 @@ public:
 			1, renderFinishedSemaphores
 		);
 		g_device->Get().resetFences(frameFence); // reset right before submit
-		graphicsQueue.submit(submitInfo, frameFence);
+		g_device->GetGraphicsQueue().submit(submitInfo, frameFence);
 
 		// Presentation
 		vk::PresentInfoKHR presentInfo = {};
@@ -101,7 +97,7 @@ public:
 		presentInfo.pSwapchains = swapChains;
 		presentInfo.pImageIndices = &imageIndex;
 
-		result = presentQueue.presentKHR(presentInfo);
+		result = g_device->GetPresentQueue().presentKHR(presentInfo);
 		if (result == vk::Result::eSuboptimalKHR || 
 			result == vk::Result::eErrorOutOfDateKHR || // todo: this one will throw
 			frameBufferResized)
@@ -154,9 +150,6 @@ private:
 	std::unique_ptr<Swapchain> swapchain;
 	std::unique_ptr<RenderPass> renderPass;
 	CommandBuffers commandBuffers;
-
-	vk::Queue graphicsQueue;
-	vk::Queue presentQueue;
 
 	SynchronizationPrimitives syncPrimitives;
 };
