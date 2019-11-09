@@ -1,47 +1,33 @@
 #include "RenderPass.h"
 
-#define GLM_FORCE_RADIANS
-#define GLM_FORCE_DEPTH_ZERO_TO_ONE
-#include <glm/vec4.hpp>
-#include <glm/mat4x4.hpp>
+#include "Device.h"
+#include "PhysicalDevice.h"
 
 #include <fstream>
 
 #include <array>
 
-#include "PhysicalDevice.h"
+vk::VertexInputBindingDescription Vertex::GetBindingDescription()
+{
+	return { 0, sizeof(Vertex) };
+}
 
-struct Vertex {
-	glm::vec2 pos;
-	glm::vec3 color;
+std::array<vk::VertexInputAttributeDescription, 2> Vertex::GetAttributeDescriptions()
+{
+	std::array<vk::VertexInputAttributeDescription, 2> attributeDescriptions;
 
-	static vk::VertexInputBindingDescription GetBindingDescription()
-	{
-		return { 0, sizeof(Vertex) };
-	}
+	attributeDescriptions[0].binding = 0;
+	attributeDescriptions[0].location = 0;
+	attributeDescriptions[0].format = vk::Format::eR32G32B32Sfloat;
+	attributeDescriptions[0].offset = offsetof(Vertex, pos);
 
-	static std::array<vk::VertexInputAttributeDescription, 2> GetAttributeDescriptions() {
-		std::array<vk::VertexInputAttributeDescription, 2> attributeDescriptions;
+	attributeDescriptions[1].binding = 0;
+	attributeDescriptions[1].location = 1;
+	attributeDescriptions[1].format = vk::Format::eR32G32B32Sfloat;
+	attributeDescriptions[1].offset = offsetof(Vertex, color);
 
-		attributeDescriptions[0].binding = 0;
-		attributeDescriptions[0].location = 0;
-		attributeDescriptions[0].format = vk::Format::eR32G32B32Sfloat;
-		attributeDescriptions[0].offset = offsetof(Vertex, pos);
-
-		attributeDescriptions[1].binding = 0;
-		attributeDescriptions[1].location = 1;
-		attributeDescriptions[1].format = vk::Format::eR32G32B32Sfloat;
-		attributeDescriptions[1].offset = offsetof(Vertex, color);
-
-		return attributeDescriptions;
-	}
-};
-
-std::vector<Vertex> vertices = {
-	{{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-	{{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
-	{{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
-};
+	return attributeDescriptions;
+}
 
 static std::vector<char> ReadFile(const std::string& filename) {
 	std::ifstream file(filename, std::ios::ate | std::ios::binary);
@@ -68,18 +54,11 @@ vk::UniqueShaderModule CreateShaderModule(const std::vector<char>& code) {
 }
 
 RenderPass::RenderPass(const Swapchain& swapchain)
-	: m_vertexBuffer(
-		sizeof(Vertex)*vertices.size(),
-		vk::BufferUsageFlagBits::eVertexBuffer)
-		//vk::MemoryPropertyFlagBits::eHostVisible |
-			//vk::MemoryPropertyFlagBits::eHostCoherent)
 {
-	// Shaders
-
-	m_vertexBuffer.Overwrite(vertices.data());
-
 	m_imageExtent = swapchain.GetImageExtent();
 	vk::Format imageFormat = swapchain.GetImageFormat();
+
+	// Shaders
 
 	auto vertShaderCode = ReadFile("vert.spv");
 	vk::UniqueShaderModule vertShaderModule = CreateShaderModule(vertShaderCode);
@@ -130,7 +109,7 @@ RenderPass::RenderPass(const Swapchain& swapchain)
 	vk::PipelineRasterizationStateCreateInfo rasterizerState;
 	rasterizerState.lineWidth = 1.0f;
 	rasterizerState.cullMode = vk::CullModeFlagBits::eBack;
-	rasterizerState.frontFace = vk::FrontFace::eClockwise;
+	rasterizerState.frontFace = vk::FrontFace::eCounterClockwise;
 
 	vk::PipelineMultisampleStateCreateInfo multisampling;
 	multisampling.sampleShadingEnable = VK_FALSE;
@@ -152,8 +131,20 @@ RenderPass::RenderPass(const Swapchain& swapchain)
 		1, &colorBlendAttachment
 	);
 
-	vk::PipelineLayoutCreateInfo pipelineLayoutCreateInfo;
-	m_pipelineLayout = g_device->Get().createPipelineLayoutUnique(pipelineLayoutCreateInfo);
+	// Descriptors
+
+	vk::DescriptorSetLayoutBinding uboLayoutBinding(
+		0, // binding
+		vk::DescriptorType::eUniformBuffer,
+		1, // descriptorCount
+		vk::ShaderStageFlagBits::eVertex
+	);
+	vk::DescriptorSetLayoutCreateInfo createInfo({}, 1, &uboLayoutBinding);
+	m_descriptorSetLayout = g_device->Get().createDescriptorSetLayoutUnique(createInfo);
+	vk::DescriptorSetLayout descriptorSetLayouts[] = { m_descriptorSetLayout.get() };
+	m_pipelineLayout = g_device->Get().createPipelineLayoutUnique(vk::PipelineLayoutCreateInfo(
+		{}, 1, descriptorSetLayouts
+	));
 
 	// Render passes
 
@@ -234,6 +225,9 @@ RenderPass::RenderPass(const Swapchain& swapchain)
 
 void RenderPass::PopulateRenderCommands(vk::CommandBuffer commandBuffer, uint32_t imageIndex) const
 {
+	if (!m_indexBuffer || !m_vertexBuffer || m_descriptorSets.empty())
+		return; // nothing to draw
+
 	vk::ClearValue clearValue(
 		vk::ClearColorValue(std::array{ 0.0f, 0.0f, 0.0f, 1.0f })
 	);
@@ -247,11 +241,15 @@ void RenderPass::PopulateRenderCommands(vk::CommandBuffer commandBuffer, uint32_
 	{
 		commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, m_graphicsPipeline.get());
 
-		vk::Buffer buffers[] = { m_vertexBuffer.Get() };
-		VkDeviceSize offsets[] = { 0 };
-		commandBuffer.bindVertexBuffers(0, 1, buffers, offsets);
+		commandBuffer.bindIndexBuffer(m_indexBuffer, 0, vk::IndexType::eUint16);
 		
-		commandBuffer.draw(3, 1, 0, 0);
+		VkDeviceSize offsets[] = { 0 };
+		vk::Buffer vertexBuffers[] = { m_vertexBuffer };
+		commandBuffer.bindVertexBuffers(0, 1, vertexBuffers, offsets);
+
+		commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pipelineLayout.get(), 0, 1, &m_descriptorSets[imageIndex], 0, nullptr);
+
+		commandBuffer.drawIndexed(6, 1, 0, 0, 0); // ok this 6 shouldn't be hard coded
 	}
 	commandBuffer.endRenderPass();
 }
