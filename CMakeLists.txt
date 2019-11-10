@@ -26,6 +26,7 @@ include_directories(
   Source
   ThirdParty/glm
   ThirdParty/glfw/include
+  ThirdParty/stb
 )
 
 file(GLOB_RECURSE SRC_FILES

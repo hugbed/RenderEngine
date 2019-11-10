@@ -8,6 +8,7 @@
 #include "RenderPass.h"
 #include "CommandBuffers.h"
 #include "SynchronizationPrimitives.h"
+#include "Image.h"
 
 #include "vk_utils.h"
 
@@ -15,8 +16,11 @@
 #define GLM_FORCE_RADIANS
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
-
 #include <chrono>
+
+// For Texture
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
 
 const std::vector<Vertex> vertices = {
 	{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
@@ -55,7 +59,11 @@ public:
 		CreateUniformBuffers();
 		CreateDescriptorSets();
 
-		UploadGeometry();
+		{
+			SingleTimeCommandBuffer initCommandBuffer(m_uploadCommandBuffers.Get(0));
+			UploadGeometry(initCommandBuffer.Get());
+			CreateTextureImage(initCommandBuffer.Get());
+		}
 
 		// Bind shader variables
 		renderPass->BindIndexBuffer(m_indexBuffer.Get());
@@ -100,26 +108,47 @@ public:
 		}
 	}
 
-	void UploadGeometry()
+	// todo: extract reusable code from here and maybe move into a Image factory or something
+	void CreateTextureImage(vk::CommandBuffer& commandBuffer)
 	{
-		// Batch all data upload commands together
-
-		auto& commandBuffer = m_uploadCommandBuffers[0];
-
-		commandBuffer.begin({ vk::CommandBufferUsageFlagBits::eOneTimeSubmit });
-		{
-			m_vertexBuffer.Overwrite(commandBuffer, reinterpret_cast<const void*>(vertices.data()));
-			m_indexBuffer.Overwrite(commandBuffer, reinterpret_cast<const void*>(indices.data()));
+		// Read image from file
+		int texWidth = 0, texHeight = 0, texChannels = 0;
+		stbi_uc* pixels = stbi_load("texture.jpg", &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+		if (pixels == nullptr || texWidth == 0 || texHeight == 0 || texChannels == 0) {
+			throw std::runtime_error("failed to load texture image!");
 		}
-		commandBuffer.end();
 
-		vk::SubmitInfo submitInfo;
-		submitInfo.commandBufferCount = 1;
-		submitInfo.pCommandBuffers = &commandBuffer;
+		// Texture image
+		m_image = std::make_unique<Image>(
+			texWidth, texHeight, 4UL, // R8G8B8A8, depth = 4
+			vk::Format::eR8G8B8A8Unorm,
+			vk::ImageTiling::eOptimal,
+			vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
+			vk::MemoryPropertyFlagBits::eDeviceLocal
+		);
 
-		auto graphicsQueue = g_device->GetGraphicsQueue();
-		graphicsQueue.submit(submitInfo, nullptr);
-		graphicsQueue.waitIdle();
+		// Copy image data to staging buffer
+		m_image->TransitionLayout(
+			commandBuffer,
+			vk::ImageLayout::eUndefined,
+			vk::ImageLayout::eTransferDstOptimal
+		);
+		{
+			m_image->Overwrite(commandBuffer, reinterpret_cast<const void*>(pixels));
+		}
+		m_image->TransitionLayout(
+			commandBuffer,
+			vk::ImageLayout::eTransferDstOptimal,
+			vk::ImageLayout::eShaderReadOnlyOptimal
+		);
+
+		stbi_image_free(pixels);
+	}
+
+	void UploadGeometry(vk::CommandBuffer& commandBuffer)
+	{
+		m_vertexBuffer.Overwrite(commandBuffer, reinterpret_cast<const void*>(vertices.data()));
+		m_indexBuffer.Overwrite(commandBuffer, reinterpret_cast<const void*>(indices.data()));
 	}
 
 	void Run()
@@ -143,7 +172,7 @@ public:
 		// Record commands
 		for (size_t i = 0; i < swapchain->GetImageCount(); i++)
 		{
-			auto& commandBuffer = m_renderCommandBuffers[i];
+			auto& commandBuffer = m_renderCommandBuffers.Get(i);
 			commandBuffer.begin(vk::CommandBufferBeginInfo());
 			renderPass->PopulateRenderCommands(commandBuffer, i);
 			commandBuffer.end();
@@ -179,7 +208,7 @@ public:
 		vk::SubmitInfo submitInfo(
 			1, imageAvailableSemaphores,
 			waitStages,
-			1, &m_renderCommandBuffers[imageIndex],
+			1, &m_renderCommandBuffers.Get(imageIndex),
 			1, renderFinishedSemaphores
 		);
 		g_device->Get().resetFences(frameFence); // reset right before submit
@@ -287,6 +316,8 @@ private:
 
 	vk::UniqueDescriptorPool m_descriptorPool;
 	std::vector<vk::UniqueDescriptorSet> m_descriptorSets;
+
+	std::unique_ptr<Image> m_image;
 };
 
 int main()
