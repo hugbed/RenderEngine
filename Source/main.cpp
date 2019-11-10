@@ -14,6 +14,7 @@
 
 // For Uniform Buffer
 #define GLM_FORCE_RADIANS
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <chrono>
@@ -23,14 +24,20 @@
 #include <stb_image.h>
 
 const std::vector<Vertex> vertices = {
-	{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
-	{{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
-	{{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
-	{{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}}
+	{{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+	{{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
+	{{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
+	{{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}},
+
+	{{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+	{{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
+	{{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
+	{{-0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}}
 };;
 
 const std::vector<uint16_t> indices = {
-	0, 1, 2, 2, 3, 0
+	0, 1, 2, 2, 3, 0,
+	4, 5, 6, 6, 7, 4
 };
 
 class App : public RenderLoop
@@ -60,7 +67,7 @@ protected:
 		CreateDescriptorSets();
 
 		// Bind other shader variables
-		renderPass->BindIndexBuffer(m_indexBuffer.Get());
+		renderPass->BindIndexBuffer(m_indexBuffer.Get(), indices.size());
 		renderPass->BindVertexBuffer(m_vertexBuffer.Get());
 
 		RecordRenderPassCommands(m_renderCommandBuffers);
@@ -78,7 +85,7 @@ protected:
 		CreateDescriptorSets();
 
 		// Rebind other shader variables
-		renderPass->BindIndexBuffer(m_indexBuffer.Get());
+		renderPass->BindIndexBuffer(m_indexBuffer.Get(), indices.size());
 		renderPass->BindVertexBuffer(m_vertexBuffer.Get());
 
 		RecordRenderPassCommands(commandBuffers);
@@ -137,7 +144,7 @@ protected:
 		for (uint32_t i = 0; i < swapchain->GetImageCount(); ++i)
 		{
 			vk::DescriptorBufferInfo descriptorBufferInfo(m_uniformBuffers[i].Get(), 0, sizeof(UniformBufferObject));
-			vk::DescriptorImageInfo imageInfo(m_sampler.get(), m_image->GetImageView(), vk::ImageLayout::eShaderReadOnlyOptimal);
+			vk::DescriptorImageInfo imageInfo(m_sampler.get(), m_textureImage->GetImageView(), vk::ImageLayout::eShaderReadOnlyOptimal);
 			std::array<vk::WriteDescriptorSet, 2> writeDescriptorSets = {
 				vk::WriteDescriptorSet(m_descriptorSets[i].get(), 0, 0, 1, vk::DescriptorType::eUniformBuffer, nullptr, &descriptorBufferInfo), // binding = 0
 				vk::WriteDescriptorSet(m_descriptorSets[i].get(), 1, 0, 1, vk::DescriptorType::eCombinedImageSampler, &imageInfo, nullptr) // binding = 1
@@ -159,24 +166,26 @@ protected:
 		}
 
 		// Texture image
-		m_image = std::make_unique<Image>(
+		m_textureImage = std::make_unique<Image>(
 			texWidth, texHeight, 4UL, // R8G8B8A8, depth = 4
 			vk::Format::eR8G8B8A8Unorm,
 			vk::ImageTiling::eOptimal,
 			vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
-			vk::MemoryPropertyFlagBits::eDeviceLocal
+			vk::MemoryPropertyFlagBits::eDeviceLocal,
+			vk::ImageAspectFlagBits::eColor
 		);
+		m_textureImage->CreateStagingBuffer();
 
 		// Copy image data to staging buffer
-		m_image->TransitionLayout(
+		m_textureImage->TransitionLayout(
 			commandBuffer,
 			vk::ImageLayout::eUndefined,
 			vk::ImageLayout::eTransferDstOptimal
 		);
 		{
-			m_image->Overwrite(commandBuffer, reinterpret_cast<const void*>(pixels));
+			m_textureImage->Overwrite(commandBuffer, reinterpret_cast<const void*>(pixels));
 		}
-		m_image->TransitionLayout(
+		m_textureImage->TransitionLayout(
 			commandBuffer,
 			vk::ImageLayout::eTransferDstOptimal,
 			vk::ImageLayout::eShaderReadOnlyOptimal
@@ -243,7 +252,8 @@ private:
 	vk::UniqueDescriptorPool m_descriptorPool;
 	std::vector<vk::UniqueDescriptorSet> m_descriptorSets;
 
-	std::unique_ptr<Image> m_image;
+	std::unique_ptr<Image> m_textureImage;
+	std::unique_ptr<Image> m_depthImage;
 	vk::UniqueSampler m_sampler;
 };
 

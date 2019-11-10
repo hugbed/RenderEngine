@@ -14,11 +14,16 @@ public:
 		vk::Format format,
 		vk::ImageTiling tiling,
 		vk::ImageUsageFlags usage,
-		vk::MemoryPropertyFlags properties
+		vk::MemoryPropertyFlags properties,
+		vk::ImageAspectFlags aspectFlags
 	);
 
 	void TransitionLayout(vk::CommandBuffer& commandBuffer, vk::ImageLayout oldLayout, vk::ImageLayout newLayout);
 
+	void CreateStagingBuffer();
+
+	// To reserve a staging buffer for memory overwrite, use CreateStagingBuffer
+	// else, it will be created when calling this function
 	void Overwrite(vk::CommandBuffer& commandBuffer, const void* pixels);
 
 	vk::ImageView GetImageView() const { return m_imageView.get(); }
@@ -26,11 +31,12 @@ public:
 private:
 	void CreateImage(vk::ImageTiling tiling, vk::ImageUsageFlags usage);
 	void InitImageMemory(vk::MemoryPropertyFlags properties);
-	void CreateImageView();
+	void CreateImageView(vk::ImageAspectFlags aspectFlags);
 
 	vk::Extent3D m_extent;
 	vk::Format m_format;
-	Buffer m_stagingBuffer;
+	uint32_t m_depth;
+	std::unique_ptr<Buffer> m_stagingBuffer{ nullptr }; // optional, useful for textures
 	vk::UniqueImage m_image;
 	vk::UniqueDeviceMemory m_memory;
 	vk::UniqueImageView m_imageView;
