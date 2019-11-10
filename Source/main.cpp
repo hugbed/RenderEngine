@@ -1,13 +1,13 @@
 #include <iostream>
 
+#include "RenderLoop.h"
+
 #include "Window.h"
 #include "Instance.h"
 #include "Device.h"
 #include "PhysicalDevice.h"
-#include "Swapchain.h"
-#include "RenderPass.h"
 #include "CommandBuffers.h"
-#include "SynchronizationPrimitives.h"
+#include "RenderPass.h"
 #include "Image.h"
 
 #include "vk_utils.h"
@@ -33,20 +33,11 @@ const std::vector<uint16_t> indices = {
 	0, 1, 2, 2, 3, 0
 };
 
-class App
+class App : public RenderLoop
 {
 public:
-	static constexpr size_t kMaxFramesInFlight = 2;
-
 	App(vk::SurfaceKHR surface, vk::Extent2D extent, Window& window)
-		: window(window)
-		, surface(surface)
-		, extent(extent)
-		, swapchain(std::make_unique<Swapchain>(surface, extent))
-		, renderPass(std::make_unique<RenderPass>(*swapchain))
-		, m_renderCommandBuffers(renderPass->GetFrameBufferCount(), g_physicalDevice->GetQueueFamilies().graphicsFamily.value())
-		, m_uploadCommandBuffers(1, g_physicalDevice->GetQueueFamilies().graphicsFamily.value(), vk::CommandPoolCreateFlagBits::eTransient)
-		, syncPrimitives(swapchain->GetImageCount(), kMaxFramesInFlight)
+		: RenderLoop(surface, extent, window)
 		, m_vertexBuffer(
 			sizeof(Vertex) * vertices.size(),
 			vk::BufferUsageFlagBits::eVertexBuffer)
@@ -54,14 +45,15 @@ public:
 			sizeof(uint16_t) * indices.size(),
 			vk::BufferUsageFlagBits::eIndexBuffer)
 	{
-		window.SetWindowResizeCallback(reinterpret_cast<void*>(this), OnResize);
+	}
 
-		{
-			SingleTimeCommandBuffer initCommandBuffer(m_uploadCommandBuffers.Get(0));
-			UploadGeometry(initCommandBuffer.Get());
-			CreateAndUploadTextureImage(initCommandBuffer.Get());
-		}
+	using RenderLoop::Init;
 
+protected:
+	void Init(vk::CommandBuffer& commandBuffer) override
+	{
+		UploadGeometry(commandBuffer);
+		CreateAndUploadTextureImage(commandBuffer);
 		CreateUniformBuffers();
 		CreateSampler();
 		CreateDescriptorSets();
@@ -70,8 +62,25 @@ public:
 		renderPass->BindIndexBuffer(m_indexBuffer.Get());
 		renderPass->BindVertexBuffer(m_vertexBuffer.Get());
 		renderPass->BindDescriptorSets(vk_utils::remove_unique(m_descriptorSets));
+	}
 
-		RecordRenderPassCommands();
+	// Render pass commands are recorded once and executed every frame
+	void RecordRenderPassCommands(CommandBuffers& commandBuffers) override
+	{
+		// Record commands
+		for (size_t i = 0; i < swapchain->GetImageCount(); i++)
+		{
+			auto& commandBuffer = m_renderCommandBuffers.Get(i);
+			commandBuffer.begin(vk::CommandBufferBeginInfo());
+			renderPass->PopulateRenderCommands(commandBuffer, i);
+			commandBuffer.end();
+		}
+	}
+
+	// Called every frame to update frame resources
+	void UpdateImageResources(uint32_t imageIndex) override
+	{
+		UpdateUniformBuffer(imageIndex);
 	}
 
 	void CreateUniformBuffers()
@@ -180,128 +189,6 @@ public:
 		m_indexBuffer.Overwrite(commandBuffer, reinterpret_cast<const void*>(indices.data()));
 	}
 
-	void Run()
-	{
-		while (window.ShouldClose() == false)
-		{
-			window.PollEvents();
-			Render();
-		}
-		vkDeviceWaitIdle(g_device->Get());
-	}
-
-	static void OnResize(void* data, int w, int h)
-	{
-		auto app = reinterpret_cast<App*>(data);
-		app->frameBufferResized = true;
-	}
-
-	void RecordRenderPassCommands()
-	{
-		// Record commands
-		for (size_t i = 0; i < swapchain->GetImageCount(); i++)
-		{
-			auto& commandBuffer = m_renderCommandBuffers.Get(i);
-			commandBuffer.begin(vk::CommandBufferBeginInfo());
-			renderPass->PopulateRenderCommands(commandBuffer, i);
-			commandBuffer.end();
-		}
-	}
-
-	// We should inherit from something so we can ignore these low level details about synchronization
-	// and only implement like Update, Upload, Render, somethings
-	void Render()
-	{
-		auto frameFence = syncPrimitives.WaitForFrame();
-
-		auto [result, imageIndex] = g_device->Get().acquireNextImageKHR(
-			swapchain->Get(),
-			UINT64_MAX, // max timeout
-			syncPrimitives.GetImageAvailableSemaphore(),
-			nullptr
-		);
-		if (result == vk::Result::eErrorOutOfDateKHR) // todo: this one will throw
-		{
-			RecreateSwapchain();	
-			return;
-		}
-		
-		UpdateImageResources(imageIndex);
-
-		syncPrimitives.WaitUntilImageIsAvailable(imageIndex);
-
-		// Submit command buffer on graphics queue
-		vk::Semaphore imageAvailableSemaphores[] = { syncPrimitives.GetImageAvailableSemaphore() };
-		vk::PipelineStageFlags waitStages[] = { vk::PipelineStageFlagBits::eColorAttachmentOutput };
-		vk::Semaphore renderFinishedSemaphores[] = { syncPrimitives.GetRenderFinishedSemaphore() };
-		vk::SubmitInfo submitInfo(
-			1, imageAvailableSemaphores,
-			waitStages,
-			1, &m_renderCommandBuffers.Get(imageIndex),
-			1, renderFinishedSemaphores
-		);
-		g_device->Get().resetFences(frameFence); // reset right before submit
-		g_device->GetGraphicsQueue().submit(submitInfo, frameFence);
-
-		// Presentation
-		vk::PresentInfoKHR presentInfo = {};
-		presentInfo.waitSemaphoreCount = 1;
-		presentInfo.pWaitSemaphores = renderFinishedSemaphores;
-
-		vk::SwapchainKHR swapChains[] = { swapchain->Get() };
-		presentInfo.swapchainCount = 1;
-		presentInfo.pSwapchains = swapChains;
-		presentInfo.pImageIndices = &imageIndex;
-
-		result = g_device->GetPresentQueue().presentKHR(presentInfo);
-		if (result == vk::Result::eSuboptimalKHR || 
-			result == vk::Result::eErrorOutOfDateKHR || // todo: this one will throw
-			frameBufferResized)
-		{
-			frameBufferResized = false;
-			RecreateSwapchain();
-			return;
-		}
-		else if (result != vk::Result::eSuccess)
-		{
-			throw std::runtime_error("Failed to acquire swapchain image");
-		}
-
-		syncPrimitives.MoveToNextFrame();
-	}
-
-	void RecreateSwapchain()
-	{
-		extent = window.GetFramebufferSize();
-	
-		// Wait if window is minimized
-		while (extent.width == 0 || extent.height == 0)
-		{
-			extent = window.GetFramebufferSize();
-			window.WaitForEvents();
-		}
-
-		g_device->Get().waitIdle();
-
-		// Recreate swapchain and render pass
-		renderPass.reset();
-		swapchain.reset();
-
-		swapchain = std::make_unique<Swapchain>(surface, extent);
-		extent = swapchain->GetImageExtent();
-
-		renderPass = std::make_unique<RenderPass>(*swapchain);
-
-		m_renderCommandBuffers.Reset(swapchain->GetImageCount());
-
-		RecordRenderPassCommands();
-	}
-
-	void UpdateImageResources(uint32_t imageIndex)
-	{
-		UpdateUniformBuffer(imageIndex);
-	}
-
 	void UpdateUniformBuffer(uint32_t imageIndex)
 	{
 		using namespace std::chrono;
@@ -323,22 +210,6 @@ public:
 	}
 
 private:
-	// --- All these could be in a base class
-
-	vk::Extent2D extent;
-	Window& window;
-	bool frameBufferResized{ false };
-	vk::SurfaceKHR surface;
-	
-	std::unique_ptr<Swapchain> swapchain;
-	std::unique_ptr<RenderPass> renderPass;
-	CommandBuffers m_renderCommandBuffers;
-	CommandBuffers m_uploadCommandBuffers;
-
-	SynchronizationPrimitives syncPrimitives;
-
-	// ---
-
 	BufferWithStaging m_vertexBuffer;
 	BufferWithStaging m_indexBuffer;
 	std::vector<Buffer> m_uniformBuffers; // one per image since these change every frame
@@ -361,6 +232,7 @@ int main()
 	Device::Init(*g_physicalDevice);
 	{
 		App app(surface.get(), extent, window);
+		app.Init();
 		app.Run();
 	}
 	Device::Term();
