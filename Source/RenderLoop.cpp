@@ -8,8 +8,7 @@ RenderLoop::RenderLoop(vk::SurfaceKHR surface, vk::Extent2D extent, Window& wind
 	, surface(surface)
 	, extent(extent)
 	, swapchain(std::make_unique<Swapchain>(surface, extent))
-	, renderPass(std::make_unique<RenderPass>(*swapchain))
-	, m_renderCommandBuffers(renderPass->GetFrameBufferCount(), g_physicalDevice->GetQueueFamilies().graphicsFamily.value())
+	, m_renderCommandBuffers(swapchain->GetImageCount(), g_physicalDevice->GetQueueFamilies().graphicsFamily.value())
 	, m_uploadCommandBuffers(1, g_physicalDevice->GetQueueFamilies().graphicsFamily.value(), vk::CommandPoolCreateFlagBits::eTransient)
 	, syncPrimitives(swapchain->GetImageCount(), kMaxFramesInFlight)
 {
@@ -18,11 +17,8 @@ RenderLoop::RenderLoop(vk::SurfaceKHR surface, vk::Extent2D extent, Window& wind
 
 void RenderLoop::Init()
 {
-	{
-		SingleTimeCommandBuffer initCommandBuffer(m_uploadCommandBuffers.Get(0));
-		Init(initCommandBuffer.Get());
-	}
-	RecordRenderPassCommands(m_renderCommandBuffers);
+	SingleTimeCommandBuffer initCommandBuffer(m_uploadCommandBuffers.Get(0));
+	Init(initCommandBuffer.Get());
 }
 
 void RenderLoop::Run()
@@ -115,15 +111,12 @@ void RenderLoop::RecreateSwapchain()
 	g_device->Get().waitIdle();
 
 	// Recreate swapchain and render pass
-	renderPass.reset();
 	swapchain.reset();
 
 	swapchain = std::make_unique<Swapchain>(surface, extent);
 	extent = swapchain->GetImageExtent();
 
-	renderPass = std::make_unique<RenderPass>(*swapchain);
-
 	m_renderCommandBuffers.Reset(swapchain->GetImageCount());
 
-	RecordRenderPassCommands(m_renderCommandBuffers);
+	OnSwapchainRecreated(m_renderCommandBuffers);
 }

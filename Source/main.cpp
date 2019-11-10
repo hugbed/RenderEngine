@@ -38,6 +38,7 @@ class App : public RenderLoop
 public:
 	App(vk::SurfaceKHR surface, vk::Extent2D extent, Window& window)
 		: RenderLoop(surface, extent, window)
+		, renderPass(std::make_unique<RenderPass>(*swapchain))
 		, m_vertexBuffer(
 			sizeof(Vertex) * vertices.size(),
 			vk::BufferUsageFlagBits::eVertexBuffer)
@@ -58,19 +59,36 @@ protected:
 		CreateSampler();
 		CreateDescriptorSets();
 
-		// Bind shader variables
+		// Bind other shader variables
 		renderPass->BindIndexBuffer(m_indexBuffer.Get());
 		renderPass->BindVertexBuffer(m_vertexBuffer.Get());
-		renderPass->BindDescriptorSets(vk_utils::remove_unique(m_descriptorSets));
+
+		RecordRenderPassCommands(m_renderCommandBuffers);
 	}
 
 	// Render pass commands are recorded once and executed every frame
-	void RecordRenderPassCommands(CommandBuffers& commandBuffers) override
+	void OnSwapchainRecreated(CommandBuffers& commandBuffers) override
 	{
-		// Record commands
+		// Reset render pass that depends on the swapchain
+		renderPass.reset();
+		renderPass = std::make_unique<RenderPass>(*swapchain);
+
+		// Recreate everything that depends on the number of images
+		CreateUniformBuffers();
+		CreateDescriptorSets();
+
+		// Rebind other shader variables
+		renderPass->BindIndexBuffer(m_indexBuffer.Get());
+		renderPass->BindVertexBuffer(m_vertexBuffer.Get());
+
+		RecordRenderPassCommands(commandBuffers);
+	}
+
+	void RecordRenderPassCommands(CommandBuffers& commandBuffers)
+	{
 		for (size_t i = 0; i < swapchain->GetImageCount(); i++)
 		{
-			auto& commandBuffer = m_renderCommandBuffers.Get(i);
+			auto& commandBuffer = commandBuffers.Get(i);
 			commandBuffer.begin(vk::CommandBufferBeginInfo());
 			renderPass->PopulateRenderCommands(commandBuffer, i);
 			commandBuffer.end();
@@ -85,6 +103,7 @@ protected:
 
 	void CreateUniformBuffers()
 	{
+		m_uniformBuffers.clear();
 		m_uniformBuffers.reserve(swapchain->GetImageCount());
 		for (uint32_t i = 0; i < swapchain->GetImageCount(); ++i)
 		{
@@ -98,6 +117,9 @@ protected:
 
 	void CreateDescriptorSets()
 	{
+		m_descriptorSets.clear();
+		m_descriptorPool.reset();
+
 		std::array<vk::DescriptorPoolSize, 2> poolSizes = {
 			vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, swapchain->GetImageCount()),
 			vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, swapchain->GetImageCount()),
@@ -122,6 +144,8 @@ protected:
 			};
 			g_device->Get().updateDescriptorSets(static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
 		}
+
+		renderPass->BindDescriptorSets(vk_utils::remove_unique(m_descriptorSets));
 	}
 
 	// todo: extract reusable code from here and maybe move into a Image factory or something
@@ -210,6 +234,8 @@ protected:
 	}
 
 private:
+	std::unique_ptr<RenderPass> renderPass;
+
 	BufferWithStaging m_vertexBuffer;
 	BufferWithStaging m_indexBuffer;
 	std::vector<Buffer> m_uniformBuffers; // one per image since these change every frame
