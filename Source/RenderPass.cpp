@@ -9,12 +9,12 @@
 
 vk::VertexInputBindingDescription Vertex::GetBindingDescription()
 {
-	return { 0, sizeof(Vertex) };
+	return { 0, sizeof(Vertex), vk::VertexInputRate::eVertex };
 }
 
-std::array<vk::VertexInputAttributeDescription, 2> Vertex::GetAttributeDescriptions()
+std::array<vk::VertexInputAttributeDescription, 3> Vertex::GetAttributeDescriptions()
 {
-	std::array<vk::VertexInputAttributeDescription, 2> attributeDescriptions;
+	std::array<vk::VertexInputAttributeDescription, 3> attributeDescriptions;
 
 	attributeDescriptions[0].binding = 0;
 	attributeDescriptions[0].location = 0;
@@ -25,6 +25,11 @@ std::array<vk::VertexInputAttributeDescription, 2> Vertex::GetAttributeDescripti
 	attributeDescriptions[1].location = 1;
 	attributeDescriptions[1].format = vk::Format::eR32G32B32Sfloat;
 	attributeDescriptions[1].offset = offsetof(Vertex, color);
+
+	attributeDescriptions[2].binding = 0;
+	attributeDescriptions[2].location = 2;
+	attributeDescriptions[2].format = vk::Format::eR32G32Sfloat;
+	attributeDescriptions[2].offset = offsetof(Vertex, texCoord);
 
 	return attributeDescriptions;
 }
@@ -139,8 +144,17 @@ RenderPass::RenderPass(const Swapchain& swapchain)
 		1, // descriptorCount
 		vk::ShaderStageFlagBits::eVertex
 	);
-	vk::DescriptorSetLayoutCreateInfo createInfo({}, 1, &uboLayoutBinding);
-	m_descriptorSetLayout = g_device->Get().createDescriptorSetLayoutUnique(createInfo);
+	vk::DescriptorSetLayoutBinding samplerBinding(
+		1, // binding
+		vk::DescriptorType::eCombinedImageSampler,
+		1, // descriptorCount
+		vk::ShaderStageFlagBits::eFragment
+	);
+	std::array<vk::DescriptorSetLayoutBinding, 2> bindings = { uboLayoutBinding, samplerBinding };
+	m_descriptorSetLayout = g_device->Get().createDescriptorSetLayoutUnique(vk::DescriptorSetLayoutCreateInfo(
+		{}, static_cast<uint32_t>(bindings.size()), bindings.data()
+	));
+	
 	vk::DescriptorSetLayout descriptorSetLayouts[] = { m_descriptorSetLayout.get() };
 	m_pipelineLayout = g_device->Get().createPipelineLayoutUnique(vk::PipelineLayoutCreateInfo(
 		{}, 1, descriptorSetLayouts

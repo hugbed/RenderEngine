@@ -33,7 +33,7 @@ public:
 	vk::SwapchainKHR Get() const { return m_swapchain.get(); }
 
 private:
-	void CreateImageViews(vk::Device device);
+	void CreateImageViews();
 
 	// Swapchain
 	vk::UniqueSwapchainKHR m_swapchain;

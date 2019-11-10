@@ -15,6 +15,13 @@ Image::Image(
 		vk::MemoryPropertyFlagBits::eHostVisible |
 		vk::MemoryPropertyFlagBits::eHostCoherent)
 {
+	CreateImage(tiling, usage);
+	InitImageMemory(properties);
+	CreateImageView();
+}
+
+void Image::CreateImage(vk::ImageTiling tiling, vk::ImageUsageFlags usage)
+{
 	uint32_t queueFamilies[] = { g_physicalDevice->GetQueueFamilies().graphicsFamily.value() };
 	vk::ImageCreateInfo imageInfo(
 		{}, // flags
@@ -31,8 +38,10 @@ Image::Image(
 		vk::ImageLayout::eUndefined
 	);
 	m_image = g_device->Get().createImageUnique(imageInfo);
+}
 
-	// Image memory
+void Image::InitImageMemory(vk::MemoryPropertyFlags properties)
+{
 	vk::MemoryRequirements memRequirements = g_device->Get().getImageMemoryRequirements(m_image.get());
 	m_memory = g_device->Get().allocateMemoryUnique(
 		vk::MemoryAllocateInfo(
@@ -114,4 +123,23 @@ void Image::Overwrite(vk::CommandBuffer& commandBuffer, const void* pixels)
 		vk::Offset3D(0, 0, 0), m_extent
 	);
 	commandBuffer.copyBufferToImage(m_stagingBuffer.Get(), m_image.get(), vk::ImageLayout::eTransferDstOptimal, 1, &region);
+}
+
+void Image::CreateImageView()
+{
+	vk::ImageViewCreateInfo createInfo(
+		vk::ImageViewCreateFlags(),
+		m_image.get(),
+		vk::ImageViewType::e2D,
+		m_format,
+		vk::ComponentMapping(vk::ComponentSwizzle::eIdentity),
+		vk::ImageSubresourceRange(
+			vk::ImageAspectFlagBits::eColor,
+			0, // baseMipLevel
+			1, // levelCount
+			0, // baseArrayLayer
+			1 // layerCount
+		)
+	);
+	m_imageView = g_device->Get().createImageViewUnique(createInfo);
 }

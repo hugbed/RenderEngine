@@ -23,10 +23,10 @@
 #include <stb_image.h>
 
 const std::vector<Vertex> vertices = {
-	{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-	{{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
-	{{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
-	{{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}
+	{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
+	{{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
+	{{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
+	{{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}}
 };;
 
 const std::vector<uint16_t> indices = {
@@ -56,14 +56,15 @@ public:
 	{
 		window.SetWindowResizeCallback(reinterpret_cast<void*>(this), OnResize);
 
-		CreateUniformBuffers();
-		CreateDescriptorSets();
-
 		{
 			SingleTimeCommandBuffer initCommandBuffer(m_uploadCommandBuffers.Get(0));
 			UploadGeometry(initCommandBuffer.Get());
-			CreateTextureImage(initCommandBuffer.Get());
+			CreateAndUploadTextureImage(initCommandBuffer.Get());
 		}
+
+		CreateUniformBuffers();
+		CreateSampler();
+		CreateDescriptorSets();
 
 		// Bind shader variables
 		renderPass->BindIndexBuffer(m_indexBuffer.Get());
@@ -88,9 +89,14 @@ public:
 
 	void CreateDescriptorSets()
 	{
-		vk::DescriptorPoolSize poolSize(vk::DescriptorType::eUniformBuffer, swapchain->GetImageCount());
+		std::array<vk::DescriptorPoolSize, 2> poolSizes = {
+			vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, swapchain->GetImageCount()),
+			vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, swapchain->GetImageCount()),
+		};
 		m_descriptorPool = g_device->Get().createDescriptorPoolUnique(vk::DescriptorPoolCreateInfo(
-			vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet, swapchain->GetImageCount(), 1, &poolSize
+			vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
+			swapchain->GetImageCount(),
+			static_cast<uint32_t>(poolSizes.size()), poolSizes.data()
 		));
 	
 		std::vector<vk::DescriptorSetLayout> layouts(swapchain->GetImageCount(), renderPass->GetDescriptorSetLayout());
@@ -100,16 +106,17 @@ public:
 		for (uint32_t i = 0; i < swapchain->GetImageCount(); ++i)
 		{
 			vk::DescriptorBufferInfo descriptorBufferInfo(m_uniformBuffers[i].Get(), 0, sizeof(UniformBufferObject));
-			g_device->Get().updateDescriptorSets(
-				vk::WriteDescriptorSet(
-					m_descriptorSets[i].get(), 0, 0, 1, vk::DescriptorType::eUniformBuffer, nullptr, &descriptorBufferInfo
-				), {}
-			);
+			vk::DescriptorImageInfo imageInfo(m_sampler.get(), m_image->GetImageView(), vk::ImageLayout::eShaderReadOnlyOptimal);
+			std::array<vk::WriteDescriptorSet, 2> writeDescriptorSets = {
+				vk::WriteDescriptorSet(m_descriptorSets[i].get(), 0, 0, 1, vk::DescriptorType::eUniformBuffer, nullptr, &descriptorBufferInfo), // binding = 0
+				vk::WriteDescriptorSet(m_descriptorSets[i].get(), 1, 0, 1, vk::DescriptorType::eCombinedImageSampler, &imageInfo, nullptr) // binding = 1
+			};
+			g_device->Get().updateDescriptorSets(static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
 		}
 	}
 
 	// todo: extract reusable code from here and maybe move into a Image factory or something
-	void CreateTextureImage(vk::CommandBuffer& commandBuffer)
+	void CreateAndUploadTextureImage(vk::CommandBuffer& commandBuffer)
 	{
 		// Read image from file
 		int texWidth = 0, texHeight = 0, texChannels = 0;
@@ -143,6 +150,28 @@ public:
 		);
 
 		stbi_image_free(pixels);
+	}
+
+	void CreateSampler()
+	{
+		m_sampler = g_device->Get().createSamplerUnique(vk::SamplerCreateInfo(
+			{}, // flags
+			vk::Filter::eLinear, // magFilter
+			vk::Filter::eLinear, // minFilter
+			vk::SamplerMipmapMode::eLinear,
+			vk::SamplerAddressMode::eRepeat, // addressModeU
+			vk::SamplerAddressMode::eRepeat, // addressModeV
+			vk::SamplerAddressMode::eRepeat, // addressModeW
+			{}, // mipLodBias
+			true, // anisotropyEnable
+			16, // maxAnisotropy
+			false, // compareEnable
+			vk::CompareOp::eAlways, // compareOp
+			{}, // minLod
+			{}, // maxLod
+			vk::BorderColor::eIntOpaqueBlack, // borderColor
+			false // unnormalizedCoordinates
+		));
 	}
 
 	void UploadGeometry(vk::CommandBuffer& commandBuffer)
@@ -318,6 +347,7 @@ private:
 	std::vector<vk::UniqueDescriptorSet> m_descriptorSets;
 
 	std::unique_ptr<Image> m_image;
+	vk::UniqueSampler m_sampler;
 };
 
 int main()
