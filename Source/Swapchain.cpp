@@ -94,10 +94,10 @@ Swapchain::Swapchain(vk::SurfaceKHR surface, vk::Extent2D desiredExtent)
 	m_images = g_device->Get().getSwapchainImagesKHR(m_swapchain.get());
 	m_imageFormat = surfaceFormat.format;
 	m_imageExtent = imageExtent;
-	CreateImageViews(g_device->Get());
+	CreateImageViews();
 }
 
-void Swapchain::CreateImageViews(vk::Device device)
+void Swapchain::CreateImageViews()
 {
 	m_imageViews.clear();
 	m_imageViews.reserve(m_images.size());
@@ -117,7 +117,6 @@ void Swapchain::CreateImageViews(vk::Device device)
 				1 // layerCount
 			)
 		);
-
-		m_imageViews.push_back(device.createImageViewUnique(createInfo));
+		m_imageViews.push_back(g_device->Get().createImageViewUnique(createInfo));
 	}
 }

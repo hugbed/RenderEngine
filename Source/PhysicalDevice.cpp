@@ -59,6 +59,10 @@ bool PhysicalDevice::IsPhysicalDeviceSuitable(vk::PhysicalDevice physicalDevice)
 	if (swapChainSupport.formats.empty() || swapChainSupport.presentModes.empty())
 		return false;
 
+	auto supportedFeatures = physicalDevice.getFeatures();
+	if (!supportedFeatures.samplerAnisotropy)
+		return false;
+
 	return true;
 }
 

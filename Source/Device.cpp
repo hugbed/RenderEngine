@@ -46,6 +46,7 @@ Device::Device(const PhysicalDevice& physicalDevice)
 	);
 
 	vk::PhysicalDeviceFeatures deviceFeatures;
+	deviceFeatures.samplerAnisotropy = true;
 	createInfo.pEnabledFeatures = &deviceFeatures;
 
 	auto deviceExtensions = physicalDevice.GetDeviceExtensions();

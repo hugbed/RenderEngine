@@ -21,9 +21,10 @@ struct UniformBufferObject {
 struct Vertex {
 	glm::vec2 pos;
 	glm::vec3 color;
+	glm::vec2 texCoord;
 
 	static vk::VertexInputBindingDescription GetBindingDescription();
-	static std::array<vk::VertexInputAttributeDescription, 2> GetAttributeDescriptions();
+	static std::array<vk::VertexInputAttributeDescription, 3> GetAttributeDescriptions();
 };
 
 class RenderPass
