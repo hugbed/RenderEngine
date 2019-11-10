@@ -17,12 +17,7 @@ public:
 		Reset(count);
 	}
 
-	vk::CommandBuffer Get(uint32_t imageIndex) const
-	{
-		return m_commandBuffers[imageIndex].get();
-	}
-
-	vk::CommandBuffer operator[](uint32_t imageIndex) const
+	vk::CommandBuffer& Get(size_t imageIndex)
 	{
 		return m_commandBuffers[imageIndex].get();
 	}
@@ -44,4 +39,35 @@ public:
 private:
 	vk::UniqueCommandPool m_commandPool;
 	std::vector<vk::UniqueCommandBuffer> m_commandBuffers;
+};
+
+struct SingleTimeCommandBuffer
+{
+	SingleTimeCommandBuffer(vk::CommandBuffer& commandBuffer)
+		: m_commandBuffer(commandBuffer)
+	{
+		m_commandBuffer.begin({ vk::CommandBufferUsageFlagBits::eOneTimeSubmit });
+	}
+
+	// Prevent unwanted copies, allow moving only
+	SingleTimeCommandBuffer(const SingleTimeCommandBuffer&) = delete;
+	SingleTimeCommandBuffer& operator= (const SingleTimeCommandBuffer&) = delete;
+
+	~SingleTimeCommandBuffer()
+	{
+		m_commandBuffer.end();
+
+		vk::SubmitInfo submitInfo;
+		submitInfo.commandBufferCount = 1;
+		submitInfo.pCommandBuffers = &m_commandBuffer;
+
+		auto graphicsQueue = g_device->GetGraphicsQueue();
+		graphicsQueue.submit(submitInfo, nullptr);
+		graphicsQueue.waitIdle();
+	}
+
+	vk::CommandBuffer& Get() { return m_commandBuffer; }
+
+private:
+	vk::CommandBuffer m_commandBuffer;
 };
