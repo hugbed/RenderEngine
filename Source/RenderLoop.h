@@ -30,7 +30,7 @@ public:
 
 protected:
 	virtual void Init(vk::CommandBuffer& commandBuffer) = 0;
-	virtual void RecordRenderPassCommands(CommandBuffers& commandBuffers) = 0;
+	virtual void OnSwapchainRecreated(CommandBuffers& commandBuffers) = 0;
 	virtual void UpdateImageResources(uint32_t imageIndex) = 0;
 
 	static void OnResize(void* data, int w, int h);
@@ -45,7 +45,6 @@ protected:
 	vk::SurfaceKHR surface;
 
 	std::unique_ptr<Swapchain> swapchain;
-	std::unique_ptr<RenderPass> renderPass;
 	CommandBuffers m_renderCommandBuffers;
 	CommandBuffers m_uploadCommandBuffers;
 
