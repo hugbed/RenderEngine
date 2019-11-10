@@ -139,3 +139,27 @@ uint32_t PhysicalDevice::FindMemoryType(uint32_t typeFilter, vk::MemoryPropertyF
 	throw std::runtime_error("failed to find suitable memory type");
 	return UINT32_MAX;
 }
+
+vk::Format PhysicalDevice::FindDepthFormat() const
+{
+	return FindSupportedFormat(
+		{ vk::Format::eD32Sfloat, vk::Format::eD32SfloatS8Uint, vk::Format::eD24UnormS8Uint },
+		vk::ImageTiling::eOptimal,
+		vk::FormatFeatureFlagBits::eDepthStencilAttachment
+	);
+}
+
+vk::Format PhysicalDevice::FindSupportedFormat(const std::vector<vk::Format>& candidates, vk::ImageTiling tiling, vk::FormatFeatureFlags features) const
+{
+	for (vk::Format format : candidates)
+	{
+		auto props = m_physicalDevice.getFormatProperties(format);
+		if (tiling == vk::ImageTiling::eLinear && (props.linearTilingFeatures & features) == features)
+			return format;
+		else if (tiling == vk::ImageTiling::eOptimal && (props.optimalTilingFeatures & features) == features)
+			return format;
+	}
+
+	throw std::runtime_error("Failed to find supported format");
+	return {};
+}

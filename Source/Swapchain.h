@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Image.h"
+
 #include <vulkan/vulkan.hpp>
 
 #include <vector>
@@ -29,6 +31,8 @@ public:
 		return imageViews;
 	}
 
+	vk::ImageView GetDepthImageView() const { return m_depthImage->GetImageView(); }
+
 	vk::SwapchainKHR Get() { return m_swapchain.get(); }
 	vk::SwapchainKHR Get() const { return m_swapchain.get(); }
 
@@ -43,4 +47,7 @@ private:
 	vk::Format m_imageFormat;
 	vk::Extent2D m_imageExtent;
 	std::vector<vk::UniqueImageView> m_imageViews;
+
+	// Depth buffer
+	std::unique_ptr<Image> m_depthImage;
 };

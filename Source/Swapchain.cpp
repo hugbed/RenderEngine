@@ -2,6 +2,7 @@
 
 #include "Device.h"
 #include "PhysicalDevice.h"
+#include "Image.h"
 
 #include "defines.h"
 
@@ -95,6 +96,16 @@ Swapchain::Swapchain(vk::SurfaceKHR surface, vk::Extent2D desiredExtent)
 	m_imageFormat = surfaceFormat.format;
 	m_imageExtent = imageExtent;
 	CreateImageViews();
+
+	// Depth buffer
+	m_depthImage = std::make_unique<Image>(
+		m_imageExtent.width, m_imageExtent.height, 4UL,
+		g_physicalDevice->FindDepthFormat(),
+		vk::ImageTiling::eOptimal,
+		vk::ImageUsageFlagBits::eDepthStencilAttachment,
+		vk::MemoryPropertyFlagBits::eDeviceLocal,
+		vk::ImageAspectFlagBits::eDepth
+	);
 }
 
 void Swapchain::CreateImageViews()

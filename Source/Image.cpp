@@ -5,19 +5,16 @@ Image::Image(
 	vk::Format format,
 	vk::ImageTiling tiling,
 	vk::ImageUsageFlags usage,
-	vk::MemoryPropertyFlags properties
+	vk::MemoryPropertyFlags properties,
+	vk::ImageAspectFlags aspectFlags
 )
 	: m_format(format)
+	, m_depth(depth)
 	, m_extent(static_cast<uint32_t>(width), static_cast<uint32_t>(height), 1)
-	, m_stagingBuffer(
-		static_cast<size_t>(width)* height* depth,
-		vk::BufferUsageFlagBits::eTransferSrc,
-		vk::MemoryPropertyFlagBits::eHostVisible |
-		vk::MemoryPropertyFlagBits::eHostCoherent)
 {
 	CreateImage(tiling, usage);
 	InitImageMemory(properties);
-	CreateImageView();
+	CreateImageView(aspectFlags);
 }
 
 void Image::CreateImage(vk::ImageTiling tiling, vk::ImageUsageFlags usage)
@@ -86,6 +83,13 @@ void Image::TransitionLayout(vk::CommandBuffer& commandBuffer, vk::ImageLayout o
 		sourceStage = vk::PipelineStageFlagBits::eTransfer;
 		destinationStage = vk::PipelineStageFlagBits::eFragmentShader;
 	}
+	else if (oldLayout == vk::ImageLayout::eUndefined && newLayout == vk::ImageLayout::eDepthStencilAttachmentOptimal)
+	{
+		barrier.srcAccessMask = vk::AccessFlags();
+		barrier.dstAccessMask = vk::AccessFlagBits::eDepthStencilAttachmentRead | vk::AccessFlagBits::eDepthStencilAttachmentWrite;
+		sourceStage = vk::PipelineStageFlagBits::eTopOfPipe;
+		destinationStage = vk::PipelineStageFlagBits::eLateFragmentTests;
+	}
 	else
 	{
 		throw std::invalid_argument("unsupported layout transition!");
@@ -101,13 +105,25 @@ void Image::TransitionLayout(vk::CommandBuffer& commandBuffer, vk::ImageLayout o
 	);
 }
 
+void Image::CreateStagingBuffer()
+{
+	m_stagingBuffer = std::make_unique<Buffer>(
+		static_cast<size_t>(m_extent.width)* m_extent.height * m_depth,
+		vk::BufferUsageFlagBits::eTransferSrc,
+		vk::MemoryPropertyFlagBits::eHostVisible |
+		vk::MemoryPropertyFlagBits::eHostCoherent);
+}
+
 void Image::Overwrite(vk::CommandBuffer& commandBuffer, const void* pixels)
 {
+	if (m_stagingBuffer == nullptr)
+		CreateStagingBuffer();
+
 	// Copy data to staging buffer
 	void* data;
-	g_device->Get().mapMemory(m_stagingBuffer.GetMemory(), 0, m_stagingBuffer.size(), {}, &data);
-	memcpy(data, pixels, m_stagingBuffer.size());
-	g_device->Get().unmapMemory(m_stagingBuffer.GetMemory());
+	g_device->Get().mapMemory(m_stagingBuffer->GetMemory(), 0, m_stagingBuffer->size(), {}, &data);
+		memcpy(data, pixels, m_stagingBuffer->size());
+	g_device->Get().unmapMemory(m_stagingBuffer->GetMemory());
 
 	// Copy staging buffer to image
 	vk::BufferImageCopy region(
@@ -122,10 +138,10 @@ void Image::Overwrite(vk::CommandBuffer& commandBuffer, const void* pixels)
 		),
 		vk::Offset3D(0, 0, 0), m_extent
 	);
-	commandBuffer.copyBufferToImage(m_stagingBuffer.Get(), m_image.get(), vk::ImageLayout::eTransferDstOptimal, 1, &region);
+	commandBuffer.copyBufferToImage(m_stagingBuffer->Get(), m_image.get(), vk::ImageLayout::eTransferDstOptimal, 1, &region);
 }
 
-void Image::CreateImageView()
+void Image::CreateImageView(vk::ImageAspectFlags aspectFlags)
 {
 	vk::ImageViewCreateInfo createInfo(
 		vk::ImageViewCreateFlags(),
@@ -134,7 +150,7 @@ void Image::CreateImageView()
 		m_format,
 		vk::ComponentMapping(vk::ComponentSwizzle::eIdentity),
 		vk::ImageSubresourceRange(
-			vk::ImageAspectFlagBits::eColor,
+			aspectFlags,
 			0, // baseMipLevel
 			1, // levelCount
 			0, // baseArrayLayer

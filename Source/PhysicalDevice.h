@@ -41,6 +41,10 @@ public:
 
 	uint32_t FindMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties) const;
 
+	vk::Format FindDepthFormat() const;
+
+	vk::Format FindSupportedFormat(const std::vector<vk::Format>& candidates, vk::ImageTiling tiling, vk::FormatFeatureFlags features) const;
+
 	vk::PhysicalDevice Get() const { return m_physicalDevice; }
 
 protected:

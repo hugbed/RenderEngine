@@ -18,7 +18,7 @@ std::array<vk::VertexInputAttributeDescription, 3> Vertex::GetAttributeDescripti
 
 	attributeDescriptions[0].binding = 0;
 	attributeDescriptions[0].location = 0;
-	attributeDescriptions[0].format = vk::Format::eR32G32B32Sfloat;
+	attributeDescriptions[0].format = vk::Format::eR32G32B32A32Sfloat;
 	attributeDescriptions[0].offset = offsetof(Vertex, pos);
 
 	attributeDescriptions[1].binding = 0;
@@ -173,26 +173,57 @@ RenderPass::RenderPass(const Swapchain& swapchain)
 		vk::ImageLayout::eUndefined, // initialLayout
 		vk::ImageLayout::ePresentSrcKHR	// finalLayout
 	);
-
 	vk::AttachmentReference colorAttachmentRef(
 		0, vk::ImageLayout::eColorAttachmentOptimal
+	);
+
+	vk::AttachmentDescription depthAttachment(
+		vk::AttachmentDescriptionFlags(),
+		g_physicalDevice->FindDepthFormat(),
+		vk::SampleCountFlagBits::e1,
+		vk::AttachmentLoadOp::eClear,
+		vk::AttachmentStoreOp::eDontCare,
+		vk::AttachmentLoadOp::eDontCare, // stencilLoadOp
+		vk::AttachmentStoreOp::eDontCare, // stencilStoreOp
+		vk::ImageLayout::eUndefined, // initialLayout
+		vk::ImageLayout::eDepthStencilAttachmentOptimal	// finalLayout
+	);
+	vk::AttachmentReference depthAttachmentRef(
+		1, vk::ImageLayout::eDepthStencilAttachmentOptimal
 	);
 
 	vk::SubpassDescription subpass(
 		vk::SubpassDescriptionFlags(),
 		vk::PipelineBindPoint::eGraphics,
 		0, nullptr, // input attachments
-		1, &colorAttachmentRef
+		1, &colorAttachmentRef,
+		nullptr, // pResolveAttachment
+		&depthAttachmentRef
 	);
+
+	std::array<vk::AttachmentDescription, 2 > attachmentDescriptions = {
+		colorAttachment, depthAttachment
+	};
 
 	vk::RenderPassCreateInfo renderPassCreateInfo(
 		vk::RenderPassCreateFlags(),
-		1, &colorAttachment,
+		static_cast<size_t>(attachmentDescriptions.size()), attachmentDescriptions.data(),
 		1, &subpass
 	);
 
 	m_renderPass = g_device->Get().createRenderPassUnique(renderPassCreateInfo);
 
+	vk::PipelineDepthStencilStateCreateInfo depthStencilState(
+		{},
+		true, // depthTestEnable
+		true, // depthWriteEnable
+		vk::CompareOp::eLess, // depthCompareOp
+		false, // depthBoundsTestEnable
+		false, // stencilTestEnable
+		{}, // front
+		{}, // back
+		0.0f, 1.0f // depthBounds (min, max)
+	);
 	vk::GraphicsPipelineCreateInfo graphicsPipelineCreateInfo(
 		vk::PipelineCreateFlags(),
 		2, // stageCount
@@ -203,7 +234,7 @@ RenderPass::RenderPass(const Swapchain& swapchain)
 		&viewportState,
 		&rasterizerState,
 		&multisampling,
-		nullptr, // depthStencilState
+		&depthStencilState,
 		&colorBlending,
 		nullptr, // dynamicState
 		m_pipelineLayout.get(),
@@ -218,17 +249,19 @@ RenderPass::RenderPass(const Swapchain& swapchain)
 	m_framebuffers.reserve(swapchain.GetImageCount());
 
 	auto imageViews = swapchain.GetImageViews();
+	auto depthImageView = swapchain.GetDepthImageView();
 
 	for (size_t i = 0; i < imageViews.size(); i++)
 	{
-		vk::ImageView attachments[] = {
-			imageViews[i]
+		std::array<vk::ImageView, 2> attachments = {
+			imageViews[i],
+			depthImageView
 		};
 
 		vk::FramebufferCreateInfo frameBufferInfo(
 			vk::FramebufferCreateFlags(),
 			m_renderPass.get(),
-			1, attachments,
+			static_cast<uint32_t>(attachments.size()), attachments.data(),
 			m_imageExtent.width, m_imageExtent.height,
 			1 // layers
 		);
@@ -242,14 +275,16 @@ void RenderPass::PopulateRenderCommands(vk::CommandBuffer commandBuffer, uint32_
 	if (!m_indexBuffer || !m_vertexBuffer || m_descriptorSets.empty())
 		return; // nothing to draw
 
-	vk::ClearValue clearValue(
-		vk::ClearColorValue(std::array{ 0.0f, 0.0f, 0.0f, 1.0f })
-	);
+	std::array<vk::ClearValue, 2> clearValues = {
+		vk::ClearColorValue(std::array<float, 4>{ 0.0f, 0.0f, 0.0f, 1.0f }),
+		vk::ClearDepthStencilValue(1.0f, 0.0f)
+	};
+
 	vk::RenderPassBeginInfo renderPassBeginInfo(
 		m_renderPass.get(),
 		m_framebuffers[imageIndex].get(),
 		vk::Rect2D(vk::Offset2D(0, 0), m_imageExtent),
-		1, &clearValue
+		static_cast<uint32_t>(clearValues.size()), clearValues.data()
 	);
 	commandBuffer.beginRenderPass(renderPassBeginInfo, vk::SubpassContents::eInline);
 	{
@@ -263,7 +298,7 @@ void RenderPass::PopulateRenderCommands(vk::CommandBuffer commandBuffer, uint32_
 
 		commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pipelineLayout.get(), 0, 1, &m_descriptorSets[imageIndex], 0, nullptr);
 
-		commandBuffer.drawIndexed(6, 1, 0, 0, 0); // ok this 6 shouldn't be hard coded
+		commandBuffer.drawIndexed(m_nbIndices, 1, 0, 0, 0);
 	}
 	commandBuffer.endRenderPass();
 }

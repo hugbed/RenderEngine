@@ -19,7 +19,7 @@ struct UniformBufferObject {
 };
 
 struct Vertex {
-	glm::vec2 pos;
+	glm::vec3 pos;
 	glm::vec3 color;
 	glm::vec2 texCoord;
 
@@ -39,7 +39,7 @@ public:
 	vk::DescriptorSetLayout GetDescriptorSetLayout() const { return m_descriptorSetLayout.get(); }
 
 	void BindVertexBuffer(vk::Buffer buffer) { m_vertexBuffer = buffer; }
-	void BindIndexBuffer(vk::Buffer buffer) { m_indexBuffer = buffer; }
+	void BindIndexBuffer(vk::Buffer buffer, size_t nbIndices) { m_indexBuffer = buffer; m_nbIndices = nbIndices; }
 	void BindDescriptorSets(std::vector<vk::DescriptorSet> descriptorSets) { m_descriptorSets = std::move(descriptorSets); }
 
 private:
@@ -53,6 +53,7 @@ private:
 	vk::UniqueDescriptorSetLayout m_descriptorSetLayout;
 
 	// Bind points
+	size_t m_nbIndices{ 0 };
 	vk::Buffer m_vertexBuffer{ nullptr };
 	vk::Buffer m_indexBuffer{ nullptr };
 	std::vector<vk::DescriptorSet> m_descriptorSets;
