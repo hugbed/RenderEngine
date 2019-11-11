@@ -290,7 +290,7 @@ void RenderPass::PopulateRenderCommands(vk::CommandBuffer commandBuffer, uint32_
 	{
 		commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, m_graphicsPipeline.get());
 
-		commandBuffer.bindIndexBuffer(m_indexBuffer, 0, vk::IndexType::eUint16);
+		commandBuffer.bindIndexBuffer(m_indexBuffer, 0, vk::IndexType::eUint32);
 		
 		VkDeviceSize offsets[] = { 0 };
 		vk::Buffer vertexBuffers[] = { m_vertexBuffer };

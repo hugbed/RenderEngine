@@ -27,6 +27,7 @@ include_directories(
   ThirdParty/glm
   ThirdParty/glfw/include
   ThirdParty/stb
+  ThirdParty/tinyobjloader
 )
 
 file(GLOB_RECURSE SRC_FILES

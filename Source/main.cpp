@@ -23,52 +23,38 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
-const std::vector<Vertex> vertices = {
-	{{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
-	{{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
-	{{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
-	{{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}},
-
-	{{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
-	{{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
-	{{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
-	{{-0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}}
-};;
-
-const std::vector<uint16_t> indices = {
-	0, 1, 2, 2, 3, 0,
-	4, 5, 6, 6, 7, 4
-};
+// Model
+#define TINYOBJLOADER_IMPLEMENTATION
+#include <tiny_obj_loader.h>
+#include <unordered_map>
 
 class App : public RenderLoop
 {
 public:
 	App(vk::SurfaceKHR surface, vk::Extent2D extent, Window& window)
 		: RenderLoop(surface, extent, window)
-		, renderPass(std::make_unique<RenderPass>(*swapchain))
-		, m_vertexBuffer(
-			sizeof(Vertex) * vertices.size(),
-			vk::BufferUsageFlagBits::eVertexBuffer)
-		, m_indexBuffer(
-			sizeof(uint16_t) * indices.size(),
-			vk::BufferUsageFlagBits::eIndexBuffer)
+		, m_renderPass(std::make_unique<RenderPass>(*swapchain))
 	{
 	}
 
 	using RenderLoop::Init;
 
 protected:
+	const std::string kModelPath = "chalet.obj";
+	const std::string kTexturePath = "chalet.jpg";
+
 	void Init(vk::CommandBuffer& commandBuffer) override
 	{
-		UploadGeometry(commandBuffer);
+		LoadModel();
+		UploadAndBindGeometry(commandBuffer);
 		CreateAndUploadTextureImage(commandBuffer);
 		CreateUniformBuffers();
 		CreateSampler();
 		CreateDescriptorSets();
 
 		// Bind other shader variables
-		renderPass->BindIndexBuffer(m_indexBuffer.Get(), indices.size());
-		renderPass->BindVertexBuffer(m_vertexBuffer.Get());
+		m_renderPass->BindIndexBuffer(m_indexBuffer->Get(), m_indices.size());
+		m_renderPass->BindVertexBuffer(m_vertexBuffer->Get());
 
 		RecordRenderPassCommands(m_renderCommandBuffers);
 	}
@@ -77,16 +63,12 @@ protected:
 	void OnSwapchainRecreated(CommandBuffers& commandBuffers) override
 	{
 		// Reset render pass that depends on the swapchain
-		renderPass.reset();
-		renderPass = std::make_unique<RenderPass>(*swapchain);
+		m_renderPass.reset();
+		m_renderPass = std::make_unique<RenderPass>(*swapchain);
 
 		// Recreate everything that depends on the number of images
 		CreateUniformBuffers();
 		CreateDescriptorSets();
-
-		// Rebind other shader variables
-		renderPass->BindIndexBuffer(m_indexBuffer.Get(), indices.size());
-		renderPass->BindVertexBuffer(m_vertexBuffer.Get());
 
 		RecordRenderPassCommands(commandBuffers);
 	}
@@ -97,7 +79,7 @@ protected:
 		{
 			auto& commandBuffer = commandBuffers.Get(i);
 			commandBuffer.begin(vk::CommandBufferBeginInfo());
-			renderPass->PopulateRenderCommands(commandBuffer, i);
+			m_renderPass->PopulateRenderCommands(commandBuffer, i);
 			commandBuffer.end();
 		}
 	}
@@ -137,7 +119,7 @@ protected:
 			static_cast<uint32_t>(poolSizes.size()), poolSizes.data()
 		));
 	
-		std::vector<vk::DescriptorSetLayout> layouts(swapchain->GetImageCount(), renderPass->GetDescriptorSetLayout());
+		std::vector<vk::DescriptorSetLayout> layouts(swapchain->GetImageCount(), m_renderPass->GetDescriptorSetLayout());
 
 		m_descriptorSets = g_device->Get().allocateDescriptorSetsUnique(vk::DescriptorSetAllocateInfo(m_descriptorPool.get(), swapchain->GetImageCount(), layouts.data()));
 
@@ -152,7 +134,7 @@ protected:
 			g_device->Get().updateDescriptorSets(static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
 		}
 
-		renderPass->BindDescriptorSets(vk_utils::remove_unique(m_descriptorSets));
+		m_renderPass->BindDescriptorSets(vk_utils::remove_unique(m_descriptorSets));
 	}
 
 	// todo: extract reusable code from here and maybe move into a Image factory or something
@@ -160,7 +142,7 @@ protected:
 	{
 		// Read image from file
 		int texWidth = 0, texHeight = 0, texChannels = 0;
-		stbi_uc* pixels = stbi_load("texture.jpg", &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+		stbi_uc* pixels = stbi_load(kTexturePath.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
 		if (pixels == nullptr || texWidth == 0 || texHeight == 0 || texChannels == 0) {
 			throw std::runtime_error("failed to load texture image!");
 		}
@@ -216,10 +198,63 @@ protected:
 		));
 	}
 
-	void UploadGeometry(vk::CommandBuffer& commandBuffer)
+	void LoadModel()
 	{
-		m_vertexBuffer.Overwrite(commandBuffer, reinterpret_cast<const void*>(vertices.data()));
-		m_indexBuffer.Overwrite(commandBuffer, reinterpret_cast<const void*>(indices.data()));
+		m_vertices.clear();
+		m_indices.clear();
+
+		tinyobj::attrib_t attrib;
+		std::vector<tinyobj::shape_t> shapes;
+		std::vector<tinyobj::material_t> materials;
+		std::string warn, err;
+
+		if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, kModelPath.c_str()))
+			throw std::runtime_error(warn + err);
+		
+		std::unordered_map<Vertex, uint32_t> uniqueVertices;
+
+		for (const auto& shape : shapes)
+		{
+			for (const auto& index : shape.mesh.indices)
+			{
+				Vertex vertex = {};
+				vertex.pos = {
+					attrib.vertices[3 * index.vertex_index + 0],
+					attrib.vertices[3 * index.vertex_index + 1],
+					attrib.vertices[3 * index.vertex_index + 2]
+				};
+				vertex.texCoord = {
+					attrib.texcoords[2 * index.texcoord_index + 0],
+					1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
+				};
+				vertex.color = { 1.0f, 1.0f, 1.0f };
+
+				if (uniqueVertices.count(vertex) == 0)
+				{
+					uniqueVertices[vertex] = static_cast<uint32_t>(m_vertices.size());
+					m_vertices.push_back(vertex);
+				}
+				m_indices.push_back(uniqueVertices[vertex]);
+			}
+		}
+	}
+
+	void UploadAndBindGeometry(vk::CommandBuffer& commandBuffer)
+	{
+		m_vertexBuffer = std::make_unique<BufferWithStaging>(
+			sizeof(m_vertices[0]) * m_vertices.size(),
+			vk::BufferUsageFlagBits::eVertexBuffer
+		);
+		m_indexBuffer = std::make_unique<BufferWithStaging>(
+			sizeof(m_indices[0]) * m_indices.size(),
+			vk::BufferUsageFlagBits::eIndexBuffer
+		);
+
+		m_indexBuffer->Overwrite(commandBuffer, reinterpret_cast<const void*>(m_indices.data()));
+		m_vertexBuffer->Overwrite(commandBuffer, reinterpret_cast<const void*>(m_vertices.data()));
+		
+		m_renderPass->BindVertexBuffer(m_vertexBuffer->Get());
+		m_renderPass->BindIndexBuffer(m_indexBuffer->Get(), m_indices.size());
 	}
 
 	void UpdateUniformBuffer(uint32_t imageIndex)
@@ -243,10 +278,10 @@ protected:
 	}
 
 private:
-	std::unique_ptr<RenderPass> renderPass;
+	std::unique_ptr<RenderPass> m_renderPass;
 
-	BufferWithStaging m_vertexBuffer;
-	BufferWithStaging m_indexBuffer;
+	std::unique_ptr<BufferWithStaging> m_vertexBuffer;
+	std::unique_ptr<BufferWithStaging> m_indexBuffer;
 	std::vector<Buffer> m_uniformBuffers; // one per image since these change every frame
 
 	vk::UniqueDescriptorPool m_descriptorPool;
@@ -255,6 +290,10 @@ private:
 	std::unique_ptr<Image> m_textureImage;
 	std::unique_ptr<Image> m_depthImage;
 	vk::UniqueSampler m_sampler;
+
+	// Model data
+	std::vector<Vertex> m_vertices;
+	std::vector<uint32_t> m_indices;
 };
 
 int main()
