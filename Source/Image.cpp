@@ -58,8 +58,8 @@ void Image::TransitionLayout(vk::CommandBuffer& commandBuffer, vk::ImageLayout n
 	vk::PipelineStageFlags destinationStage;
 
 	vk::ImageMemoryBarrier barrier(
-		vk::AccessFlags() /*todo*/,
-		vk::AccessFlags() /*todo*/,
+		vk::AccessFlags(),
+		vk::AccessFlags(),
 		m_imageLayout, newLayout,
 		0, 0,
 		m_image.get(),
