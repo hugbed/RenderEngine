@@ -16,4 +16,15 @@ namespace vk_utils
 
 		return values;
 	}
+
+	template <class T>
+	std::vector<typename T::value_type> get_all(const std::vector<T>& wrappers)
+	{
+		std::vector<typename T::value_type> values;
+
+		std::transform(wrappers.begin(), wrappers.end(), std::back_inserter(values),
+			[](const T& value) -> T::value_type { return value.Get(); });
+
+		return values;
+	}
 }

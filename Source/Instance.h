@@ -9,10 +9,11 @@ class Window;
 class Instance
 {
 public:
+	using value_type = vk::Instance;
+
 	explicit Instance(const Window& window);
 
-	vk::Instance Get() { return m_instance.get(); }
-	vk::Instance Get() const { return m_instance.get(); }
+	value_type Get() const { return m_instance.get(); }
 
 private:
 	static std::vector<const char*> GetRequiredExtensions(const Window& window);

@@ -13,6 +13,8 @@ class PhysicalDevice;
 class Device
 {
 public:
+	using value_type = vk::Device;
+
 	static void Init(const PhysicalDevice& physicalDevice);
 	static void Term();
 	
@@ -20,8 +22,7 @@ public:
 	vk::Queue GetGraphicsQueue() const;
 	vk::Queue GetPresentQueue() const;
 
-	vk::Device Get() { return m_device.get(); }
-	vk::Device Get() const { return m_device.get(); }
+	value_type Get() const { return m_device.get(); }
 
 private:
 	Device(const PhysicalDevice& physicalDevice);
