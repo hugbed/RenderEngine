@@ -120,9 +120,9 @@ protected:
 		));
 	
 		std::vector<vk::DescriptorSetLayout> layouts(swapchain->GetImageCount(), m_renderPass->GetDescriptorSetLayout());
-
-		m_descriptorSets = g_device->Get().allocateDescriptorSetsUnique(vk::DescriptorSetAllocateInfo(m_descriptorPool.get(), swapchain->GetImageCount(), layouts.data()));
-
+		m_descriptorSets = g_device->Get().allocateDescriptorSetsUnique(vk::DescriptorSetAllocateInfo(
+			m_descriptorPool.get(), swapchain->GetImageCount(), layouts.data())
+		);
 		for (uint32_t i = 0; i < swapchain->GetImageCount(); ++i)
 		{
 			vk::DescriptorBufferInfo descriptorBufferInfo(m_uniformBuffers[i].Get(), 0, sizeof(UniformBufferObject));
@@ -147,30 +147,27 @@ protected:
 			throw std::runtime_error("failed to load texture image!");
 		}
 
+		uint32_t mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(texWidth, texHeight)))) + 1;
+
 		// Texture image
 		m_textureImage = std::make_unique<Image>(
 			texWidth, texHeight, 4UL, // R8G8B8A8, depth = 4
 			vk::Format::eR8G8B8A8Unorm,
 			vk::ImageTiling::eOptimal,
-			vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
+			vk::ImageUsageFlagBits::eTransferSrc |
+				vk::ImageUsageFlagBits::eTransferDst | // src and dst for mipmaps blit
+				vk::ImageUsageFlagBits::eSampled,
 			vk::MemoryPropertyFlagBits::eDeviceLocal,
-			vk::ImageAspectFlagBits::eColor
+			vk::ImageAspectFlagBits::eColor,
+			mipLevels
 		);
 		m_textureImage->CreateStagingBuffer();
 
 		// Copy image data to staging buffer
-		m_textureImage->TransitionLayout(
+		m_textureImage->Overwrite(
 			commandBuffer,
-			vk::ImageLayout::eUndefined,
-			vk::ImageLayout::eTransferDstOptimal
-		);
-		{
-			m_textureImage->Overwrite(commandBuffer, reinterpret_cast<const void*>(pixels));
-		}
-		m_textureImage->TransitionLayout(
-			commandBuffer,
-			vk::ImageLayout::eTransferDstOptimal,
-			vk::ImageLayout::eShaderReadOnlyOptimal
+			reinterpret_cast<const void*>(pixels),
+			vk::ImageLayout::eShaderReadOnlyOptimal // dstImageLayout
 		);
 
 		stbi_image_free(pixels);
@@ -191,8 +188,8 @@ protected:
 			16, // maxAnisotropy
 			false, // compareEnable
 			vk::CompareOp::eAlways, // compareOp
-			{}, // minLod
-			{}, // maxLod
+			0.0f, // minLod
+			static_cast<float>(m_textureImage->GetMipLevels()), // maxLod
 			vk::BorderColor::eIntOpaqueBlack, // borderColor
 			false // unnormalizedCoordinates
 		));
@@ -267,7 +264,7 @@ protected:
 		float time = duration<float, seconds::period>(currentTime - startTime).count();
 
 		UniformBufferObject ubo = {};
-		ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+		ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(30.0f), glm::vec3(0.0f, 0.0f, 1.0f));
 		ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
 		ubo.proj = glm::perspective(glm::radians(45.0f), extent.width / (float)extent.height, 0.1f, 10.0f);
 
@@ -280,16 +277,15 @@ protected:
 private:
 	std::unique_ptr<RenderPass> m_renderPass;
 
-	std::unique_ptr<BufferWithStaging> m_vertexBuffer;
-	std::unique_ptr<BufferWithStaging> m_indexBuffer;
+	std::unique_ptr<BufferWithStaging> m_vertexBuffer{ nullptr };
+	std::unique_ptr<BufferWithStaging> m_indexBuffer{ nullptr };
 	std::vector<Buffer> m_uniformBuffers; // one per image since these change every frame
+
+	std::unique_ptr<Image> m_textureImage{ nullptr };
+	vk::UniqueSampler m_sampler;
 
 	vk::UniqueDescriptorPool m_descriptorPool;
 	std::vector<vk::UniqueDescriptorSet> m_descriptorSets;
-
-	std::unique_ptr<Image> m_textureImage;
-	std::unique_ptr<Image> m_depthImage;
-	vk::UniqueSampler m_sampler;
 
 	// Model data
 	std::vector<Vertex> m_vertices;
