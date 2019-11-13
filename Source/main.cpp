@@ -9,6 +9,7 @@
 #include "CommandBuffers.h"
 #include "RenderPass.h"
 #include "Image.h"
+#include "Texture.h"
 
 #include "vk_utils.h"
 
@@ -106,35 +107,9 @@ protected:
 
 	void CreateDescriptorSets()
 	{
-		m_descriptorSets.clear();
-		m_descriptorPool.reset();
-
-		std::array<vk::DescriptorPoolSize, 2> poolSizes = {
-			vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, swapchain->GetImageCount()),
-			vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, swapchain->GetImageCount()),
-		};
-		m_descriptorPool = g_device->Get().createDescriptorPoolUnique(vk::DescriptorPoolCreateInfo(
-			vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-			swapchain->GetImageCount(),
-			static_cast<uint32_t>(poolSizes.size()), poolSizes.data()
-		));
-	
-		std::vector<vk::DescriptorSetLayout> layouts(swapchain->GetImageCount(), m_renderPass->GetDescriptorSetLayout());
-		m_descriptorSets = g_device->Get().allocateDescriptorSetsUnique(vk::DescriptorSetAllocateInfo(
-			m_descriptorPool.get(), swapchain->GetImageCount(), layouts.data())
-		);
-		for (uint32_t i = 0; i < swapchain->GetImageCount(); ++i)
-		{
-			vk::DescriptorBufferInfo descriptorBufferInfo(m_uniformBuffers[i].Get(), 0, sizeof(UniformBufferObject));
-			vk::DescriptorImageInfo imageInfo(m_sampler.get(), m_textureImage->GetImageView(), vk::ImageLayout::eShaderReadOnlyOptimal);
-			std::array<vk::WriteDescriptorSet, 2> writeDescriptorSets = {
-				vk::WriteDescriptorSet(m_descriptorSets[i].get(), 0, 0, 1, vk::DescriptorType::eUniformBuffer, nullptr, &descriptorBufferInfo), // binding = 0
-				vk::WriteDescriptorSet(m_descriptorSets[i].get(), 1, 0, 1, vk::DescriptorType::eCombinedImageSampler, &imageInfo, nullptr) // binding = 1
-			};
-			g_device->Get().updateDescriptorSets(static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
-		}
-
-		m_renderPass->BindDescriptorSets(vk_utils::remove_unique(m_descriptorSets));
+		m_descriptors = m_renderPass->CreateDescriptorSets(vk_utils::get_all(m_uniformBuffers), m_texture->GetImageView(), m_sampler.get());
+		
+		m_renderPass->BindDescriptorSets(vk_utils::remove_unique(m_descriptors.descriptorSets));
 	}
 
 	// todo: extract reusable code from here and maybe move into a Image factory or something
@@ -150,21 +125,19 @@ protected:
 		uint32_t mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(texWidth, texHeight)))) + 1;
 
 		// Texture image
-		m_textureImage = std::make_unique<Image>(
+		m_texture = std::make_unique<Texture>(
 			texWidth, texHeight, 4UL, // R8G8B8A8, depth = 4
 			vk::Format::eR8G8B8A8Unorm,
 			vk::ImageTiling::eOptimal,
-			vk::ImageUsageFlagBits::eTransferSrc |
-				vk::ImageUsageFlagBits::eTransferDst | // src and dst for mipmaps blit
+			vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst | // src and dst for mipmaps blit
 				vk::ImageUsageFlagBits::eSampled,
 			vk::MemoryPropertyFlagBits::eDeviceLocal,
 			vk::ImageAspectFlagBits::eColor,
 			mipLevels
 		);
-		m_textureImage->CreateStagingBuffer();
 
 		// Copy image data to staging buffer
-		m_textureImage->Overwrite(
+		m_texture->Overwrite(
 			commandBuffer,
 			reinterpret_cast<const void*>(pixels),
 			vk::ImageLayout::eShaderReadOnlyOptimal // dstImageLayout
@@ -189,7 +162,7 @@ protected:
 			false, // compareEnable
 			vk::CompareOp::eAlways, // compareOp
 			0.0f, // minLod
-			static_cast<float>(m_textureImage->GetMipLevels()), // maxLod
+			static_cast<float>(m_texture->GetMipLevels()), // maxLod
 			vk::BorderColor::eIntOpaqueBlack, // borderColor
 			false // unnormalizedCoordinates
 		));
@@ -281,11 +254,10 @@ private:
 	std::unique_ptr<BufferWithStaging> m_indexBuffer{ nullptr };
 	std::vector<Buffer> m_uniformBuffers; // one per image since these change every frame
 
-	std::unique_ptr<Image> m_textureImage{ nullptr };
+	std::unique_ptr<Texture> m_texture{ nullptr };
 	vk::UniqueSampler m_sampler;
 
-	vk::UniqueDescriptorPool m_descriptorPool;
-	std::vector<vk::UniqueDescriptorSet> m_descriptorSets;
+	RenderPass::Descriptors m_descriptors;
 
 	// Model data
 	std::vector<Vertex> m_vertices;

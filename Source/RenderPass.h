@@ -14,6 +14,7 @@
 #include <glm/gtx/hash.hpp>
 
 #include <vector>
+#include <utility>
 
 struct UniformBufferObject {
 	glm::mat4 model;
@@ -48,6 +49,7 @@ namespace std {
 class RenderPass
 {
 public:
+	// todo: does not require the whole swapchain, only the number of images + depth images
 	RenderPass(const Swapchain& swapchain);
 
 	void PopulateRenderCommands(vk::CommandBuffer commandBuffer, uint32_t imageIndex) const;
@@ -55,6 +57,26 @@ public:
 	size_t GetFrameBufferCount() const { return m_framebuffers.size(); }
 
 	vk::DescriptorSetLayout GetDescriptorSetLayout() const { return m_descriptorSetLayout.get(); }
+
+	struct Descriptors
+	{
+		Descriptors() = default;
+		Descriptors(Descriptors&&) = default;
+		Descriptors& operator=(Descriptors&&) = default;
+
+		~Descriptors()
+		{
+			// Clear descriptor sets before descriptor pool
+			descriptorSets.clear();
+			descriptorPool.reset();
+		}
+
+		// todo: all descriptor sets could possibly use the same pool
+		vk::UniqueDescriptorPool descriptorPool;
+		std::vector<vk::UniqueDescriptorSet> descriptorSets;
+	};
+
+	Descriptors CreateDescriptorSets(std::vector<vk::Buffer> uniformBuffers, vk::ImageView textureImageView, vk::Sampler textureSampler);
 
 	void BindVertexBuffer(vk::Buffer buffer) { m_vertexBuffer = buffer; }
 	void BindIndexBuffer(vk::Buffer buffer, size_t nbIndices) { m_indexBuffer = buffer; m_nbIndices = nbIndices; }

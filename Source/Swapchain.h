@@ -12,6 +12,8 @@ class PhysicalDevice;
 class Swapchain
 {
 public:
+	using value_type = vk::SwapchainKHR;
+
 	Swapchain(
 		vk::SurfaceKHR surface,
 		vk::Extent2D desiredExtent
@@ -33,8 +35,7 @@ public:
 
 	vk::ImageView GetDepthImageView() const { return m_depthImage->GetImageView(); }
 
-	vk::SwapchainKHR Get() { return m_swapchain.get(); }
-	vk::SwapchainKHR Get() const { return m_swapchain.get(); }
+	value_type Get() const { return m_swapchain.get(); }
 
 private:
 	void CreateImageViews();

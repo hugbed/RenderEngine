@@ -11,6 +11,8 @@
 class PhysicalDevice
 {
 public:
+	using value_type = vk::PhysicalDevice;
+
 	// Singleton
 	static void Init(vk::Instance instance, vk::SurfaceKHR surface);
 	static void Term();
@@ -45,7 +47,7 @@ public:
 
 	vk::Format FindSupportedFormat(const std::vector<vk::Format>& candidates, vk::ImageTiling tiling, vk::FormatFeatureFlags features) const;
 
-	vk::PhysicalDevice Get() const { return m_physicalDevice; }
+	value_type Get() const { return m_physicalDevice; }
 
 protected:
 	vk::PhysicalDevice PickPhysicalDevice();

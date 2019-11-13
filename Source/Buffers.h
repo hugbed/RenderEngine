@@ -10,6 +10,8 @@
 class Buffer
 {
 public:
+	using value_type = vk::Buffer;
+
 	Buffer(size_t size, vk::BufferUsageFlags bufferUsage, vk::MemoryPropertyFlags memoryProperties)
 		: m_size(size)
 	{
@@ -36,7 +38,7 @@ public:
 		g_device->Get().unmapMemory(m_deviceMemory.get());
 	}
 
-	vk::Buffer Get() const { return m_buffer.get(); }
+	value_type Get() const { return m_buffer.get(); }
 	vk::DeviceMemory GetMemory() const { return m_deviceMemory.get(); }
 	size_t size() const { return m_size; }
 

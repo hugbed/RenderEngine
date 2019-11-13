@@ -270,6 +270,38 @@ RenderPass::RenderPass(const Swapchain& swapchain)
 	}
 }
 
+RenderPass::Descriptors RenderPass::CreateDescriptorSets(std::vector<vk::Buffer> uniformBuffers, vk::ImageView textureImageView, vk::Sampler textureSampler)
+{
+	Descriptors descriptors;
+
+	std::array<vk::DescriptorPoolSize, 2> poolSizes = {
+		vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, m_framebuffers.size()),
+		vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, m_framebuffers.size()),
+	};
+	descriptors.descriptorPool = g_device->Get().createDescriptorPoolUnique(vk::DescriptorPoolCreateInfo(
+		vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
+		m_framebuffers.size(),
+		static_cast<uint32_t>(poolSizes.size()), poolSizes.data()
+	));
+
+	std::vector<vk::DescriptorSetLayout> layouts(m_framebuffers.size(), m_descriptorSetLayout.get());
+	descriptors.descriptorSets = g_device->Get().allocateDescriptorSetsUnique(vk::DescriptorSetAllocateInfo(
+		descriptors.descriptorPool.get(), m_framebuffers.size(), layouts.data()
+	));
+	for (uint32_t i = 0; i < m_framebuffers.size(); ++i)
+	{
+		vk::DescriptorBufferInfo descriptorBufferInfo(uniformBuffers[i], 0, sizeof(UniformBufferObject));
+		vk::DescriptorImageInfo imageInfo(textureSampler, textureImageView, vk::ImageLayout::eShaderReadOnlyOptimal);
+		std::array<vk::WriteDescriptorSet, 2> writeDescriptorSets = {
+			vk::WriteDescriptorSet(descriptors.descriptorSets[i].get(), 0, 0, 1, vk::DescriptorType::eUniformBuffer, nullptr, &descriptorBufferInfo), // binding = 0
+			vk::WriteDescriptorSet(descriptors.descriptorSets[i].get(), 1, 0, 1, vk::DescriptorType::eCombinedImageSampler, &imageInfo, nullptr) // binding = 1
+		};
+		g_device->Get().updateDescriptorSets(static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
+	}
+
+	return descriptors;
+}
+
 void RenderPass::PopulateRenderCommands(vk::CommandBuffer commandBuffer, uint32_t imageIndex) const
 {
 	if (!m_indexBuffer || !m_vertexBuffer || m_descriptorSets.empty())
