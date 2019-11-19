@@ -34,7 +34,9 @@ public:
 	{
 		void* data;
 		g_device->Get().mapMemory(m_deviceMemory.get(), 0, m_size, {}, &data);
-		memcpy(data, dataToCopy, m_size);
+		{
+			memcpy(data, dataToCopy, m_size);
+		}
 		g_device->Get().unmapMemory(m_deviceMemory.get());
 	}
 
@@ -69,7 +71,9 @@ public:
 		// Copy data to staging buffer
 		void* data;
 		g_device->Get().mapMemory(m_stagingBuffer.GetMemory(), 0, m_stagingBuffer.size(), {}, &data);
-		memcpy(data, dataToCopy, m_stagingBuffer.size());
+		{
+			memcpy(data, dataToCopy, m_stagingBuffer.size());
+		}
 		g_device->Get().unmapMemory(m_stagingBuffer.GetMemory());
 
 		// Copy staging buffer to buffer

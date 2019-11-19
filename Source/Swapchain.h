@@ -33,6 +33,8 @@ public:
 		return imageViews;
 	}
 
+	vk::ImageView GetColorImageView() const { return m_colorImage->GetImageView(); }
+
 	vk::ImageView GetDepthImageView() const { return m_depthImage->GetImageView(); }
 
 	value_type Get() const { return m_swapchain.get(); }
@@ -51,4 +53,5 @@ private:
 
 	// Depth buffer
 	std::unique_ptr<Image> m_depthImage;
+	std::unique_ptr<Image> m_colorImage;
 };

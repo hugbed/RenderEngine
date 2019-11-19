@@ -24,6 +24,7 @@ PhysicalDevice::PhysicalDevice(vk::Instance instance, vk::SurfaceKHR surface)
 {
 	m_physicalDevice = PickPhysicalDevice();
 	m_indices = FindQueueFamilies(m_physicalDevice);
+	m_msaaSamples = GetMaxUsableSampleCount();
 }
 
 vk::PhysicalDevice PhysicalDevice::PickPhysicalDevice()
@@ -162,4 +163,20 @@ vk::Format PhysicalDevice::FindSupportedFormat(const std::vector<vk::Format>& ca
 
 	throw std::runtime_error("Failed to find supported format");
 	return {};
+}
+
+vk::SampleCountFlagBits PhysicalDevice::GetMaxUsableSampleCount() const
+{
+	auto properties = m_physicalDevice.getProperties();
+
+	vk::SampleCountFlags counts = properties.limits.framebufferColorSampleCounts & properties.limits.framebufferDepthSampleCounts;
+
+	if (counts & vk::SampleCountFlagBits::e64) { return vk::SampleCountFlagBits::e64; }
+	if (counts & vk::SampleCountFlagBits::e32) { return vk::SampleCountFlagBits::e32; }
+	if (counts & vk::SampleCountFlagBits::e16) { return vk::SampleCountFlagBits::e16; }
+	if (counts & vk::SampleCountFlagBits::e8) { return vk::SampleCountFlagBits::e8; }
+	if (counts & vk::SampleCountFlagBits::e4) { return vk::SampleCountFlagBits::e4; }
+	if (counts & vk::SampleCountFlagBits::e2) { return vk::SampleCountFlagBits::e2; }
+
+	return vk::SampleCountFlagBits::e1;
 }

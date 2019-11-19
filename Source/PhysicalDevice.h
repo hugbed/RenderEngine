@@ -47,6 +47,10 @@ public:
 
 	vk::Format FindSupportedFormat(const std::vector<vk::Format>& candidates, vk::ImageTiling tiling, vk::FormatFeatureFlags features) const;
 
+	vk::SampleCountFlagBits GetMaxUsableSampleCount() const;
+
+	vk::SampleCountFlagBits GetMsaaSamples() { return m_msaaSamples; }
+
 	value_type Get() const { return m_physicalDevice; }
 
 protected:
@@ -65,7 +69,7 @@ private:
 	vk::Instance m_instance;
 	vk::SurfaceKHR m_surface;
 	vk::PhysicalDevice m_physicalDevice;
-
+	vk::SampleCountFlagBits m_msaaSamples;
 	QueueFamilyIndices m_indices;
 };
 

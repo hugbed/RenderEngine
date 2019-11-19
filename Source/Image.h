@@ -18,7 +18,8 @@ public:
 		vk::ImageUsageFlags usage,
 		vk::MemoryPropertyFlags properties,
 		vk::ImageAspectFlags aspectFlags,
-		uint32_t mipLevels = 1
+		uint32_t mipLevels = 1,
+		vk::SampleCountFlagBits nbSamples = vk::SampleCountFlagBits::e1
 	);
 
 	vk::ImageView GetImageView() const { return m_imageView.get(); }
@@ -30,7 +31,7 @@ public:
 protected:
 	void TransitionLayout(vk::CommandBuffer& commandBuffer, vk::ImageLayout newLayout);
 
-	void CreateImage(vk::ImageTiling tiling, vk::ImageUsageFlags usage);
+	void CreateImage(vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::SampleCountFlagBits nbSamples);
 	void InitImageMemory(vk::MemoryPropertyFlags properties);
 	void CreateImageView(vk::ImageAspectFlags aspectFlags);
 
