@@ -104,7 +104,21 @@ Swapchain::Swapchain(vk::SurfaceKHR surface, vk::Extent2D desiredExtent)
 		vk::ImageTiling::eOptimal,
 		vk::ImageUsageFlagBits::eDepthStencilAttachment,
 		vk::MemoryPropertyFlagBits::eDeviceLocal,
-		vk::ImageAspectFlagBits::eDepth
+		vk::ImageAspectFlagBits::eDepth,
+		1, // mipMapLevels
+		g_physicalDevice->GetMsaaSamples()
+	);
+
+	// Color image
+	m_colorImage = std::make_unique<Image>(
+		m_imageExtent.width, m_imageExtent.height, 4UL,
+		m_imageFormat,
+		vk::ImageTiling::eOptimal,
+		vk::ImageUsageFlagBits::eTransientAttachment | vk::ImageUsageFlagBits::eColorAttachment,
+		vk::MemoryPropertyFlagBits::eDeviceLocal,
+		vk::ImageAspectFlagBits::eColor,
+		1, // mipMapLevels
+		g_physicalDevice->GetMsaaSamples()
 	);
 }
 

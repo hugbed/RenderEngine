@@ -4,8 +4,6 @@
 
 #include <vulkan/vulkan.hpp>
 
-#include <vector>
-
 class SynchronizationPrimitives
 {
 public:

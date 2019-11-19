@@ -119,6 +119,7 @@ RenderPass::RenderPass(const Swapchain& swapchain)
 	vk::PipelineMultisampleStateCreateInfo multisampling;
 	multisampling.sampleShadingEnable = VK_FALSE;
 	multisampling.minSampleShading = 1.0f;
+	multisampling.rasterizationSamples = g_physicalDevice->GetMsaaSamples();
 
 	vk::PipelineColorBlendAttachmentState colorBlendAttachment(
 		false // blendEnable
@@ -165,13 +166,13 @@ RenderPass::RenderPass(const Swapchain& swapchain)
 	vk::AttachmentDescription colorAttachment(
 		vk::AttachmentDescriptionFlags(),
 		imageFormat,
-		vk::SampleCountFlagBits::e1,
+		g_physicalDevice->GetMsaaSamples(),
 		vk::AttachmentLoadOp::eClear,
 		vk::AttachmentStoreOp::eStore,
 		vk::AttachmentLoadOp::eDontCare, // stencilLoadOp
 		vk::AttachmentStoreOp::eDontCare, // stencilStoreOp
 		vk::ImageLayout::eUndefined, // initialLayout
-		vk::ImageLayout::ePresentSrcKHR	// finalLayout
+		vk::ImageLayout::eColorAttachmentOptimal // finalLayout
 	);
 	vk::AttachmentReference colorAttachmentRef(
 		0, vk::ImageLayout::eColorAttachmentOptimal
@@ -180,7 +181,7 @@ RenderPass::RenderPass(const Swapchain& swapchain)
 	vk::AttachmentDescription depthAttachment(
 		vk::AttachmentDescriptionFlags(),
 		g_physicalDevice->FindDepthFormat(),
-		vk::SampleCountFlagBits::e1,
+		g_physicalDevice->GetMsaaSamples(),
 		vk::AttachmentLoadOp::eClear,
 		vk::AttachmentStoreOp::eDontCare,
 		vk::AttachmentLoadOp::eDontCare, // stencilLoadOp
@@ -192,17 +193,32 @@ RenderPass::RenderPass(const Swapchain& swapchain)
 		1, vk::ImageLayout::eDepthStencilAttachmentOptimal
 	);
 
+	vk::AttachmentDescription colorAttachmentResolve(
+		vk::AttachmentDescriptionFlags(),
+		imageFormat,
+		vk::SampleCountFlagBits::e1,
+		vk::AttachmentLoadOp::eDontCare,
+		vk::AttachmentStoreOp::eStore,
+		vk::AttachmentLoadOp::eDontCare, // stencilLoadOp
+		vk::AttachmentStoreOp::eDontCare, // stencilStoreOp
+		vk::ImageLayout::eUndefined, // initialLayout
+		vk::ImageLayout::ePresentSrcKHR	// finalLayout
+	);
+	vk::AttachmentReference colorAttachmentResolveRef(
+		2, vk::ImageLayout::eColorAttachmentOptimal
+	);
+
 	vk::SubpassDescription subpass(
 		vk::SubpassDescriptionFlags(),
 		vk::PipelineBindPoint::eGraphics,
 		0, nullptr, // input attachments
 		1, &colorAttachmentRef,
-		nullptr, // pResolveAttachment
+		&colorAttachmentResolveRef,
 		&depthAttachmentRef
 	);
 
-	std::array<vk::AttachmentDescription, 2 > attachmentDescriptions = {
-		colorAttachment, depthAttachment
+	std::array<vk::AttachmentDescription, 3 > attachmentDescriptions = {
+		colorAttachment, depthAttachment, colorAttachmentResolve
 	};
 
 	vk::RenderPassCreateInfo renderPassCreateInfo(
@@ -248,14 +264,16 @@ RenderPass::RenderPass(const Swapchain& swapchain)
 	m_framebuffers.clear();
 	m_framebuffers.reserve(swapchain.GetImageCount());
 
-	auto imageViews = swapchain.GetImageViews();
+	auto colorImageView = swapchain.GetColorImageView();
 	auto depthImageView = swapchain.GetDepthImageView();
+	auto imageViews = swapchain.GetImageViews();
 
 	for (size_t i = 0; i < imageViews.size(); i++)
 	{
-		std::array<vk::ImageView, 2> attachments = {
-			imageViews[i],
-			depthImageView
+		std::array<vk::ImageView, 3> attachments = {
+			colorImageView,
+			depthImageView,
+			imageViews[i]
 		};
 
 		vk::FramebufferCreateInfo frameBufferInfo(

@@ -62,7 +62,12 @@ public:
 	{
 		Descriptors() = default;
 		Descriptors(Descriptors&&) = default;
-		Descriptors& operator=(Descriptors&&) = default;
+		Descriptors& operator=(Descriptors&& other)
+		{
+			descriptorSets = std::move(other).descriptorSets;
+			descriptorPool = std::move(other).descriptorPool;
+			return *this;
+		}
 
 		~Descriptors()
 		{
@@ -71,9 +76,9 @@ public:
 			descriptorPool.reset();
 		}
 
-		// todo: all descriptor sets could possibly use the same pool
-		vk::UniqueDescriptorPool descriptorPool;
+		// todo: descriptor sets could possibly use the same pool
 		std::vector<vk::UniqueDescriptorSet> descriptorSets;
+		vk::UniqueDescriptorPool descriptorPool;
 	};
 
 	Descriptors CreateDescriptorSets(std::vector<vk::Buffer> uniformBuffers, vk::ImageView textureImageView, vk::Sampler textureSampler);

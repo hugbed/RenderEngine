@@ -9,18 +9,19 @@ Image::Image(
 	vk::ImageUsageFlags usage,
 	vk::MemoryPropertyFlags properties,
 	vk::ImageAspectFlags aspectFlags,
-	uint32_t mipLevels
+	uint32_t mipLevels,
+	vk::SampleCountFlagBits nbSamples
 )
 	: m_format(format)
 	, m_mipLevels(mipLevels)
 	, m_extent(static_cast<uint32_t>(width), static_cast<uint32_t>(height), 1)
 {
-	CreateImage(tiling, usage);
+	CreateImage(tiling, usage, nbSamples);
 	InitImageMemory(properties);
 	CreateImageView(aspectFlags);
 }
 
-void Image::CreateImage(vk::ImageTiling tiling, vk::ImageUsageFlags usage)
+void Image::CreateImage(vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::SampleCountFlagBits nbSamples)
 {
 	uint32_t queueFamilies[] = { g_physicalDevice->GetQueueFamilies().graphicsFamily.value() };
 	vk::ImageCreateInfo imageInfo(
@@ -30,7 +31,7 @@ void Image::CreateImage(vk::ImageTiling tiling, vk::ImageUsageFlags usage)
 		m_extent,
 		m_mipLevels, // mipLevels
 		1, // layerCount
-		vk::SampleCountFlagBits::e1,
+		nbSamples,
 		tiling,
 		usage,
 		vk::SharingMode::eExclusive,

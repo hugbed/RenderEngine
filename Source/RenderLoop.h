@@ -48,5 +48,6 @@ protected:
 	CommandBuffers m_renderCommandBuffers;
 	CommandBuffers m_uploadCommandBuffers;
 
+	// This could be retrieved from a pool
 	SynchronizationPrimitives syncPrimitives;
 };

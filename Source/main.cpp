@@ -41,8 +41,8 @@ public:
 	using RenderLoop::Init;
 
 protected:
-	const std::string kModelPath = "chalet.obj";
-	const std::string kTexturePath = "chalet.jpg";
+	const std::string kModelPath = "donut.obj";
+	const std::string kTexturePath = "donut.png";
 
 	void Init(vk::CommandBuffer& commandBuffer) override
 	{
@@ -70,6 +70,9 @@ protected:
 		// Recreate everything that depends on the number of images
 		CreateUniformBuffers();
 		CreateDescriptorSets();
+
+		m_renderPass->BindVertexBuffer(m_vertexBuffer->Get());
+		m_renderPass->BindIndexBuffer(m_indexBuffer->Get(), m_indices.size());
 
 		RecordRenderPassCommands(commandBuffers);
 	}
@@ -189,13 +192,13 @@ protected:
 			{
 				Vertex vertex = {};
 				vertex.pos = {
-					attrib.vertices[3 * index.vertex_index + 0],
-					attrib.vertices[3 * index.vertex_index + 1],
-					attrib.vertices[3 * index.vertex_index + 2]
+					attrib.vertices[3UL * index.vertex_index + 0],
+					attrib.vertices[3UL * index.vertex_index + 1],
+					attrib.vertices[3UL * index.vertex_index + 2]
 				};
 				vertex.texCoord = {
-					attrib.texcoords[2 * index.texcoord_index + 0],
-					1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
+					attrib.texcoords[2UL * index.texcoord_index + 0],
+					1.0f - attrib.texcoords[2UL * index.texcoord_index + 1]
 				};
 				vertex.color = { 1.0f, 1.0f, 1.0f };
 
@@ -238,7 +241,7 @@ protected:
 
 		UniformBufferObject ubo = {};
 		ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(30.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-		ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+		ubo.view = glm::lookAt(0.25f * glm::vec3(1.0f, 1.0f, 1.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
 		ubo.proj = glm::perspective(glm::radians(45.0f), extent.width / (float)extent.height, 0.1f, 10.0f);
 
 		ubo.proj[1][1] *= -1; // inverse Y for OpenGL -> Vulkan (clip coordinates)
