@@ -24,7 +24,7 @@ public:
 	vk::Extent2D GetImageExtent() const { return m_imageExtent; }
 
 	uint32_t GetImageCount() const { return m_images.size(); }
-	
+
 	std::vector<vk::ImageView> GetImageViews() const
 	{
 		std::vector<vk::ImageView> imageViews;

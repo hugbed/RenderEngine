@@ -7,7 +7,7 @@
 #include <vulkan/vulkan.hpp>
 
 class Swapchain;
-class RenderPass;
+class GraphicsPipeline;
 
 // BaseApp:
 //   1) Initialize resources
@@ -30,7 +30,7 @@ public:
 
 protected:
 	virtual void Init(vk::CommandBuffer& commandBuffer) = 0;
-	virtual void OnSwapchainRecreated(CommandBuffers& commandBuffers) = 0;
+	virtual void OnSwapchainRecreated(CommandBufferPool& commandBuffers) = 0;
 	virtual void UpdateImageResources(uint32_t imageIndex) = 0;
 
 	static void OnResize(void* data, int w, int h);
@@ -39,15 +39,14 @@ protected:
 
 	void RecreateSwapchain();
 
-	vk::Extent2D extent;
-	Window& window;
-	bool frameBufferResized{ false };
-	vk::SurfaceKHR surface;
+	Window& m_window;
+	bool m_frameBufferResized{ false };
+	vk::SurfaceKHR m_surface;
 
-	std::unique_ptr<Swapchain> swapchain;
-	CommandBuffers m_renderCommandBuffers;
-	CommandBuffers m_uploadCommandBuffers;
+	std::unique_ptr<Swapchain> m_swapchain;
+	CommandBufferPool m_renderCommandBuffers;
+	CommandBufferPool m_uploadCommandBuffers;
 
 	// This could be retrieved from a pool
-	SynchronizationPrimitives syncPrimitives;
+	SynchronizationPrimitives m_syncPrimitives;
 };
