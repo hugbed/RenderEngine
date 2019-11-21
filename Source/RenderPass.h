@@ -86,6 +86,7 @@ public:
 	void BindVertexBuffer(vk::Buffer buffer) { m_vertexBuffer = buffer; }
 	void BindIndexBuffer(vk::Buffer buffer, size_t nbIndices) { m_indexBuffer = buffer; m_nbIndices = nbIndices; }
 	void BindDescriptorSets(std::vector<vk::DescriptorSet> descriptorSets) { m_descriptorSets = std::move(descriptorSets); }
+	void BindVertexOffsets(VkDeviceSize* vertexOffsets) { m_vertexOffsets = vertexOffsets; }
 
 private:
 	vk::Extent2D m_imageExtent;
@@ -101,5 +102,6 @@ private:
 	size_t m_nbIndices{ 0 };
 	vk::Buffer m_vertexBuffer{ nullptr };
 	vk::Buffer m_indexBuffer{ nullptr };
+	VkDeviceSize* m_vertexOffsets{ nullptr };
 	std::vector<vk::DescriptorSet> m_descriptorSets;
 };

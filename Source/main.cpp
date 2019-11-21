@@ -55,6 +55,7 @@ protected:
 
 		// Bind other shader variables
 		m_renderPass->BindIndexBuffer(m_indexBuffer->Get(), m_indices.size());
+		m_renderPass->BindVertexOffsets(m_vertexOffsets.data());
 		m_renderPass->BindVertexBuffer(m_vertexBuffer->Get());
 
 		RecordRenderPassCommands(m_renderCommandBuffers);
@@ -72,6 +73,7 @@ protected:
 		CreateDescriptorSets();
 
 		m_renderPass->BindVertexBuffer(m_vertexBuffer->Get());
+		m_renderPass->BindVertexOffsets(m_vertexOffsets.data());
 		m_renderPass->BindIndexBuffer(m_indexBuffer->Get(), m_indices.size());
 
 		RecordRenderPassCommands(commandBuffers);
@@ -186,8 +188,12 @@ protected:
 		
 		std::unordered_map<Vertex, uint32_t> uniqueVertices;
 
+		m_vertexOffsets.reserve(shapes.size());
+
 		for (const auto& shape : shapes)
 		{
+			m_vertexOffsets.push_back(m_indices.size());
+
 			for (const auto& index : shape.mesh.indices)
 			{
 				Vertex vertex = {};
@@ -265,6 +271,7 @@ private:
 	// Model data
 	std::vector<Vertex> m_vertices;
 	std::vector<uint32_t> m_indices;
+	std::vector<uint64_t> m_vertexOffsets; // 1 big vertex buffer for now
 };
 
 int main()
