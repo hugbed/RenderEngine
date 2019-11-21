@@ -322,7 +322,7 @@ RenderPass::Descriptors RenderPass::CreateDescriptorSets(std::vector<vk::Buffer>
 
 void RenderPass::PopulateRenderCommands(vk::CommandBuffer commandBuffer, uint32_t imageIndex) const
 {
-	if (!m_indexBuffer || !m_vertexBuffer || m_descriptorSets.empty())
+	if (!m_indexBuffer || !m_vertexBuffer || m_descriptorSets.empty() || m_vertexOffsets == nullptr)
 		return; // nothing to draw
 
 	std::array<vk::ClearValue, 2> clearValues = {
@@ -342,9 +342,8 @@ void RenderPass::PopulateRenderCommands(vk::CommandBuffer commandBuffer, uint32_
 
 		commandBuffer.bindIndexBuffer(m_indexBuffer, 0, vk::IndexType::eUint32);
 		
-		VkDeviceSize offsets[] = { 0 };
 		vk::Buffer vertexBuffers[] = { m_vertexBuffer };
-		commandBuffer.bindVertexBuffers(0, 1, vertexBuffers, offsets);
+		commandBuffer.bindVertexBuffers(0, 1, vertexBuffers, m_vertexOffsets);
 
 		commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pipelineLayout.get(), 0, 1, &m_descriptorSets[imageIndex], 0, nullptr);
 
