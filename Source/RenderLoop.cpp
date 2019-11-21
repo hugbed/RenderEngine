@@ -1,16 +1,17 @@
 #include "RenderLoop.h"
 
 #include "Swapchain.h"
-#include "RenderPass.h"
+#include "GraphicsPipeline.h"
+#include "Device.h"
+#include "PhysicalDevice.h"
 
 RenderLoop::RenderLoop(vk::SurfaceKHR surface, vk::Extent2D extent, Window& window)
-	: window(window)
-	, surface(surface)
-	, extent(extent)
-	, swapchain(std::make_unique<Swapchain>(surface, extent))
-	, m_renderCommandBuffers(swapchain->GetImageCount(), g_physicalDevice->GetQueueFamilies().graphicsFamily.value())
+	: m_window(window)
+	, m_surface(surface)
+	, m_swapchain(std::make_unique<Swapchain>(surface, extent))
+	, m_renderCommandBuffers(m_swapchain->GetImageCount(), g_physicalDevice->GetQueueFamilies().graphicsFamily.value())
 	, m_uploadCommandBuffers(1, g_physicalDevice->GetQueueFamilies().graphicsFamily.value(), vk::CommandPoolCreateFlagBits::eTransient)
-	, syncPrimitives(swapchain->GetImageCount(), kMaxFramesInFlight)
+	, m_syncPrimitives(m_swapchain->GetImageCount(), kMaxFramesInFlight)
 {
 	window.SetWindowResizeCallback(reinterpret_cast<void*>(this), OnResize);
 }
@@ -23,9 +24,9 @@ void RenderLoop::Init()
 
 void RenderLoop::Run()
 {
-	while (window.ShouldClose() == false)
+	while (m_window.ShouldClose() == false)
 	{
-		window.PollEvents();
+		m_window.PollEvents();
 		Render();
 	}
 	vkDeviceWaitIdle(g_device->Get());
@@ -34,17 +35,17 @@ void RenderLoop::Run()
 void RenderLoop::OnResize(void* data, int w, int h)
 {
 	auto app = reinterpret_cast<RenderLoop*>(data);
-	app->frameBufferResized = true;
+	app->m_frameBufferResized = true;
 }
 
 void RenderLoop::Render()
 {
-	auto frameFence = syncPrimitives.WaitForFrame();
+	auto frameFence = m_syncPrimitives.WaitForFrame();
 
 	auto [result, imageIndex] = g_device->Get().acquireNextImageKHR(
-		swapchain->Get(),
+		m_swapchain->Get(),
 		UINT64_MAX, // max timeout
-		syncPrimitives.GetImageAvailableSemaphore(),
+		m_syncPrimitives.GetImageAvailableSemaphore(),
 		nullptr
 	);
 	if (result == vk::Result::eErrorOutOfDateKHR) // todo: this one will throw
@@ -55,12 +56,12 @@ void RenderLoop::Render()
 
 	UpdateImageResources(imageIndex);
 
-	syncPrimitives.WaitUntilImageIsAvailable(imageIndex);
+	m_syncPrimitives.WaitUntilImageIsAvailable(imageIndex);
 
 	// Submit command buffer on graphics queue
-	vk::Semaphore imageAvailableSemaphores[] = { syncPrimitives.GetImageAvailableSemaphore() };
+	vk::Semaphore imageAvailableSemaphores[] = { m_syncPrimitives.GetImageAvailableSemaphore() };
 	vk::PipelineStageFlags waitStages[] = { vk::PipelineStageFlagBits::eColorAttachmentOutput };
-	vk::Semaphore renderFinishedSemaphores[] = { syncPrimitives.GetRenderFinishedSemaphore() };
+	vk::Semaphore renderFinishedSemaphores[] = { m_syncPrimitives.GetRenderFinishedSemaphore() };
 	vk::SubmitInfo submitInfo(
 		1, imageAvailableSemaphores,
 		waitStages,
@@ -75,7 +76,7 @@ void RenderLoop::Render()
 	presentInfo.waitSemaphoreCount = 1;
 	presentInfo.pWaitSemaphores = renderFinishedSemaphores;
 
-	vk::SwapchainKHR swapChains[] = { swapchain->Get() };
+	vk::SwapchainKHR swapChains[] = { m_swapchain->Get() };
 	presentInfo.swapchainCount = 1;
 	presentInfo.pSwapchains = swapChains;
 	presentInfo.pImageIndices = &imageIndex;
@@ -83,9 +84,9 @@ void RenderLoop::Render()
 	result = g_device->GetPresentQueue().presentKHR(presentInfo);
 	if (result == vk::Result::eSuboptimalKHR ||
 		result == vk::Result::eErrorOutOfDateKHR || // todo: this one will throw
-		frameBufferResized)
+		m_frameBufferResized)
 	{
-		frameBufferResized = false;
+		m_frameBufferResized = false;
 		RecreateSwapchain();
 		return;
 	}
@@ -94,29 +95,28 @@ void RenderLoop::Render()
 		throw std::runtime_error("Failed to acquire swapchain image");
 	}
 
-	syncPrimitives.MoveToNextFrame();
+	m_syncPrimitives.MoveToNextFrame();
 }
 
 void RenderLoop::RecreateSwapchain()
 {
-	extent = window.GetFramebufferSize();
+	vk::Extent2D extent = m_window.GetFramebufferSize();
 
 	// Wait if window is minimized
 	while (extent.width == 0 || extent.height == 0)
 	{
-		extent = window.GetFramebufferSize();
-		window.WaitForEvents();
+		extent = m_window.GetFramebufferSize();
+		m_window.WaitForEvents();
 	}
 
 	g_device->Get().waitIdle();
 
 	// Recreate swapchain and render pass
-	swapchain.reset();
+	m_swapchain.reset();
 
-	swapchain = std::make_unique<Swapchain>(surface, extent);
-	extent = swapchain->GetImageExtent();
+	m_swapchain = std::make_unique<Swapchain>(m_surface, extent);
 
-	m_renderCommandBuffers.Reset(swapchain->GetImageCount());
+	m_renderCommandBuffers.Reset(m_swapchain->GetImageCount());
 
 	OnSwapchainRecreated(m_renderCommandBuffers);
 }

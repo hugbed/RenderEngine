@@ -1,5 +1,8 @@
 #include "Texture.h"
 
+#include "Device.h"
+#include "PhysicalDevice.h"
+
 Texture::Texture(
 	uint32_t width, uint32_t height, uint32_t depth,
 	vk::Format format,

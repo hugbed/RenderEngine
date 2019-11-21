@@ -1,5 +1,6 @@
 #include "Image.h"
 
+#include "Device.h"
 #include "PhysicalDevice.h"
 
 Image::Image(

@@ -7,7 +7,10 @@
 #include "Device.h"
 #include "PhysicalDevice.h"
 #include "CommandBuffers.h"
+#include "Swapchain.h"
 #include "RenderPass.h"
+#include "Framebuffer.h"
+#include "GraphicsPipeline.h"
 #include "Image.h"
 #include "Texture.h"
 
@@ -34,7 +37,9 @@ class App : public RenderLoop
 public:
 	App(vk::SurfaceKHR surface, vk::Extent2D extent, Window& window)
 		: RenderLoop(surface, extent, window)
-		, m_renderPass(std::make_unique<RenderPass>(*swapchain))
+		, m_renderPass(std::make_unique<RenderPass>(m_swapchain->GetImageFormat()))
+		, m_framebuffers(Framebuffer::FromSwapchain(*m_swapchain, m_renderPass->Get()))
+		, m_graphicsPipeline(std::make_unique<GraphicsPipeline>(m_swapchain->GetImageExtent(), m_swapchain->GetImageFormat(), m_renderPass->Get()))
 	{
 	}
 
@@ -53,39 +58,51 @@ protected:
 		CreateSampler();
 		CreateDescriptorSets();
 
-		// Bind other shader variables
-		m_renderPass->BindIndexBuffer(m_indexBuffer->Get(), m_indices.size());
-		m_renderPass->BindVertexOffsets(m_vertexOffsets.data());
-		m_renderPass->BindVertexBuffer(m_vertexBuffer->Get());
-
 		RecordRenderPassCommands(m_renderCommandBuffers);
 	}
 
 	// Render pass commands are recorded once and executed every frame
-	void OnSwapchainRecreated(CommandBuffers& commandBuffers) override
+	void OnSwapchainRecreated(CommandBufferPool& commandBuffers) override
 	{
-		// Reset render pass that depends on the swapchain
-		m_renderPass.reset();
-		m_renderPass = std::make_unique<RenderPass>(*swapchain);
+		// Reset resources that depend on the swapchain images
+		m_renderPass = std::make_unique<RenderPass>(m_swapchain->GetImageFormat());
+		m_graphicsPipeline = std::make_unique<GraphicsPipeline>(
+			m_swapchain->GetImageExtent(), m_swapchain->GetImageFormat(),
+			m_renderPass->Get()
+		);
 
 		// Recreate everything that depends on the number of images
 		CreateUniformBuffers();
 		CreateDescriptorSets();
 
-		m_renderPass->BindVertexBuffer(m_vertexBuffer->Get());
-		m_renderPass->BindVertexOffsets(m_vertexOffsets.data());
-		m_renderPass->BindIndexBuffer(m_indexBuffer->Get(), m_indices.size());
-
 		RecordRenderPassCommands(commandBuffers);
 	}
 
-	void RecordRenderPassCommands(CommandBuffers& commandBuffers)
+	void RecordRenderPassCommands(CommandBufferPool& commandBuffers)
 	{
-		for (size_t i = 0; i < swapchain->GetImageCount(); i++)
+		std::array<vk::ClearValue, 2> clearValues = {
+			vk::ClearColorValue(std::array<float, 4>{ 0.0f, 0.0f, 0.0f, 1.0f }),
+			vk::ClearDepthStencilValue(1.0f, 0.0f)
+		};
+
+		for (size_t i = 0; i < m_swapchain->GetImageCount(); i++)
 		{
 			auto& commandBuffer = commandBuffers.Get(i);
 			commandBuffer.begin(vk::CommandBufferBeginInfo());
-			m_renderPass->PopulateRenderCommands(commandBuffer, i);
+			{
+				m_renderPass->Begin(commandBuffer, m_framebuffers[i], clearValues);
+				{
+					m_graphicsPipeline->Draw(
+						commandBuffer,
+						m_indices.size(),
+						m_vertexBuffer->Get(),
+						m_indexBuffer->Get(),
+						m_vertexOffsets.data(),
+						m_descriptors.descriptorSets[i].get()
+					);
+				}
+				commandBuffer.endRenderPass();
+			}
 			commandBuffer.end();
 		}
 	}
@@ -99,8 +116,8 @@ protected:
 	void CreateUniformBuffers()
 	{
 		m_uniformBuffers.clear();
-		m_uniformBuffers.reserve(swapchain->GetImageCount());
-		for (uint32_t i = 0; i < swapchain->GetImageCount(); ++i)
+		m_uniformBuffers.reserve(m_swapchain->GetImageCount());
+		for (uint32_t i = 0; i < m_swapchain->GetImageCount(); ++i)
 		{
 			m_uniformBuffers.emplace_back(
 				sizeof(UniformBufferObject),
@@ -112,9 +129,7 @@ protected:
 
 	void CreateDescriptorSets()
 	{
-		m_descriptors = m_renderPass->CreateDescriptorSets(vk_utils::get_all(m_uniformBuffers), m_texture->GetImageView(), m_sampler.get());
-		
-		m_renderPass->BindDescriptorSets(vk_utils::remove_unique(m_descriptors.descriptorSets));
+		m_descriptors = m_graphicsPipeline->CreateDescriptorSets(vk_utils::get_all(m_uniformBuffers), m_texture->GetImageView(), m_sampler.get());
 	}
 
 	// todo: extract reusable code from here and maybe move into a Image factory or something
@@ -231,14 +246,13 @@ protected:
 
 		m_indexBuffer->Overwrite(commandBuffer, reinterpret_cast<const void*>(m_indices.data()));
 		m_vertexBuffer->Overwrite(commandBuffer, reinterpret_cast<const void*>(m_vertices.data()));
-		
-		m_renderPass->BindVertexBuffer(m_vertexBuffer->Get());
-		m_renderPass->BindIndexBuffer(m_indexBuffer->Get(), m_indices.size());
 	}
 
 	void UpdateUniformBuffer(uint32_t imageIndex)
 	{
 		using namespace std::chrono;
+
+		vk::Extent2D extent = m_swapchain->GetImageExtent();
 
 		static auto startTime = high_resolution_clock::now();
 
@@ -258,6 +272,8 @@ protected:
 
 private:
 	std::unique_ptr<RenderPass> m_renderPass;
+	std::vector<Framebuffer> m_framebuffers;
+	std::unique_ptr<GraphicsPipeline> m_graphicsPipeline;
 
 	std::unique_ptr<BufferWithStaging> m_vertexBuffer{ nullptr };
 	std::unique_ptr<BufferWithStaging> m_indexBuffer{ nullptr };
@@ -266,12 +282,12 @@ private:
 	std::unique_ptr<Texture> m_texture{ nullptr };
 	vk::UniqueSampler m_sampler;
 
-	RenderPass::Descriptors m_descriptors;
+	GraphicsPipeline::Descriptors m_descriptors;
 
 	// Model data
 	std::vector<Vertex> m_vertices;
 	std::vector<uint32_t> m_indices;
-	std::vector<uint64_t> m_vertexOffsets; // 1 big vertex buffer for now
+	std::vector<vk::DeviceSize> m_vertexOffsets; // 1 big vertex buffer for now
 };
 
 int main()
