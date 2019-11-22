@@ -119,11 +119,7 @@ protected:
 		m_uniformBuffers.reserve(m_swapchain->GetImageCount());
 		for (uint32_t i = 0; i < m_swapchain->GetImageCount(); ++i)
 		{
-			m_uniformBuffers.emplace_back(
-				sizeof(UniformBufferObject),
-				vk::BufferUsageFlagBits::eUniformBuffer,
-				vk::MemoryPropertyFlagBits::eHostCoherent |
-					vk::MemoryPropertyFlagBits::eHostCoherent);
+			m_uniformBuffers.emplace_back(sizeof(UniformBufferObject));
 		}
 	}
 
@@ -235,17 +231,11 @@ protected:
 
 	void UploadAndBindGeometry(vk::CommandBuffer& commandBuffer)
 	{
-		m_vertexBuffer = std::make_unique<BufferWithStaging>(
-			sizeof(m_vertices[0]) * m_vertices.size(),
-			vk::BufferUsageFlagBits::eVertexBuffer
-		);
-		m_indexBuffer = std::make_unique<BufferWithStaging>(
-			sizeof(m_indices[0]) * m_indices.size(),
-			vk::BufferUsageFlagBits::eIndexBuffer
-		);
-
-		m_indexBuffer->Overwrite(commandBuffer, reinterpret_cast<const void*>(m_indices.data()));
+		m_vertexBuffer = std::make_unique<VertexBuffer>(sizeof(m_vertices[0]) * m_vertices.size());
 		m_vertexBuffer->Overwrite(commandBuffer, reinterpret_cast<const void*>(m_vertices.data()));
+
+		m_indexBuffer = std::make_unique<IndexBuffer>(sizeof(m_indices[0]) * m_indices.size());
+		m_indexBuffer->Overwrite(commandBuffer, reinterpret_cast<const void*>(m_indices.data()));
 	}
 
 	void UpdateUniformBuffer(uint32_t imageIndex)
@@ -275,9 +265,9 @@ private:
 	std::vector<Framebuffer> m_framebuffers;
 	std::unique_ptr<GraphicsPipeline> m_graphicsPipeline;
 
-	std::unique_ptr<BufferWithStaging> m_vertexBuffer{ nullptr };
-	std::unique_ptr<BufferWithStaging> m_indexBuffer{ nullptr };
-	std::vector<Buffer> m_uniformBuffers; // one per image since these change every frame
+	std::unique_ptr<VertexBuffer> m_vertexBuffer{ nullptr };
+	std::unique_ptr<IndexBuffer> m_indexBuffer{ nullptr };
+	std::vector<UniformBuffer> m_uniformBuffers; // one per image since these change every frame
 
 	std::unique_ptr<Texture> m_texture{ nullptr };
 	vk::UniqueSampler m_sampler;
