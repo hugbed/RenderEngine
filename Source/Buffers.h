@@ -44,6 +44,8 @@ private:
 class VertexBuffer : public BufferWithStaging
 {
 public:
+	using value_type = vk::Buffer;
+
 	VertexBuffer(size_t size)
 		: BufferWithStaging(size, vk::BufferUsageFlagBits::eVertexBuffer)
 	{}
@@ -57,7 +59,21 @@ private:
 class IndexBuffer : public BufferWithStaging
 {
 public:
+	using value_type = vk::Buffer;
+
 	IndexBuffer(size_t size)
 		: BufferWithStaging(size, vk::BufferUsageFlagBits::eIndexBuffer)
+	{}
+};
+
+class UniformBuffer : public Buffer
+{
+public:
+	using value_type = vk::Buffer;
+
+	UniformBuffer(size_t size)
+		: Buffer(size, vk::BufferUsageFlagBits::eUniformBuffer,
+			vk::MemoryPropertyFlagBits::eHostCoherent |
+			vk::MemoryPropertyFlagBits::eHostCoherent)
 	{}
 };
