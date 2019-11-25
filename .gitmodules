@@ -4,3 +4,6 @@
 [submodule "ThirdParty/glfw"]
 	path = ThirdParty/glfw
 	url = git@github.com:glfw/glfw.git
+[submodule "ThirdParty/SPIRV-Cross"]
+	path = ThirdParty/SPIRV-Cross
+	url = git@github.com:KhronosGroup/SPIRV-Cross.git

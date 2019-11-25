@@ -93,13 +93,13 @@ Swapchain::Swapchain(vk::SurfaceKHR surface, vk::Extent2D desiredExtent)
 
 	// Fetch images and image info
 	m_images = g_device->Get().getSwapchainImagesKHR(m_swapchain.get());
-	m_imageFormat = surfaceFormat.format;
-	m_imageExtent = imageExtent;
+	m_imageDescription.format = surfaceFormat.format;
+	m_imageDescription.extent = imageExtent;
 	CreateImageViews();
 
 	// Depth buffer
 	m_depthImage = std::make_unique<Image>(
-		m_imageExtent.width, m_imageExtent.height, 4UL,
+		m_imageDescription.extent.width, m_imageDescription.extent.height, 4UL,
 		g_physicalDevice->FindDepthFormat(),
 		vk::ImageTiling::eOptimal,
 		vk::ImageUsageFlagBits::eDepthStencilAttachment,
@@ -111,8 +111,8 @@ Swapchain::Swapchain(vk::SurfaceKHR surface, vk::Extent2D desiredExtent)
 
 	// Color image
 	m_colorImage = std::make_unique<Image>(
-		m_imageExtent.width, m_imageExtent.height, 4UL,
-		m_imageFormat,
+		m_imageDescription.extent.width, m_imageDescription.extent.height, 4UL,
+		m_imageDescription.format,
 		vk::ImageTiling::eOptimal,
 		vk::ImageUsageFlagBits::eTransientAttachment | vk::ImageUsageFlagBits::eColorAttachment,
 		vk::MemoryPropertyFlagBits::eDeviceLocal,
@@ -132,7 +132,7 @@ void Swapchain::CreateImageViews()
 			vk::ImageViewCreateFlags(),
 			m_images[i],
 			vk::ImageViewType::e2D,
-			m_imageFormat,
+			m_imageDescription.format,
 			vk::ComponentMapping(vk::ComponentSwizzle::eIdentity),
 			vk::ImageSubresourceRange(
 				vk::ImageAspectFlagBits::eColor,

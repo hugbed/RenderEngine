@@ -6,7 +6,13 @@
 
 #include <cstdint>
 
-struct Image
+struct ImageDescription
+{
+	vk::Extent2D extent;
+	vk::Format format;
+};
+
+class Image
 {
 public:
 	using value_type = vk::Image;

@@ -11,6 +11,7 @@
 #include "RenderPass.h"
 #include "Framebuffer.h"
 #include "GraphicsPipeline.h"
+#include "Shader.h"
 #include "Image.h"
 #include "Texture.h"
 
@@ -32,14 +33,41 @@
 #include <tiny_obj_loader.h>
 #include <unordered_map>
 
+struct UniformBufferObject {
+	glm::mat4 model;
+	glm::mat4 view;
+	glm::mat4 proj;
+};
+
+struct Vertex {
+	glm::vec3 pos;
+	glm::vec3 color;
+	glm::vec2 texCoord;
+
+	bool operator==(const Vertex& other) const
+	{
+		return pos == other.pos && color == other.color && texCoord == other.texCoord;
+	}
+};
+
+namespace std {
+	template<> struct hash<Vertex> {
+		size_t operator()(Vertex const& vertex) const {
+			return ((hash<glm::vec3>()(vertex.pos) ^
+				(hash<glm::vec3>()(vertex.color) << 1)) >> 1) ^
+				(hash<glm::vec2>()(vertex.texCoord) << 1);
+		}
+	};
+}
+
 class App : public RenderLoop
 {
 public:
 	App(vk::SurfaceKHR surface, vk::Extent2D extent, Window& window)
 		: RenderLoop(surface, extent, window)
-		, m_renderPass(std::make_unique<RenderPass>(m_swapchain->GetImageFormat()))
+		, m_renderPass(std::make_unique<RenderPass>(m_swapchain->GetImageDescription().format))
 		, m_framebuffers(Framebuffer::FromSwapchain(*m_swapchain, m_renderPass->Get()))
-		, m_graphicsPipeline(std::make_unique<GraphicsPipeline>(m_swapchain->GetImageExtent(), m_swapchain->GetImageFormat(), m_renderPass->Get()))
+		, m_graphicsPipeline(std::make_unique<GraphicsPipeline>(m_renderPass->Get(), m_swapchain->GetImageDescription().extent))
 	{
 	}
 
@@ -65,10 +93,9 @@ protected:
 	void OnSwapchainRecreated(CommandBufferPool& commandBuffers) override
 	{
 		// Reset resources that depend on the swapchain images
-		m_renderPass = std::make_unique<RenderPass>(m_swapchain->GetImageFormat());
+		m_renderPass = std::make_unique<RenderPass>(m_swapchain->GetImageDescription().format);
 		m_graphicsPipeline = std::make_unique<GraphicsPipeline>(
-			m_swapchain->GetImageExtent(), m_swapchain->GetImageFormat(),
-			m_renderPass->Get()
+			m_renderPass->Get(), m_swapchain->GetImageDescription().extent
 		);
 
 		// Recreate everything that depends on the number of images
@@ -125,7 +152,12 @@ protected:
 
 	void CreateDescriptorSets()
 	{
-		m_descriptors = m_graphicsPipeline->CreateDescriptorSets(vk_utils::get_all(m_uniformBuffers), m_texture->GetImageView(), m_sampler.get());
+		m_descriptors = m_graphicsPipeline->CreateDescriptorSets(
+			vk_utils::get_all(m_uniformBuffers),
+			sizeof(UniformBufferObject),
+			m_texture->GetImageView(),
+			m_sampler.get()
+		);
 	}
 
 	// todo: extract reusable code from here and maybe move into a Image factory or something
@@ -242,7 +274,7 @@ protected:
 	{
 		using namespace std::chrono;
 
-		vk::Extent2D extent = m_swapchain->GetImageExtent();
+		vk::Extent2D extent = m_swapchain->GetImageDescription().extent;
 
 		static auto startTime = high_resolution_clock::now();
 

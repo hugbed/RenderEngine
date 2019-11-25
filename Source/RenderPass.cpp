@@ -5,11 +5,11 @@
 
 #include "Framebuffer.h"
 
-RenderPass::RenderPass(vk::Format imageFormat)
+RenderPass::RenderPass(vk::Format colorAttachmentFormat)
 {
 	vk::AttachmentDescription colorAttachment(
 		vk::AttachmentDescriptionFlags(),
-		imageFormat,
+		colorAttachmentFormat,
 		g_physicalDevice->GetMsaaSamples(),
 		vk::AttachmentLoadOp::eClear,
 		vk::AttachmentStoreOp::eStore,
@@ -39,7 +39,7 @@ RenderPass::RenderPass(vk::Format imageFormat)
 
 	vk::AttachmentDescription colorAttachmentResolve(
 		vk::AttachmentDescriptionFlags(),
-		imageFormat,
+		colorAttachmentFormat,
 		vk::SampleCountFlagBits::e1,
 		vk::AttachmentLoadOp::eDontCare,
 		vk::AttachmentStoreOp::eStore,
