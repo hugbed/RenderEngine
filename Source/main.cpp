@@ -67,7 +67,13 @@ public:
 		: RenderLoop(surface, extent, window)
 		, m_renderPass(std::make_unique<RenderPass>(m_swapchain->GetImageDescription().format))
 		, m_framebuffers(Framebuffer::FromSwapchain(*m_swapchain, m_renderPass->Get()))
-		, m_graphicsPipeline(std::make_unique<GraphicsPipeline>(m_renderPass->Get(), m_swapchain->GetImageDescription().extent))
+		, m_vertexShader(std::make_unique<Shader>("vert.spv", "main"))
+		, m_fragmentShader(std::make_unique<Shader>("frag.spv", "main"))
+		, m_graphicsPipeline(
+			std::make_unique<GraphicsPipeline>(m_renderPass->Get(),
+			m_swapchain->GetImageDescription().extent,
+			*m_vertexShader,
+			*m_fragmentShader))
 	{
 	}
 
@@ -95,7 +101,8 @@ protected:
 		// Reset resources that depend on the swapchain images
 		m_renderPass = std::make_unique<RenderPass>(m_swapchain->GetImageDescription().format);
 		m_graphicsPipeline = std::make_unique<GraphicsPipeline>(
-			m_renderPass->Get(), m_swapchain->GetImageDescription().extent
+			m_renderPass->Get(), m_swapchain->GetImageDescription().extent,
+			*m_vertexShader, *m_fragmentShader
 		);
 
 		// Recreate everything that depends on the number of images
@@ -152,12 +159,19 @@ protected:
 
 	void CreateDescriptorSets()
 	{
-		m_descriptors = m_graphicsPipeline->CreateDescriptorSets(
-			vk_utils::get_all(m_uniformBuffers),
-			sizeof(UniformBufferObject),
-			m_texture->GetImageView(),
-			m_sampler.get()
-		);
+		m_descriptors = m_graphicsPipeline->CreateDescriptorSetPool(m_uniformBuffers.size());
+
+		// Update
+		for (uint32_t i = 0; i < m_uniformBuffers.size(); ++i)
+		{
+			vk::DescriptorBufferInfo descriptorBufferInfo(m_uniformBuffers[i].Get(), 0, sizeof(UniformBufferObject));
+			vk::DescriptorImageInfo imageInfo(m_sampler.get(), m_texture->GetImageView(), vk::ImageLayout::eShaderReadOnlyOptimal);
+			std::array<vk::WriteDescriptorSet, 2> writeDescriptorSets = {
+				vk::WriteDescriptorSet(m_descriptors.descriptorSets[i].get(), 0, 0, 1, vk::DescriptorType::eUniformBuffer, nullptr, &descriptorBufferInfo), // binding = 0
+				vk::WriteDescriptorSet(m_descriptors.descriptorSets[i].get(), 1, 0, 1, vk::DescriptorType::eCombinedImageSampler, &imageInfo, nullptr) // binding = 1
+			};
+			g_device->Get().updateDescriptorSets(static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
+		}
 	}
 
 	// todo: extract reusable code from here and maybe move into a Image factory or something
@@ -295,6 +309,8 @@ protected:
 private:
 	std::unique_ptr<RenderPass> m_renderPass;
 	std::vector<Framebuffer> m_framebuffers;
+	std::unique_ptr<Shader> m_vertexShader;
+	std::unique_ptr<Shader> m_fragmentShader;
 	std::unique_ptr<GraphicsPipeline> m_graphicsPipeline;
 
 	std::unique_ptr<VertexBuffer> m_vertexBuffer{ nullptr };
@@ -304,7 +320,7 @@ private:
 	std::unique_ptr<Texture> m_texture{ nullptr };
 	vk::UniqueSampler m_sampler;
 
-	GraphicsPipeline::Descriptors m_descriptors;
+	DescriptorSetPool m_descriptors;
 
 	// Model data
 	std::vector<Vertex> m_vertices;
