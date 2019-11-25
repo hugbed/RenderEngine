@@ -23,9 +23,9 @@ public:
 
 	static vk::UniqueShaderModule CreateShaderModule(const std::vector<char>& code);
 
-	vk::PipelineShaderStageCreateInfo GetShaderStageInfo();
+	vk::PipelineShaderStageCreateInfo GetShaderStageInfo() const;
 
-	vk::PipelineVertexInputStateCreateInfo GetVertexInputStateInfo();
+	vk::PipelineVertexInputStateCreateInfo GetVertexInputStateInfo() const;
 
 	const std::vector<vk::DescriptorSetLayoutBinding>& GetDescriptorSetLayoutBindings() const
 	{

@@ -1,18 +1,15 @@
 #include "GraphicsPipeline.h"
 
 #include "Image.h"
-#include "Shader.h"
 #include "Device.h"
 #include "PhysicalDevice.h"
 
 #include <array>
 
-GraphicsPipeline::GraphicsPipeline(vk::RenderPass renderPass, vk::Extent2D viewportExtent)
+GraphicsPipeline::GraphicsPipeline(vk::RenderPass renderPass, vk::Extent2D viewportExtent, const Shader& vertexShader, const Shader& fragmentShader)
 {
-	Shader vertexShader("vert.spv", "main");
 	vk::PipelineVertexInputStateCreateInfo vertexInputInfo = vertexShader.GetVertexInputStateInfo();
 
-	Shader fragmentShader("frag.spv", "main");
 	vk::PipelineShaderStageCreateInfo shaderStages[] = { vertexShader.GetShaderStageInfo(), fragmentShader.GetShaderStageInfo() };
 
 	vk::PipelineInputAssemblyStateCreateInfo inputAssembly({}, vk::PrimitiveTopology::eTriangleList);
@@ -59,21 +56,19 @@ GraphicsPipeline::GraphicsPipeline(vk::RenderPass renderPass, vk::Extent2D viewp
 		1, &colorBlendAttachment
 	);
 
-	// Descriptors (take this from shaders and combine them)
-
 	const auto& vertexShaderBindings = vertexShader.GetDescriptorSetLayoutBindings();
 	const auto& fragmentShaderBindings = fragmentShader.GetDescriptorSetLayoutBindings();
 
-	std::vector<vk::DescriptorSetLayoutBinding> bindings;
-	bindings.insert(bindings.end(), vertexShaderBindings.begin(), vertexShaderBindings.end());
-	bindings.insert(bindings.end(), fragmentShaderBindings.begin(), fragmentShaderBindings.end());
+	m_descriptorSetLayoutBindings.clear();
+	m_descriptorSetLayoutBindings.insert(m_descriptorSetLayoutBindings.end(), vertexShaderBindings.begin(), vertexShaderBindings.end());
+	m_descriptorSetLayoutBindings.insert(m_descriptorSetLayoutBindings.end(), fragmentShaderBindings.begin(), fragmentShaderBindings.end());
 
-	std::sort(bindings.begin(), bindings.end(), [](const auto& a, const auto& b) {
+	std::sort(m_descriptorSetLayoutBindings.begin(), m_descriptorSetLayoutBindings.end(), [](const auto& a, const auto& b) {
 		return a.binding < b.binding;
 	});
 
 	m_descriptorSetLayout = g_device->Get().createDescriptorSetLayoutUnique(vk::DescriptorSetLayoutCreateInfo(
-		{}, static_cast<uint32_t>(bindings.size()), bindings.data()
+		{}, static_cast<uint32_t>(m_descriptorSetLayoutBindings.size()), m_descriptorSetLayoutBindings.data()
 	));
 	
 	vk::DescriptorSetLayout descriptorSetLayouts[] = { m_descriptorSetLayout.get() };
@@ -112,34 +107,25 @@ GraphicsPipeline::GraphicsPipeline(vk::RenderPass renderPass, vk::Extent2D viewp
 	m_graphicsPipeline = g_device->Get().createGraphicsPipelineUnique({}, graphicsPipelineCreateInfo);
 }
 
-GraphicsPipeline::Descriptors GraphicsPipeline::CreateDescriptorSets(std::vector<vk::Buffer> uniformBuffers, size_t uniformBufferSize, vk::ImageView textureImageView, vk::Sampler textureSampler)
+DescriptorSetPool GraphicsPipeline::CreateDescriptorSetPool(uint32_t size) const
 {
-	Descriptors descriptors;
+	DescriptorSetPool descriptors;
 
-	std::array<vk::DescriptorPoolSize, 2> poolSizes = {
-		vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, uniformBuffers.size()),
-		vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, uniformBuffers.size()),
-	};
+	std::vector<vk::DescriptorPoolSize> poolSizes;
+	poolSizes.reserve(m_descriptorSetLayoutBindings.size());
+	for (const auto& descriptorSet : m_descriptorSetLayoutBindings)
+		poolSizes.emplace_back(descriptorSet.descriptorType, descriptorSet.descriptorCount);
+
 	descriptors.descriptorPool = g_device->Get().createDescriptorPoolUnique(vk::DescriptorPoolCreateInfo(
 		vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-		uniformBuffers.size(),
+		size,
 		static_cast<uint32_t>(poolSizes.size()), poolSizes.data()
 	));
 
-	std::vector<vk::DescriptorSetLayout> layouts(uniformBuffers.size(), m_descriptorSetLayout.get());
+	std::vector<vk::DescriptorSetLayout> layouts(size, m_descriptorSetLayout.get());
 	descriptors.descriptorSets = g_device->Get().allocateDescriptorSetsUnique(vk::DescriptorSetAllocateInfo(
-		descriptors.descriptorPool.get(), uniformBuffers.size(), layouts.data()
+		descriptors.descriptorPool.get(), size, layouts.data()
 	));
-	for (uint32_t i = 0; i < uniformBuffers.size(); ++i)
-	{
-		vk::DescriptorBufferInfo descriptorBufferInfo(uniformBuffers[i], 0, uniformBufferSize);
-		vk::DescriptorImageInfo imageInfo(textureSampler, textureImageView, vk::ImageLayout::eShaderReadOnlyOptimal);
-		std::array<vk::WriteDescriptorSet, 2> writeDescriptorSets = {
-			vk::WriteDescriptorSet(descriptors.descriptorSets[i].get(), 0, 0, 1, vk::DescriptorType::eUniformBuffer, nullptr, &descriptorBufferInfo), // binding = 0
-			vk::WriteDescriptorSet(descriptors.descriptorSets[i].get(), 1, 0, 1, vk::DescriptorType::eCombinedImageSampler, &imageInfo, nullptr) // binding = 1
-		};
-		g_device->Get().updateDescriptorSets(static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
-	}
 
 	return descriptors;
 }

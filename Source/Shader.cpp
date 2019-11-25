@@ -131,7 +131,7 @@ vk::UniqueShaderModule Shader::CreateShaderModule(const std::vector<char>& code)
 	);
 }
 
-vk::PipelineShaderStageCreateInfo Shader::GetShaderStageInfo()
+vk::PipelineShaderStageCreateInfo Shader::GetShaderStageInfo() const
 {
 	return vk::PipelineShaderStageCreateInfo(
 		vk::PipelineShaderStageCreateFlags(),
@@ -141,7 +141,7 @@ vk::PipelineShaderStageCreateInfo Shader::GetShaderStageInfo()
 	);
 }
 
-vk::PipelineVertexInputStateCreateInfo Shader::GetVertexInputStateInfo()
+vk::PipelineVertexInputStateCreateInfo Shader::GetVertexInputStateInfo() const
 {
 	vk::PipelineVertexInputStateCreateInfo vertexInputInfo(
 		{},
