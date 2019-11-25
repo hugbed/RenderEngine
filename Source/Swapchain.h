@@ -19,9 +19,7 @@ public:
 		vk::Extent2D desiredExtent
 	);
 
-	vk::Format GetImageFormat() const { return m_imageFormat; }
-
-	vk::Extent2D GetImageExtent() const { return m_imageExtent; }
+	ImageDescription GetImageDescription() const { return m_imageDescription; }
 
 	uint32_t GetImageCount() const { return m_images.size(); }
 
@@ -46,9 +44,8 @@ private:
 	vk::UniqueSwapchainKHR m_swapchain;
 
 	// Images
+	ImageDescription m_imageDescription;
 	std::vector<vk::Image> m_images;
-	vk::Format m_imageFormat;
-	vk::Extent2D m_imageExtent;
 	std::vector<vk::UniqueImageView> m_imageViews;
 
 	// Depth buffer

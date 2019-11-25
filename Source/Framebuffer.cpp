@@ -19,7 +19,7 @@ std::vector<Framebuffer> Framebuffer::FromSwapchain(const Swapchain& swapchain, 
 			depthImageView,
 			imageViews[i]
 		};
-		framebuffers.emplace_back(renderPass, swapchain.GetImageExtent(), attachments);
+		framebuffers.emplace_back(renderPass, swapchain.GetImageDescription().extent, attachments);
 	}
 
 	return framebuffers;

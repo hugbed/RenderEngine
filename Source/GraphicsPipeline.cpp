@@ -1,105 +1,30 @@
 #include "GraphicsPipeline.h"
 
+#include "Image.h"
+#include "Shader.h"
 #include "Device.h"
 #include "PhysicalDevice.h"
 
-#include <fstream>
-
 #include <array>
 
-vk::VertexInputBindingDescription Vertex::GetBindingDescription()
+GraphicsPipeline::GraphicsPipeline(vk::RenderPass renderPass, vk::Extent2D viewportExtent)
 {
-	return { 0, sizeof(Vertex), vk::VertexInputRate::eVertex };
-}
+	Shader vertexShader("vert.spv", "main");
+	vk::PipelineVertexInputStateCreateInfo vertexInputInfo = vertexShader.GetVertexInputStateInfo();
 
-std::array<vk::VertexInputAttributeDescription, 3> Vertex::GetAttributeDescriptions()
-{
-	std::array<vk::VertexInputAttributeDescription, 3> attributeDescriptions;
+	Shader fragmentShader("frag.spv", "main");
+	vk::PipelineShaderStageCreateInfo shaderStages[] = { vertexShader.GetShaderStageInfo(), fragmentShader.GetShaderStageInfo() };
 
-	attributeDescriptions[0].binding = 0;
-	attributeDescriptions[0].location = 0;
-	attributeDescriptions[0].format = vk::Format::eR32G32B32A32Sfloat;
-	attributeDescriptions[0].offset = offsetof(Vertex, pos);
-
-	attributeDescriptions[1].binding = 0;
-	attributeDescriptions[1].location = 1;
-	attributeDescriptions[1].format = vk::Format::eR32G32B32Sfloat;
-	attributeDescriptions[1].offset = offsetof(Vertex, color);
-
-	attributeDescriptions[2].binding = 0;
-	attributeDescriptions[2].location = 2;
-	attributeDescriptions[2].format = vk::Format::eR32G32Sfloat;
-	attributeDescriptions[2].offset = offsetof(Vertex, texCoord);
-
-	return attributeDescriptions;
-}
-
-static std::vector<char> ReadFile(const std::string& filename) {
-	std::ifstream file(filename, std::ios::ate | std::ios::binary);
-	if (!file.is_open())
-		throw std::runtime_error("failed to open file!");
-	
-	size_t fileSize = (size_t)file.tellg();
-	std::vector<char> buffer(fileSize);
-	file.seekg(0);
-	file.read(buffer.data(), fileSize);
-	file.close();
-	
-	return buffer;
-}
-
-vk::UniqueShaderModule CreateShaderModule(const std::vector<char>& code) {
-	return g_device->Get().createShaderModuleUnique(
-		vk::ShaderModuleCreateInfo(
-			vk::ShaderModuleCreateFlags(),
-			code.size(),
-			reinterpret_cast<const uint32_t*>(code.data())
-		)
-	);
-}
-
-GraphicsPipeline::GraphicsPipeline(vk::Extent2D imageExtent, vk::Format imageFormat, vk::RenderPass renderPass)
-{
-	// Shaders
-
-	auto vertShaderCode = ReadFile("vert.spv");
-	vk::UniqueShaderModule vertShaderModule = CreateShaderModule(vertShaderCode);
-	vk::PipelineShaderStageCreateInfo vertexShaderStateInfo(
-		vk::PipelineShaderStageCreateFlags(),
-		vk::ShaderStageFlagBits::eVertex,
-		vertShaderModule.get(),
-		"main"
-	);
-	auto fragShaderCode = ReadFile("frag.spv");
-	vk::UniqueShaderModule fragShaderModule = CreateShaderModule(fragShaderCode);
-	vk::PipelineShaderStageCreateInfo fragmentShaderStateInfo(
-		vk::PipelineShaderStageCreateFlags(),
-		vk::ShaderStageFlagBits::eFragment,
-		fragShaderModule.get(),
-		"main"
-	);
-	vk::PipelineShaderStageCreateInfo shaderStages[] = { vertexShaderStateInfo, fragmentShaderStateInfo };
-
-	// Vertex shader inputs
-	auto bindingDescription = Vertex::GetBindingDescription();
-	auto attributeDescription = Vertex::GetAttributeDescriptions();
-	vk::PipelineVertexInputStateCreateInfo vertexInputInfo(
-		{},
-		1, &bindingDescription,
-		static_cast<uint32_t>(attributeDescription.size()), attributeDescription.data()
-	);
-
-	vk::PipelineInputAssemblyStateCreateInfo inputAssembly = {};
-	inputAssembly.topology = vk::PrimitiveTopology::eTriangleList;
+	vk::PipelineInputAssemblyStateCreateInfo inputAssembly({}, vk::PrimitiveTopology::eTriangleList);
 
 	// Viewport state
 
 	vk::Viewport viewport(
 		0.0f, 0.0f, // x, y
-		static_cast<float>(imageExtent.width), static_cast<float>(imageExtent.height),
+		static_cast<float>(viewportExtent.width), static_cast<float>(viewportExtent.height),
 		0.0f, 1.0f // depth (min, max)
 	);
-	vk::Rect2D scissor(vk::Offset2D(0, 0), imageExtent);
+	vk::Rect2D scissor(vk::Offset2D(0, 0), viewportExtent);
 	vk::PipelineViewportStateCreateInfo viewportState(
 		vk::PipelineViewportStateCreateFlags(),
 		1, &viewport,
@@ -134,21 +59,19 @@ GraphicsPipeline::GraphicsPipeline(vk::Extent2D imageExtent, vk::Format imageFor
 		1, &colorBlendAttachment
 	);
 
-	// Descriptors
+	// Descriptors (take this from shaders and combine them)
 
-	vk::DescriptorSetLayoutBinding uboLayoutBinding(
-		0, // binding
-		vk::DescriptorType::eUniformBuffer,
-		1, // descriptorCount
-		vk::ShaderStageFlagBits::eVertex
-	);
-	vk::DescriptorSetLayoutBinding samplerBinding(
-		1, // binding
-		vk::DescriptorType::eCombinedImageSampler,
-		1, // descriptorCount
-		vk::ShaderStageFlagBits::eFragment
-	);
-	std::array<vk::DescriptorSetLayoutBinding, 2> bindings = { uboLayoutBinding, samplerBinding };
+	const auto& vertexShaderBindings = vertexShader.GetDescriptorSetLayoutBindings();
+	const auto& fragmentShaderBindings = fragmentShader.GetDescriptorSetLayoutBindings();
+
+	std::vector<vk::DescriptorSetLayoutBinding> bindings;
+	bindings.insert(bindings.end(), vertexShaderBindings.begin(), vertexShaderBindings.end());
+	bindings.insert(bindings.end(), fragmentShaderBindings.begin(), fragmentShaderBindings.end());
+
+	std::sort(bindings.begin(), bindings.end(), [](const auto& a, const auto& b) {
+		return a.binding < b.binding;
+	});
+
 	m_descriptorSetLayout = g_device->Get().createDescriptorSetLayoutUnique(vk::DescriptorSetLayoutCreateInfo(
 		{}, static_cast<uint32_t>(bindings.size()), bindings.data()
 	));
@@ -189,7 +112,7 @@ GraphicsPipeline::GraphicsPipeline(vk::Extent2D imageExtent, vk::Format imageFor
 	m_graphicsPipeline = g_device->Get().createGraphicsPipelineUnique({}, graphicsPipelineCreateInfo);
 }
 
-GraphicsPipeline::Descriptors GraphicsPipeline::CreateDescriptorSets(std::vector<vk::Buffer> uniformBuffers, vk::ImageView textureImageView, vk::Sampler textureSampler)
+GraphicsPipeline::Descriptors GraphicsPipeline::CreateDescriptorSets(std::vector<vk::Buffer> uniformBuffers, size_t uniformBufferSize, vk::ImageView textureImageView, vk::Sampler textureSampler)
 {
 	Descriptors descriptors;
 
@@ -209,7 +132,7 @@ GraphicsPipeline::Descriptors GraphicsPipeline::CreateDescriptorSets(std::vector
 	));
 	for (uint32_t i = 0; i < uniformBuffers.size(); ++i)
 	{
-		vk::DescriptorBufferInfo descriptorBufferInfo(uniformBuffers[i], 0, sizeof(UniformBufferObject));
+		vk::DescriptorBufferInfo descriptorBufferInfo(uniformBuffers[i], 0, uniformBufferSize);
 		vk::DescriptorImageInfo imageInfo(textureSampler, textureImageView, vk::ImageLayout::eShaderReadOnlyOptimal);
 		std::array<vk::WriteDescriptorSet, 2> writeDescriptorSets = {
 			vk::WriteDescriptorSet(descriptors.descriptorSets[i].get(), 0, 0, 1, vk::DescriptorType::eUniformBuffer, nullptr, &descriptorBufferInfo), // binding = 0

@@ -48,9 +48,13 @@ struct SingleTimeCommandBuffer
 		m_commandBuffer.begin({ vk::CommandBufferUsageFlagBits::eOneTimeSubmit });
 	}
 
-	// Prevent unwanted copies, allow moving only
+	// Prevent unwanted copies
 	SingleTimeCommandBuffer(const SingleTimeCommandBuffer&) = delete;
 	SingleTimeCommandBuffer& operator= (const SingleTimeCommandBuffer&) = delete;
+	
+	// Allow move only
+	SingleTimeCommandBuffer(SingleTimeCommandBuffer&&) = default;
+	SingleTimeCommandBuffer& operator= (SingleTimeCommandBuffer&&) = default;
 
 	~SingleTimeCommandBuffer()
 	{
