@@ -99,7 +99,12 @@ protected:
 	void OnSwapchainRecreated(CommandBufferPool& commandBuffers) override
 	{
 		// Reset resources that depend on the swapchain images
+		m_graphicsPipeline.reset();
+		m_framebuffers.clear();
+		m_renderPass.reset();
+
 		m_renderPass = std::make_unique<RenderPass>(m_swapchain->GetImageDescription().format);
+		m_framebuffers = Framebuffer::FromSwapchain(*m_swapchain, m_renderPass->Get());
 		m_graphicsPipeline = std::make_unique<GraphicsPipeline>(
 			m_renderPass->Get(), m_swapchain->GetImageDescription().extent,
 			*m_vertexShader, *m_fragmentShader
