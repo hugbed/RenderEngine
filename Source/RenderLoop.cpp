@@ -5,6 +5,8 @@
 #include "Device.h"
 #include "PhysicalDevice.h"
 
+#include <iostream>
+
 RenderLoop::RenderLoop(vk::SurfaceKHR surface, vk::Extent2D extent, Window& window)
 	: m_window(window)
 	, m_surface(surface)
@@ -27,6 +29,7 @@ void RenderLoop::Run()
 	while (m_window.ShouldClose() == false)
 	{
 		m_window.PollEvents();
+		Update();
 		Render();
 	}
 	vkDeviceWaitIdle(g_device->Get());
