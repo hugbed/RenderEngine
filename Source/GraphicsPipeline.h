@@ -13,7 +13,11 @@ class ImageDescription;
 struct DescriptorSetPool
 {
 	DescriptorSetPool() = default;
+	
+	DescriptorSetPool(const DescriptorSetPool&) = delete;
+
 	DescriptorSetPool(DescriptorSetPool&&) = default;
+
 	DescriptorSetPool& operator=(DescriptorSetPool&& other)
 	{
 		descriptorSets = std::move(other).descriptorSets;

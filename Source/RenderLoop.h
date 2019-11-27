@@ -2,7 +2,6 @@
 
 #include "Window.h"
 #include "CommandBuffers.h"
-#include "SynchronizationPrimitives.h"
 
 #include <vulkan/vulkan.hpp>
 
@@ -29,6 +28,19 @@ public:
 	void Run();
 
 protected:
+	struct GPUSync
+	{
+	public:
+		GPUSync()
+		{
+			imageAvailableSemaphore = g_device->Get().createSemaphoreUnique({});
+			renderFinishedSemaphore = g_device->Get().createSemaphoreUnique({});
+		}
+
+		vk::UniqueSemaphore imageAvailableSemaphore;
+		vk::UniqueSemaphore renderFinishedSemaphore;
+	};
+
 	virtual void Init(vk::CommandBuffer& commandBuffer) = 0;
 	virtual void OnSwapchainRecreated(CommandBufferPool& commandBuffers) = 0;
 	virtual void UpdateImageResources(uint32_t imageIndex) = 0;
@@ -42,11 +54,8 @@ protected:
 	Window& m_window;
 	bool m_frameBufferResized{ false };
 	vk::SurfaceKHR m_surface;
-
 	std::unique_ptr<Swapchain> m_swapchain;
 	CommandBufferPool m_renderCommandBuffers;
 	CommandBufferPool m_uploadCommandBuffers;
-
-	// This could be retrieved from a pool
-	SynchronizationPrimitives m_syncPrimitives;
+	GPUSync m_gpuSync;
 };

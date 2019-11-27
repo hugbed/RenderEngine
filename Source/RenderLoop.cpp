@@ -9,16 +9,15 @@ RenderLoop::RenderLoop(vk::SurfaceKHR surface, vk::Extent2D extent, Window& wind
 	: m_window(window)
 	, m_surface(surface)
 	, m_swapchain(std::make_unique<Swapchain>(surface, extent))
-	, m_renderCommandBuffers(m_swapchain->GetImageCount(), g_physicalDevice->GetQueueFamilies().graphicsFamily.value())
-	, m_uploadCommandBuffers(1, g_physicalDevice->GetQueueFamilies().graphicsFamily.value(), vk::CommandPoolCreateFlagBits::eTransient)
-	, m_syncPrimitives(m_swapchain->GetImageCount(), kMaxFramesInFlight)
+	, m_renderCommandBuffers(m_swapchain->GetImageCount(), kMaxFramesInFlight, g_physicalDevice->GetQueueFamilies().graphicsFamily.value())
+	, m_uploadCommandBuffers(1, {}, g_physicalDevice->GetQueueFamilies().graphicsFamily.value(), vk::CommandPoolCreateFlagBits::eTransient)
 {
 	window.SetWindowResizeCallback(reinterpret_cast<void*>(this), OnResize);
 }
 
 void RenderLoop::Init()
 {
-	SingleTimeCommandBuffer initCommandBuffer(m_uploadCommandBuffers.Get(0));
+	SingleTimeCommandBuffer initCommandBuffer(m_uploadCommandBuffers.GetCommandBuffer());
 	Init(initCommandBuffer.Get());
 }
 
@@ -40,12 +39,12 @@ void RenderLoop::OnResize(void* data, int w, int h)
 
 void RenderLoop::Render()
 {
-	auto frameFence = m_syncPrimitives.WaitForFrame();
+	auto& submitFence = m_renderCommandBuffers.WaitUntilSubmitComplete();
 
 	auto [result, imageIndex] = g_device->Get().acquireNextImageKHR(
 		m_swapchain->Get(),
 		UINT64_MAX, // max timeout
-		m_syncPrimitives.GetImageAvailableSemaphore(),
+		m_gpuSync.imageAvailableSemaphore.get(),
 		nullptr
 	);
 	if (result == vk::Result::eErrorOutOfDateKHR) // todo: this one will throw
@@ -56,25 +55,21 @@ void RenderLoop::Render()
 
 	UpdateImageResources(imageIndex);
 
-	m_syncPrimitives.WaitUntilImageIsAvailable(imageIndex);
-
 	// Submit command buffer on graphics queue
-	vk::Semaphore imageAvailableSemaphores[] = { m_syncPrimitives.GetImageAvailableSemaphore() };
 	vk::PipelineStageFlags waitStages[] = { vk::PipelineStageFlagBits::eColorAttachmentOutput };
-	vk::Semaphore renderFinishedSemaphores[] = { m_syncPrimitives.GetRenderFinishedSemaphore() };
 	vk::SubmitInfo submitInfo(
-		1, imageAvailableSemaphores,
+		1, &m_gpuSync.imageAvailableSemaphore.get(),
 		waitStages,
-		1, &m_renderCommandBuffers.Get(imageIndex),
-		1, renderFinishedSemaphores
+		1, &m_renderCommandBuffers.GetCommandBuffer(),
+		1, &m_gpuSync.renderFinishedSemaphore.get()
 	);
-	g_device->Get().resetFences(frameFence); // reset right before submit
-	g_device->GetGraphicsQueue().submit(submitInfo, frameFence);
+	g_device->Get().resetFences(submitFence); // reset right before submit
+	g_device->GetGraphicsQueue().submit(submitInfo, submitFence);
 
 	// Presentation
 	vk::PresentInfoKHR presentInfo = {};
 	presentInfo.waitSemaphoreCount = 1;
-	presentInfo.pWaitSemaphores = renderFinishedSemaphores;
+	presentInfo.pWaitSemaphores = &m_gpuSync.renderFinishedSemaphore.get();
 
 	vk::SwapchainKHR swapChains[] = { m_swapchain->Get() };
 	presentInfo.swapchainCount = 1;
@@ -95,7 +90,7 @@ void RenderLoop::Render()
 		throw std::runtime_error("Failed to acquire swapchain image");
 	}
 
-	m_syncPrimitives.MoveToNextFrame();
+	m_renderCommandBuffers.MoveToNext();
 }
 
 void RenderLoop::RecreateSwapchain()
