@@ -14,8 +14,12 @@
 #include "Shader.h"
 #include "Image.h"
 #include "Texture.h"
+#include "Camera.h"
 
 #include "vk_utils.h"
+#include <GLFW/glfw3.h>
+#define _USE_MATH_DEFINES
+#include <cmath>
 
 // For Uniform Buffer
 #define GLM_FORCE_RADIANS
@@ -23,6 +27,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <chrono>
+
 
 // For Texture
 #define STB_IMAGE_IMPLEMENTATION
@@ -74,14 +79,23 @@ public:
 			m_swapchain->GetImageDescription().extent,
 			*m_vertexShader,
 			*m_fragmentShader))
+		,camera(glm::vec3(4.0f, 4.0f, 4.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f), 45.0f)
 	{
+		window.SetMouseButtonCallback(reinterpret_cast<void*>(this), OnMouseButton);
+		window.SetMouseScrollCallback(reinterpret_cast<void*>(this), OnMouseScroll);
+		window.SetCursorPositionCallback(reinterpret_cast<void*>(this), OnCursorPosition);
+		window.SetKeyCallback(reinterpret_cast<void*>(this), onKey);
 	}
 
 	using RenderLoop::Init;
 
 protected:
-	const std::string kModelPath = "donut.obj";
-	const std::string kTexturePath = "donut.png";
+	const std::string kModelPath = "cube.obj";
+	const std::string kTexturePath = "cube.jpg";
+	glm::vec2 m_mouseDownPos;
+	bool m_mouseIsDown = false;
+	std::map<int, bool> m_keyState;
+	Camera camera;
 
 	void Init(vk::CommandBuffer& commandBuffer) override
 	{
@@ -301,16 +315,93 @@ protected:
 
 		auto currentTime = high_resolution_clock::now();
 		float time = duration<float, seconds::period>(currentTime - startTime).count();
+		time = 0;
 
 		UniformBufferObject ubo = {};
 		ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(30.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-		ubo.view = glm::lookAt(0.25f * glm::vec3(1.0f, 1.0f, 1.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-		ubo.proj = glm::perspective(glm::radians(45.0f), extent.width / (float)extent.height, 0.1f, 10.0f);
+		ubo.view = camera.GetViewMatrix();
+		ubo.proj = glm::perspective(glm::radians(camera.GetFieldOfView()), extent.width / (float)extent.height, 0.1f, 10.0f);
 
 		ubo.proj[1][1] *= -1; // inverse Y for OpenGL -> Vulkan (clip coordinates)
 
 		// Upload to GPU (inefficient, use push-constants instead)
 		m_uniformBuffers[imageIndex].Overwrite(reinterpret_cast<const void*>(&ubo));
+	}
+
+	void Update() override 
+	{
+		for (std::pair<int,bool> key : m_keyState)
+		{
+			if (key.second) 
+			{
+				glm::vec3 forward = glm::normalize(camera.GetLookAt() - camera.GetEye());
+				glm::vec3 rightVector = glm::normalize(glm::cross(forward, camera.GetUpVector()));
+				float speed = 0.01f;
+
+				switch (key.first) {
+					case GLFW_KEY_W:
+						camera.MoveCamera(forward, speed, false);
+						break;
+					case GLFW_KEY_A:
+						camera.MoveCamera(rightVector, -speed, true);
+						break;
+					case GLFW_KEY_S:
+						camera.MoveCamera(forward, -speed, false);
+						break;
+					case GLFW_KEY_D:
+						camera.MoveCamera(rightVector, speed, true);
+						break;
+					default:
+						break;
+				}
+			}
+		}
+	}
+
+	static void OnMouseButton(void* data, int button, int action, int mods)
+	{
+		App* app = reinterpret_cast<App*>(data);
+
+		if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS)
+			app->m_mouseIsDown = true;
+		if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_RELEASE)
+			app->m_mouseIsDown = false;
+	}
+
+	static void OnMouseScroll(void* data, double xOffset, double yOffset)
+	{
+		App* app = reinterpret_cast<App*>(data);
+		app->camera.SetFieldOfView(app->camera.GetFieldOfView() - yOffset);
+	}
+
+	static void OnCursorPosition(void* data, double xPos, double yPos)
+	{
+		App* app = reinterpret_cast<App*>(data);
+		int width = 0;
+		int height = 0;
+		app->m_window.GetSize(&width, &height);
+		float speed = 0.008;
+
+		if (app->m_mouseIsDown)
+		{
+			float diffX = app->m_mouseDownPos.x - xPos;
+			float diffY = app->m_mouseDownPos.y - yPos;
+
+			auto lookat = app->camera.GetLookAt() - app->camera.GetUpVector() * speed * diffY;
+
+			glm::vec3 forward = glm::normalize(lookat - app->camera.GetEye());
+			glm::vec3 rightVector = glm::normalize(glm::cross(forward, app->camera.GetUpVector()));
+
+			app->camera.LookAt(lookat + rightVector * speed * diffX);
+		}
+
+		app->m_mouseDownPos.x = xPos;
+		app->m_mouseDownPos.y = yPos;
+	}
+
+	static void onKey(void* data, int key, int scancode, int action, int mods) {
+		App* app = reinterpret_cast<App*>(data);
+		app->m_keyState[key] = action == GLFW_PRESS ? true : action == GLFW_REPEAT ? true : false;
 	}
 
 private:
@@ -339,6 +430,8 @@ int main()
 {
 	vk::Extent2D extent(800, 600);
 	Window window(extent, "Vulkan");
+	window.SetInputMode(GLFW_STICKY_KEYS, GLFW_TRUE);
+
 	Instance instance(window);
 	vk::UniqueSurfaceKHR surface(window.CreateSurface(instance.Get()));
 
