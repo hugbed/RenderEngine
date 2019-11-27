@@ -86,7 +86,7 @@ protected:
 	void Init(vk::CommandBuffer& commandBuffer) override
 	{
 		LoadModel();
-		UploadAndBindGeometry(commandBuffer);
+		UploadGeometry(commandBuffer);
 		CreateAndUploadTextureImage(commandBuffer);
 		CreateUniformBuffers();
 		CreateSampler();
@@ -125,8 +125,9 @@ protected:
 		};
 
 		for (size_t i = 0; i < m_swapchain->GetImageCount(); i++)
+		for (size_t i = 0; i < commandBuffers.GetCount(); i++)
 		{
-			auto& commandBuffer = commandBuffers.Get(i);
+			auto& commandBuffer = commandBuffers.GetCommandBuffer();
 			commandBuffer.begin(vk::CommandBufferBeginInfo());
 			{
 				m_renderPass->Begin(commandBuffer, m_framebuffers[i], clearValues);
@@ -143,6 +144,7 @@ protected:
 				commandBuffer.endRenderPass();
 			}
 			commandBuffer.end();
+			commandBuffers.MoveToNext();
 		}
 	}
 
@@ -280,7 +282,7 @@ protected:
 		}
 	}
 
-	void UploadAndBindGeometry(vk::CommandBuffer& commandBuffer)
+	void UploadGeometry(vk::CommandBuffer& commandBuffer)
 	{
 		m_vertexBuffer = std::make_unique<VertexBuffer>(sizeof(m_vertices[0]) * m_vertices.size());
 		m_vertexBuffer->Overwrite(commandBuffer, reinterpret_cast<const void*>(m_vertices.data()));
