@@ -114,7 +114,7 @@ DescriptorSetPool GraphicsPipeline::CreateDescriptorSetPool(uint32_t size) const
 	std::vector<vk::DescriptorPoolSize> poolSizes;
 	poolSizes.reserve(m_descriptorSetLayoutBindings.size());
 	for (const auto& descriptorSet : m_descriptorSetLayoutBindings)
-		poolSizes.emplace_back(descriptorSet.descriptorType, descriptorSet.descriptorCount);
+		poolSizes.emplace_back(descriptorSet.descriptorType, descriptorSet.descriptorCount * size);
 
 	descriptors.descriptorPool = g_device->Get().createDescriptorPoolUnique(vk::DescriptorPoolCreateInfo(
 		vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,

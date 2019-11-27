@@ -32,6 +32,7 @@ protected:
 	virtual void Init(vk::CommandBuffer& commandBuffer) = 0;
 	virtual void OnSwapchainRecreated(CommandBufferPool& commandBuffers) = 0;
 	virtual void UpdateImageResources(uint32_t imageIndex) = 0;
+	virtual void Update() = 0;
 
 	static void OnResize(void* data, int w, int h);
 
