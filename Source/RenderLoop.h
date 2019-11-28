@@ -5,6 +5,8 @@
 
 #include <vulkan/vulkan.hpp>
 
+#include <chrono>
+
 class Swapchain;
 class GraphicsPipeline;
 
@@ -52,6 +54,15 @@ protected:
 
 	void RecreateSwapchain();
 
+	std::chrono::high_resolution_clock::duration GetDeltaTime() const { return m_deltaTime; }
+
+private:
+	void UpdateDeltaTime();
+
+	std::chrono::high_resolution_clock::duration m_deltaTime;
+	std::chrono::time_point<std::chrono::high_resolution_clock> m_lastUpdateTime;
+
+protected:
 	Window& m_window;
 	bool m_frameBufferResized{ false };
 	vk::SurfaceKHR m_surface;

@@ -14,6 +14,8 @@
 #include "Shader.h"
 #include "Image.h"
 #include "Texture.h"
+
+// Move higher level stuff somewhere else?
 #include "Camera.h"
 
 #include "vk_utils.h"
@@ -27,7 +29,6 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <chrono>
-
 
 // For Texture
 #define STB_IMAGE_IMPLEMENTATION
@@ -139,7 +140,6 @@ protected:
 		};
 
 		for (size_t i = 0; i < m_swapchain->GetImageCount(); i++)
-		for (size_t i = 0; i < commandBuffers.GetCount(); i++)
 		{
 			auto& commandBuffer = commandBuffers.GetCommandBuffer();
 			commandBuffer.begin(vk::CommandBufferBeginInfo());
@@ -311,14 +311,8 @@ protected:
 
 		vk::Extent2D extent = m_swapchain->GetImageDescription().extent;
 
-		static auto startTime = high_resolution_clock::now();
-
-		auto currentTime = high_resolution_clock::now();
-		float time = duration<float, seconds::period>(currentTime - startTime).count();
-		time = 0;
-
 		UniformBufferObject ubo = {};
-		ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(30.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+		ubo.model = glm::rotate(glm::mat4(1.0f), 0.0f, glm::vec3(0.0f, 0.0f, 1.0f));
 		ubo.view = camera.GetViewMatrix();
 		ubo.proj = glm::perspective(glm::radians(camera.GetFieldOfView()), extent.width / (float)extent.height, 0.1f, 10.0f);
 
@@ -330,26 +324,30 @@ protected:
 
 	void Update() override 
 	{
-		for (std::pair<int,bool> key : m_keyState)
+		std::chrono::duration<float> dt_s = GetDeltaTime();
+
+		const float speed = 1.0f; // in m/s
+
+		for (const std::pair<int,bool>& key : m_keyState)
 		{
 			if (key.second) 
 			{
 				glm::vec3 forward = glm::normalize(camera.GetLookAt() - camera.GetEye());
 				glm::vec3 rightVector = glm::normalize(glm::cross(forward, camera.GetUpVector()));
-				float speed = 0.01f;
+				float dx = speed * dt_s.count(); // in m / s
 
 				switch (key.first) {
 					case GLFW_KEY_W:
-						camera.MoveCamera(forward, speed, false);
+						camera.MoveCamera(forward, dx, false);
 						break;
 					case GLFW_KEY_A:
-						camera.MoveCamera(rightVector, -speed, true);
+						camera.MoveCamera(rightVector, -dx, true);
 						break;
 					case GLFW_KEY_S:
-						camera.MoveCamera(forward, -speed, false);
+						camera.MoveCamera(forward, -dx, false);
 						break;
 					case GLFW_KEY_D:
-						camera.MoveCamera(rightVector, speed, true);
+						camera.MoveCamera(rightVector, dx, true);
 						break;
 					default:
 						break;
