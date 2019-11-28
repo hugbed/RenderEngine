@@ -15,9 +15,6 @@ public:
 	//       right now this is fixed: { color, depth, resolve }
 	RenderPass(vk::Format colorAttachmentFormat); // should pass params for all attachments
 
-	// todo: move commands that take a CommandBuffer to CommandBufferBuilder
-	void Begin(vk::CommandBuffer& commandBuffer, const Framebuffer& framebuffer, std::array<vk::ClearValue, 2> clearValues);
-
 	value_type Get() const { return m_renderPass.get(); }
 
 private:

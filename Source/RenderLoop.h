@@ -38,25 +38,22 @@ protected:
 			imageAvailableSemaphore = g_device->Get().createSemaphoreUnique({});
 			renderFinishedSemaphore = g_device->Get().createSemaphoreUnique({});
 		}
-
 		vk::UniqueSemaphore imageAvailableSemaphore;
 		vk::UniqueSemaphore renderFinishedSemaphore;
 	};
 
 	virtual void Init(vk::CommandBuffer& commandBuffer) = 0;
 	virtual void OnSwapchainRecreated(CommandBufferPool& commandBuffers) = 0;
-	virtual void UpdateImageResources(uint32_t imageIndex) = 0;
 	virtual void Update() = 0;
+	virtual void RenderFrame(uint32_t imageIndex, vk::CommandBuffer commandBuffer) = 0;
 
 	static void OnResize(void* data, int w, int h);
-
-	void Render();
-
-	void RecreateSwapchain();
 
 	std::chrono::high_resolution_clock::duration GetDeltaTime() const { return m_deltaTime; }
 
 private:
+	void Render();
+	void RecreateSwapchain();
 	void UpdateDeltaTime();
 
 	std::chrono::high_resolution_clock::duration m_deltaTime;
@@ -68,6 +65,5 @@ protected:
 	vk::SurfaceKHR m_surface;
 	std::unique_ptr<Swapchain> m_swapchain;
 	CommandBufferPool m_renderCommandBuffers;
-	CommandBufferPool m_uploadCommandBuffers;
 	GPUSync m_gpuSync;
 };

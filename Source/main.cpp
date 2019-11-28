@@ -107,7 +107,8 @@ protected:
 		CreateSampler();
 		CreateDescriptorSets();
 
-		RecordRenderPassCommands(m_renderCommandBuffers);
+		CreateSecondaryCommandBuffers();
+		RecordRenderPassCommands();
 	}
 
 	// Render pass commands are recorded once and executed every frame
@@ -129,43 +130,70 @@ protected:
 		CreateUniformBuffers();
 		CreateDescriptorSets();
 
-		RecordRenderPassCommands(commandBuffers);
+		RecordRenderPassCommands();
 	}
 
-	void RecordRenderPassCommands(CommandBufferPool& commandBuffers)
+
+	void CreateSecondaryCommandBuffers()
 	{
+		// We don't need to repopulate draw commands every frame
+		// so keep them in a secondary command buffer
+		m_secondaryCommandPool = g_device->Get().createCommandPoolUnique(vk::CommandPoolCreateInfo(
+			vk::CommandPoolCreateFlagBits::eResetCommandBuffer, g_physicalDevice->GetQueueFamilies().graphicsFamily.value()
+		));
+
+		// Command Buffers
+		m_renderPassCommandBuffers = g_device->Get().allocateCommandBuffersUnique(vk::CommandBufferAllocateInfo(
+			m_secondaryCommandPool.get(), vk::CommandBufferLevel::eSecondary, m_framebuffers.size()
+		));
+	}
+
+	void RecordRenderPassCommands()
+	{
+		for (size_t i = 0; i < m_framebuffers.size(); ++i)
+		{
+			vk::CommandBufferInheritanceInfo info(
+				m_renderPass->Get(),
+				0,
+				m_framebuffers[i].Get()
+			);
+
+			m_renderPassCommandBuffers[i]->begin({ vk::CommandBufferUsageFlagBits::eRenderPassContinue, &info });
+			{
+				m_graphicsPipeline->Draw(
+					m_renderPassCommandBuffers[i].get(),
+					m_indices.size(),
+					m_vertexBuffer->Get(),
+					m_indexBuffer->Get(),
+					m_vertexOffsets.data(),
+					m_descriptors.descriptorSets[i].get()
+				);
+			}
+			m_renderPassCommandBuffers[i]->end();
+		}
+	}
+
+
+	void RenderFrame(uint32_t imageIndex, vk::CommandBuffer commandBuffer) override
+	{
+		auto& framebuffer = m_framebuffers[imageIndex];
+
+		UpdateUniformBuffer(imageIndex);
+
 		std::array<vk::ClearValue, 2> clearValues = {
 			vk::ClearColorValue(std::array<float, 4>{ 0.0f, 0.0f, 0.0f, 1.0f }),
 			vk::ClearDepthStencilValue(1.0f, 0.0f)
 		};
 
-		for (size_t i = 0; i < m_swapchain->GetImageCount(); i++)
+		commandBuffer.beginRenderPass(vk::RenderPassBeginInfo(
+			m_renderPass->Get(), framebuffer.Get(),
+			vk::Rect2D(vk::Offset2D(0, 0), framebuffer.GetExtent()),
+			static_cast<uint32_t>(clearValues.size()), clearValues.data()
+		), vk::SubpassContents::eSecondaryCommandBuffers);
 		{
-			auto& commandBuffer = commandBuffers.GetCommandBuffer();
-			commandBuffer.begin(vk::CommandBufferBeginInfo());
-			{
-				m_renderPass->Begin(commandBuffer, m_framebuffers[i], clearValues);
-				{
-					m_graphicsPipeline->Draw(
-						commandBuffer,
-						m_indices.size(),
-						m_vertexBuffer->Get(),
-						m_indexBuffer->Get(),
-						m_vertexOffsets.data(),
-						m_descriptors.descriptorSets[i].get()
-					);
-				}
-				commandBuffer.endRenderPass();
-			}
-			commandBuffer.end();
-			commandBuffers.MoveToNext();
+			commandBuffer.executeCommands(m_renderPassCommandBuffers[imageIndex].get());
 		}
-	}
-
-	// Called every frame to update frame resources
-	void UpdateImageResources(uint32_t imageIndex) override
-	{
-		UpdateUniformBuffer(imageIndex);
+		commandBuffer.endRenderPass();
 	}
 
 	void CreateUniformBuffers()
@@ -417,6 +445,10 @@ private:
 	std::unique_ptr<Shader> m_vertexShader;
 	std::unique_ptr<Shader> m_fragmentShader;
 	std::unique_ptr<GraphicsPipeline> m_graphicsPipeline;
+
+	// Secondary command buffers
+	vk::UniqueCommandPool m_secondaryCommandPool;
+	std::vector<vk::UniqueCommandBuffer> m_renderPassCommandBuffers;
 
 	std::unique_ptr<VertexBuffer> m_vertexBuffer{ nullptr };
 	std::unique_ptr<IndexBuffer> m_indexBuffer{ nullptr };

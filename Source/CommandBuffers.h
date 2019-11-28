@@ -10,17 +10,23 @@ class CommandBufferPool
 {
 public:
 	CommandBufferPool(size_t count, size_t nbConcurrentSubmit, uint32_t queueFamily, vk::CommandPoolCreateFlags flags = {})
-		: m_nbConcurrentSubmit(nbConcurrentSubmit)
+		: m_queueFamily(queueFamily)
+		, m_nbConcurrentSubmit(nbConcurrentSubmit)
 	{
-		// Pool
-		m_commandPool = g_device->Get().createCommandPoolUnique(vk::CommandPoolCreateInfo(
-			flags, queueFamily
-		));
+		// Pools (1 pool per concurrent submit)
+		m_commandBufferPools.reserve(count);
+		for (size_t i = 0; i < count; ++i)
+		{
+			m_commandBufferPools.push_back(g_device->Get().createCommandPoolUnique(vk::CommandPoolCreateInfo(
+				vk::CommandPoolCreateFlagBits::eResetCommandBuffer, m_queueFamily
+			)));
 
-		// Command Buffers
-		m_commandBuffers = g_device->Get().allocateCommandBuffersUnique(vk::CommandBufferAllocateInfo(
-			m_commandPool.get(), vk::CommandBufferLevel::ePrimary, static_cast<uint32_t>(count)
-		));
+			// Command Buffers (1 per pool)
+			auto commandBuffers = g_device->Get().allocateCommandBuffersUnique(vk::CommandBufferAllocateInfo(
+				m_commandBufferPools[i].get(), vk::CommandBufferLevel::ePrimary, 1
+			));
+			m_commandBuffers.push_back(std::move(commandBuffers[0]));
+		}
 
 		// Fences
 		m_fences.reserve(m_nbConcurrentSubmit);
@@ -34,10 +40,22 @@ public:
 
 	void Reset(size_t count)
 	{
-		// Command buffers
-		m_commandBuffers = g_device->Get().allocateCommandBuffersUnique(vk::CommandBufferAllocateInfo(
-			m_commandPool.get(), vk::CommandBufferLevel::ePrimary, static_cast<uint32_t>(count)
-		));
+		m_commandBuffers.clear();
+		m_commandBufferPools.clear();
+
+		m_commandBufferPools.reserve(count);
+		m_commandBuffers.reserve(count);
+		for (size_t i = 0; i < count; ++i)
+		{
+			m_commandBufferPools.push_back(g_device->Get().createCommandPoolUnique(vk::CommandPoolCreateInfo(
+				vk::CommandPoolCreateFlagBits::eResetCommandBuffer, m_queueFamily
+			)));
+
+			auto commandBuffers = g_device->Get().allocateCommandBuffersUnique(vk::CommandBufferAllocateInfo(
+				m_commandBufferPools[i].get(), vk::CommandBufferLevel::ePrimary, static_cast<uint32_t>(count)
+			));
+			m_commandBuffers.push_back(std::move(commandBuffers[0]));
+		}
 
 		// Fence
 		m_fences.clear();
@@ -51,11 +69,18 @@ public:
 
 	uint32_t GetCount()
 	{
-		return m_commandBuffers.size();
+		return m_commandBufferPools.size();
 	}
 
 	vk::CommandBuffer GetCommandBuffer()
 	{
+		return m_commandBuffers[m_commandBufferIndex].get();
+	}
+
+	vk::CommandBuffer ResetCommandBuffer()
+	{
+		// Clear command buffer using resetCommandPool
+		g_device->Get().resetCommandPool(m_commandBufferPools[m_commandBufferIndex].get(), {});
 		return m_commandBuffers[m_commandBufferIndex].get();
 	}
 
@@ -77,11 +102,12 @@ public:
 	}
 
 private:
+	uint32_t m_queueFamily;
 	uint32_t m_fenceIndex = 0;
 	uint32_t m_nbConcurrentSubmit = 2;
 
 	uint32_t m_commandBufferIndex = 0;
-	vk::UniqueCommandPool m_commandPool;
+	std::vector<vk::UniqueCommandPool> m_commandBufferPools;
 	std::vector<vk::UniqueCommandBuffer> m_commandBuffers;
 	std::vector<vk::UniqueFence> m_fences; // to know when commands have completed
 };

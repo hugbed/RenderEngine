@@ -73,13 +73,3 @@ RenderPass::RenderPass(vk::Format colorAttachmentFormat)
 
 	m_renderPass = g_device->Get().createRenderPassUnique(renderPassCreateInfo);
 }
-
-void RenderPass::Begin(vk::CommandBuffer& commandBuffer, const Framebuffer& framebuffer, std::array<vk::ClearValue, 2> clearValues)
-{
-	commandBuffer.beginRenderPass(vk::RenderPassBeginInfo(
-		m_renderPass.get(),
-		framebuffer.Get(),
-		vk::Rect2D(vk::Offset2D(0, 0), framebuffer.GetExtent()),
-		static_cast<uint32_t>(clearValues.size()), clearValues.data()
-	), vk::SubpassContents::eInline);
-}

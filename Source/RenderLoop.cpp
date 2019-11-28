@@ -12,15 +12,20 @@ RenderLoop::RenderLoop(vk::SurfaceKHR surface, vk::Extent2D extent, Window& wind
 	, m_surface(surface)
 	, m_swapchain(std::make_unique<Swapchain>(surface, extent))
 	, m_renderCommandBuffers(m_swapchain->GetImageCount(), kMaxFramesInFlight, g_physicalDevice->GetQueueFamilies().graphicsFamily.value())
-	, m_uploadCommandBuffers(1, {}, g_physicalDevice->GetQueueFamilies().graphicsFamily.value(), vk::CommandPoolCreateFlagBits::eTransient)
 {
 	window.SetWindowResizeCallback(reinterpret_cast<void*>(this), OnResize);
 }
 
 void RenderLoop::Init()
 {
-	SingleTimeCommandBuffer initCommandBuffer(m_uploadCommandBuffers.GetCommandBuffer());
-	Init(initCommandBuffer.Get());
+	// Use any command buffer for init
+	auto commandBuffer = m_renderCommandBuffers.GetCommandBuffer();
+	{
+		SingleTimeCommandBuffer singleTimeCommandBuffer(commandBuffer);
+		Init(commandBuffer);
+	}
+	// But make sure to reset it once we're done
+	m_renderCommandBuffers.ResetCommandBuffer();
 }
 
 void RenderLoop::Run()
@@ -66,7 +71,12 @@ void RenderLoop::Render()
 		return;
 	}
 
-	UpdateImageResources(imageIndex);
+	auto commandBuffer = m_renderCommandBuffers.ResetCommandBuffer();
+	commandBuffer.begin({ vk::CommandBufferUsageFlagBits::eOneTimeSubmit });
+	{
+		RenderFrame(imageIndex, commandBuffer);
+	}
+	commandBuffer.end();
 
 	// Submit command buffer on graphics queue
 	vk::PipelineStageFlags waitStages[] = { vk::PipelineStageFlagBits::eColorAttachmentOutput };
