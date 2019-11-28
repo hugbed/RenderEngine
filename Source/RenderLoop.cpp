@@ -28,10 +28,20 @@ void RenderLoop::Run()
 	while (m_window.ShouldClose() == false)
 	{
 		m_window.PollEvents();
+
+		UpdateDeltaTime();
+
 		Update();
 		Render();
 	}
 	vkDeviceWaitIdle(g_device->Get());
+}
+
+void RenderLoop::UpdateDeltaTime()
+{
+	auto now = std::chrono::high_resolution_clock::now();
+	m_deltaTime = now - m_lastUpdateTime;
+	m_lastUpdateTime = now;
 }
 
 void RenderLoop::OnResize(void* data, int w, int h)
