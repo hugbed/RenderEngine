@@ -378,19 +378,28 @@ protected:
 		int width = 0;
 		int height = 0;
 		app->m_window.GetSize(&width, &height);
-		float speed = 0.008;
+		float speed = 0.0000001;
+
+		auto dt_s = app->GetDeltaTime();
+
+		float dx = speed * dt_s.count();
 
 		if (app->m_mouseIsDown)
 		{
 			float diffX = app->m_mouseDownPos.x - xPos;
 			float diffY = app->m_mouseDownPos.y - yPos;
 
-			auto lookat = app->camera.GetLookAt() - app->camera.GetUpVector() * speed * diffY;
+			float m_fovV = app->camera.GetFieldOfView() / width * height;
+
+			float angleX = diffX / width * app->camera.GetFieldOfView();
+			float angleY = diffY / height * m_fovV;
+
+			auto lookat = app->camera.GetLookAt() - app->camera.GetUpVector() * dx * angleY;
 
 			glm::vec3 forward = glm::normalize(lookat - app->camera.GetEye());
 			glm::vec3 rightVector = glm::normalize(glm::cross(forward, app->camera.GetUpVector()));
 
-			app->camera.LookAt(lookat + rightVector * speed * diffX);
+			app->camera.LookAt(lookat + rightVector * dx * angleX);
 		}
 
 		app->m_mouseDownPos.x = xPos;
