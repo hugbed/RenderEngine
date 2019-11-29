@@ -12,7 +12,7 @@ std::vector<Framebuffer> Framebuffer::FromSwapchain(const Swapchain& swapchain, 
 	auto depthImageView = swapchain.GetDepthImageView();
 	auto imageViews = swapchain.GetImageViews();
 
-	for (int i = 0; i < swapchain.GetImageCount(); ++i)
+	for (size_t i = 0; i < swapchain.GetImageCount(); ++i)
 	{
 		std::array<vk::ImageView, 3> attachments = {
 			colorImageView,

@@ -11,7 +11,7 @@ class CommandBufferPool
 public:
 	CommandBufferPool(size_t count, size_t nbConcurrentSubmit, uint32_t queueFamily, vk::CommandPoolCreateFlags flags = {})
 		: m_queueFamily(queueFamily)
-		, m_nbConcurrentSubmit(nbConcurrentSubmit)
+		, m_nbConcurrentSubmit(static_cast<uint32_t>(nbConcurrentSubmit))
 	{
 		// Pools (1 pool per concurrent submit)
 		m_commandBufferPools.reserve(count);
@@ -67,7 +67,14 @@ public:
 		}
 	}
 
-	uint32_t GetCount()
+	void Submit(vk::SubmitInfo submitInfo)
+	{
+		auto& submitFence = m_fences[m_fenceIndex].get();
+		g_device->Get().resetFences(submitFence);
+		g_device->GetGraphicsQueue().submit(submitInfo, submitFence);
+	}
+
+	size_t GetCount()
 	{
 		return m_commandBufferPools.size();
 	}
@@ -77,7 +84,7 @@ public:
 		return m_commandBuffers[m_commandBufferIndex].get();
 	}
 
-	vk::CommandBuffer ResetCommandBuffer()
+	vk::CommandBuffer ResetAndGetCommandBuffer()
 	{
 		// Clear command buffer using resetCommandPool
 		g_device->Get().resetCommandPool(m_commandBufferPools[m_commandBufferIndex].get(), {});
@@ -90,7 +97,7 @@ public:
 		m_fenceIndex = (m_fenceIndex + 1UL) % m_nbConcurrentSubmit;
 	}
 
-	vk::Fence& WaitUntilSubmitComplete()
+	void WaitUntilSubmitComplete()
 	{
 		auto& frameFence = m_fences[m_fenceIndex].get();
 		g_device->Get().waitForFences(
@@ -98,7 +105,6 @@ public:
 			true, // wait for all fences (we only have 1 though)
 			UINT64_MAX // indefinitely
 		);
-		return frameFence;
 	}
 
 private:
@@ -110,39 +116,4 @@ private:
 	std::vector<vk::UniqueCommandPool> m_commandBufferPools;
 	std::vector<vk::UniqueCommandBuffer> m_commandBuffers;
 	std::vector<vk::UniqueFence> m_fences; // to know when commands have completed
-};
-
-struct SingleTimeCommandBuffer
-{
-	SingleTimeCommandBuffer(vk::CommandBuffer& commandBuffer)
-		: m_commandBuffer(commandBuffer)
-	{
-		m_commandBuffer.begin({ vk::CommandBufferUsageFlagBits::eOneTimeSubmit });
-	}
-
-	// Prevent unwanted copies
-	SingleTimeCommandBuffer(const SingleTimeCommandBuffer&) = delete;
-	SingleTimeCommandBuffer& operator= (const SingleTimeCommandBuffer&) = delete;
-	
-	// Allow move only
-	SingleTimeCommandBuffer(SingleTimeCommandBuffer&&) = default;
-	SingleTimeCommandBuffer& operator= (SingleTimeCommandBuffer&&) = default;
-
-	~SingleTimeCommandBuffer()
-	{
-		m_commandBuffer.end();
-
-		vk::SubmitInfo submitInfo;
-		submitInfo.commandBufferCount = 1;
-		submitInfo.pCommandBuffers = &m_commandBuffer;
-
-		auto graphicsQueue = g_device->GetGraphicsQueue();
-		graphicsQueue.submit(submitInfo, nullptr);
-		graphicsQueue.waitIdle();
-	}
-
-	vk::CommandBuffer& Get() { return m_commandBuffer; }
-
-private:
-	vk::CommandBuffer& m_commandBuffer;
 };

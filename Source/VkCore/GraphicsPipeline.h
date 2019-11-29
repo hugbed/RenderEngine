@@ -8,7 +8,7 @@
 #include <vector>
 #include <utility>
 
-class ImageDescription;
+struct ImageDescription;
 
 struct DescriptorSetPool
 {

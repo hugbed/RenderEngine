@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 
+project(RenderEngine)
+
 set(CMAKE_DISABLE_IN_SOURCE_BUILD ON)
 set(CMAKE_DISABLE_SOURCE_CHANGES  ON)
 
@@ -18,62 +20,16 @@ endif ()
 # CMake modules
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/modules/")
 
-# ------ RENDER ENGINE PROJECT ------ #
+# Dependencies 
+add_subdirectory(ThirdParty)
 
-project(RenderEngine)
+# Targets
+add_subdirectory(Source/VkCore)
+add_subdirectory(Source/Engine)
+add_subdirectory(Source/Samples/MainSample)
 
-include_directories(
-  Source
-  ThirdParty/glm
-  ThirdParty/glfw/include
-  ThirdParty/stb
-  ThirdParty/tinyobjloader
-)
-
-file(GLOB_RECURSE SRC_FILES
-    Source/*.h
-    Source/*.cpp)
-
-# GLFW
-set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "GLFW_BUILD_EXAMPLES" FORCE)
-set(GLFW_BUILD_TESTS OFF CACHE BOOL "GLFW_BUILD_TESTS" FORCE)
-set(GLFW_BUILD_DOCS OFF CACHE BOOL "GLFW_BUILD_DOCS" FORCE)
-set(GLFW_INSTALL OFF CACHE BOOL "GLFW_INSTALL" FORCE)
-add_subdirectory(ThirdParty/glfw)
-
-# Vulkan
-find_package(Vulkan REQUIRED)
-
-# SPIRV-Cross
-set(SPIRV_CROSS_CLI OFF CACHE BOOL "SPIRV_CROSS_CLI" FORCE)
-set(SPIRV_CROSS_ENABLE_TESTS OFF CACHE BOOL "SPIRV_CROSS_ENABLE_TESTS" FORCE)
-set(SPIRV_CROSS_ENABLE_HLSL OFF CACHE BOOL "SPIRV_CROSS_ENABLE_HLSL" FORCE)
-set(SPIRV_CROSS_ENABLE_MSL OFF CACHE BOOL "SPIRV_CROSS_ENABLE_MSL" FORCE)
-set(SPIRV_CROSS_ENABLE_REFLECT ON CACHE BOOL "SPIRV_CROSS_ENABLE_REFLECT" FORCE)
-set(SPIRV_CROSS_ENABLE_C_API OFF CACHE BOOL "SPIRV_CROSS_ENABLE_C_API" FORCE)
-set(SPIRV_CROSS_ENABLE_UTIL OFF CACHE BOOL "SPIRV_CROSS_ENABLE_UTIL" FORCE)
-add_subdirectory(ThirdParty/SPIRV-Cross)
-
-add_executable(${PROJECT_NAME} ${SRC_FILES})
-
-set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD 17)
-target_compile_definitions(${PROJECT_NAME} PRIVATE VK_USE_PLATFORM_WIN32_KHR)
-target_include_directories(
-  ${PROJECT_NAME}
-  PRIVATE
-    ${Vulkan_INCLUDE_DIRS}
-    "ThirdParty/glfw/include"
-)
-target_link_libraries(
-  ${PROJECT_NAME}
-    glfw
-    ${GLFW_LIBRARIES}
-    ${Vulkan_LIBRARY}
-    spirv-cross-core
-    spirv-cross-glsl
-    spirv-cross-reflect)
-
+# Set default project
+set(DEFAULT_PROJECT MainSample)
 if (WIN32)
-  set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT ${PROJECT_NAME})
-  set_property(TARGET ${PROJECT_NAME} PROPERTY VS_DEBUGGER_WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/Debug) # todo: set according to config
+  set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT ${DEFAULT_PROJECT})
 endif ()

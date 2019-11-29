@@ -15,7 +15,7 @@ public:
 	//       right now this is fixed: { color, depth, resolve }
 	RenderPass(vk::Format colorAttachmentFormat); // should pass params for all attachments
 
-	value_type Get() const { return m_renderPass.get(); }
+	const value_type& Get() const { return m_renderPass.get(); }
 
 private:
 	vk::UniqueRenderPass m_renderPass;
