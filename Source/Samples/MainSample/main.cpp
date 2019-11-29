@@ -1,7 +1,6 @@
 #include <iostream>
 
 #include "RenderLoop.h"
-
 #include "Window.h"
 #include "Instance.h"
 #include "Device.h"
@@ -14,11 +13,10 @@
 #include "Shader.h"
 #include "Image.h"
 #include "Texture.h"
+#include "vk_utils.h"
 
-// Move higher level stuff somewhere else?
 #include "Camera.h"
 
-#include "vk_utils.h"
 #include <GLFW/glfw3.h>
 #define _USE_MATH_DEFINES
 #include <cmath>
@@ -28,7 +26,9 @@
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
-#include <chrono>
+
+#define GLM_ENABLE_EXPERIMENTAL
+#include <glm/gtx/hash.hpp>
 
 // For Texture
 #define STB_IMAGE_IMPLEMENTATION
@@ -37,6 +37,8 @@
 // Model
 #define TINYOBJLOADER_IMPLEMENTATION
 #include <tiny_obj_loader.h>
+
+#include <chrono>
 #include <unordered_map>
 
 struct UniformBufferObject {
@@ -80,7 +82,7 @@ public:
 			m_swapchain->GetImageDescription().extent,
 			*m_vertexShader,
 			*m_fragmentShader))
-		,camera(glm::vec3(4.0f, 4.0f, 4.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f), 45.0f)
+		, camera(0.25f * glm::vec3(1.0f, 1.0f, 1.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f), 45.0f)
 	{
 		window.SetMouseButtonCallback(reinterpret_cast<void*>(this), OnMouseButton);
 		window.SetMouseScrollCallback(reinterpret_cast<void*>(this), OnMouseScroll);
@@ -91,8 +93,8 @@ public:
 	using RenderLoop::Init;
 
 protected:
-	const std::string kModelPath = "cube.obj";
-	const std::string kTexturePath = "cube.jpg";
+	const std::string kModelPath = "donut.obj";
+	const std::string kTexturePath = "donut.png";
 	glm::vec2 m_mouseDownPos;
 	bool m_mouseIsDown = false;
 	std::map<int, bool> m_keyState;
@@ -130,12 +132,14 @@ protected:
 		CreateUniformBuffers();
 		CreateDescriptorSets();
 
+		CreateSecondaryCommandBuffers();
 		RecordRenderPassCommands();
 	}
 
-
 	void CreateSecondaryCommandBuffers()
 	{
+		m_renderPassCommandBuffers.clear();
+
 		// We don't need to repopulate draw commands every frame
 		// so keep them in a secondary command buffer
 		m_secondaryCommandPool = g_device->Get().createCommandPoolUnique(vk::CommandPoolCreateInfo(
@@ -148,16 +152,14 @@ protected:
 		));
 	}
 
+	// Record commands that don't change each frame in secondary command buffers
 	void RecordRenderPassCommands()
 	{
 		for (size_t i = 0; i < m_framebuffers.size(); ++i)
 		{
 			vk::CommandBufferInheritanceInfo info(
-				m_renderPass->Get(),
-				0,
-				m_framebuffers[i].Get()
+				m_renderPass->Get(), 0, m_framebuffers[i].Get()
 			);
-
 			m_renderPassCommandBuffers[i]->begin({ vk::CommandBufferUsageFlagBits::eRenderPassContinue, &info });
 			{
 				m_graphicsPipeline->Draw(
@@ -185,11 +187,12 @@ protected:
 			vk::ClearDepthStencilValue(1.0f, 0.0f)
 		};
 
-		commandBuffer.beginRenderPass(vk::RenderPassBeginInfo(
+		auto renderPassInfo = vk::RenderPassBeginInfo(
 			m_renderPass->Get(), framebuffer.Get(),
 			vk::Rect2D(vk::Offset2D(0, 0), framebuffer.GetExtent()),
 			static_cast<uint32_t>(clearValues.size()), clearValues.data()
-		), vk::SubpassContents::eSecondaryCommandBuffers);
+		);
+		commandBuffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eSecondaryCommandBuffers);
 		{
 			commandBuffer.executeCommands(m_renderPassCommandBuffers[imageIndex].get());
 		}
@@ -346,7 +349,7 @@ protected:
 
 		ubo.proj[1][1] *= -1; // inverse Y for OpenGL -> Vulkan (clip coordinates)
 
-		// Upload to GPU (inefficient, use push-constants instead)
+		// Upload to GPU
 		m_uniformBuffers[imageIndex].Overwrite(reinterpret_cast<const void*>(&ubo));
 	}
 

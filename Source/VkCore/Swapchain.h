@@ -21,7 +21,7 @@ public:
 
 	ImageDescription GetImageDescription() const { return m_imageDescription; }
 
-	uint32_t GetImageCount() const { return m_images.size(); }
+	size_t GetImageCount() const { return m_images.size(); }
 
 	std::vector<vk::ImageView> GetImageViews() const
 	{
@@ -35,7 +35,7 @@ public:
 
 	vk::ImageView GetDepthImageView() const { return m_depthImage->GetImageView(); }
 
-	value_type Get() const { return m_swapchain.get(); }
+	const value_type& Get() const { return m_swapchain.get(); }
 
 private:
 	void CreateImageViews();

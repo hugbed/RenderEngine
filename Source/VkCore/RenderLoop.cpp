@@ -19,13 +19,17 @@ RenderLoop::RenderLoop(vk::SurfaceKHR surface, vk::Extent2D extent, Window& wind
 void RenderLoop::Init()
 {
 	// Use any command buffer for init
-	auto commandBuffer = m_renderCommandBuffers.GetCommandBuffer();
+	auto commandBuffer = m_renderCommandBuffers.ResetAndGetCommandBuffer();
+	commandBuffer.begin({ vk::CommandBufferUsageFlagBits::eOneTimeSubmit });
 	{
-		SingleTimeCommandBuffer singleTimeCommandBuffer(commandBuffer);
 		Init(commandBuffer);
 	}
-	// But make sure to reset it once we're done
-	m_renderCommandBuffers.ResetCommandBuffer();
+	commandBuffer.end();
+
+	vk::SubmitInfo submitInfo;
+	submitInfo.commandBufferCount = 1;
+	submitInfo.pCommandBuffers = &commandBuffer;
+	m_renderCommandBuffers.Submit(submitInfo);
 }
 
 void RenderLoop::Run()
@@ -57,7 +61,7 @@ void RenderLoop::OnResize(void* data, int w, int h)
 
 void RenderLoop::Render()
 {
-	auto& submitFence = m_renderCommandBuffers.WaitUntilSubmitComplete();
+	m_renderCommandBuffers.WaitUntilSubmitComplete();
 
 	auto [result, imageIndex] = g_device->Get().acquireNextImageKHR(
 		m_swapchain->Get(),
@@ -71,7 +75,7 @@ void RenderLoop::Render()
 		return;
 	}
 
-	auto commandBuffer = m_renderCommandBuffers.ResetCommandBuffer();
+	auto commandBuffer = m_renderCommandBuffers.ResetAndGetCommandBuffer();
 	commandBuffer.begin({ vk::CommandBufferUsageFlagBits::eOneTimeSubmit });
 	{
 		RenderFrame(imageIndex, commandBuffer);
@@ -86,17 +90,16 @@ void RenderLoop::Render()
 		1, &m_renderCommandBuffers.GetCommandBuffer(),
 		1, &m_gpuSync.renderFinishedSemaphore.get()
 	);
-	g_device->Get().resetFences(submitFence); // reset right before submit
-	g_device->GetGraphicsQueue().submit(submitInfo, submitFence);
+	m_renderCommandBuffers.Submit(submitInfo);
+	m_renderCommandBuffers.MoveToNext();
 
 	// Presentation
 	vk::PresentInfoKHR presentInfo = {};
 	presentInfo.waitSemaphoreCount = 1;
 	presentInfo.pWaitSemaphores = &m_gpuSync.renderFinishedSemaphore.get();
 
-	vk::SwapchainKHR swapChains[] = { m_swapchain->Get() };
 	presentInfo.swapchainCount = 1;
-	presentInfo.pSwapchains = swapChains;
+	presentInfo.pSwapchains = &m_swapchain->Get();
 	presentInfo.pImageIndices = &imageIndex;
 
 	result = g_device->GetPresentQueue().presentKHR(presentInfo);
@@ -112,8 +115,6 @@ void RenderLoop::Render()
 	{
 		throw std::runtime_error("Failed to acquire swapchain image");
 	}
-
-	m_renderCommandBuffers.MoveToNext();
 }
 
 void RenderLoop::RecreateSwapchain()
