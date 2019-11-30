@@ -137,6 +137,7 @@ namespace spirv_vk
 		}
 
 		throw std::runtime_error("Invalid/Unsupported type");
+		return {};
 	}
 
 	// This is only intended for vertex input types so not all types are listed here
@@ -271,6 +272,8 @@ namespace spirv_vk
 		default:
 			throw std::runtime_error("Unsupported format");
 		}
+
+		return {};
 	}
 
 	vk::ShaderStageFlagBits execution_model_to_shader_stage(spv::ExecutionModel executionModel)
@@ -290,5 +293,35 @@ namespace spirv_vk
 		default:
 			throw std::runtime_error("Unknown execution model");
 		}
+
+		return {};
+	}
+
+	uint32_t sizeof_constant(const spirv_cross::Compiler& comp, spirv_cross::TypeID type)
+	{
+		using Type = spirv_cross::SPIRType::BaseType;
+
+		switch (type)
+		{
+		case Type::Boolean:
+		case Type::SByte:
+		case Type::UByte:
+			return 1;
+		case Type::Short:
+		case Type::UShort:
+			return 2;
+		case Type::Int:
+		case Type::UInt:
+			return 4;
+		case Type::Int64:
+		case Type::UInt64:
+		case Type::Float:
+		case Type::Double:
+			return 8;
+		default:
+			throw std::runtime_error("Unsupported specialization_constant type");
+		}
+
+		return {};
 	}
 }
