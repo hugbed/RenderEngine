@@ -16,9 +16,9 @@ UniqueBuffer::~UniqueBuffer()
 }
 
 UniqueBufferWithStaging::UniqueBufferWithStaging(size_t size, vk::BufferUsageFlags bufferUsage)
-	: m_stagingBuffer(
+	: m_stagingBuffer(std::make_unique<UniqueBuffer>(
 		vk::BufferCreateInfo({}, size,  vk::BufferUsageFlagBits::eTransferSrc),
-		{ VMA_ALLOCATION_CREATE_MAPPED_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU })
+		VmaAllocationCreateInfo{ VMA_ALLOCATION_CREATE_MAPPED_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU }))
 	, m_buffer(
 		vk::BufferCreateInfo({}, size, bufferUsage | vk::BufferUsageFlagBits::eTransferDst),
 		{ {}, VMA_MEMORY_USAGE_GPU_ONLY })
@@ -29,7 +29,7 @@ void UniqueBufferWithStaging::CopyStagingToGPU(vk::CommandBuffer& commandBuffer)
 {
 	// Copy staging buffer to buffer
 	vk::BufferCopy copyRegion(0, 0, m_buffer.Size());
-	commandBuffer.copyBuffer(m_stagingBuffer.Get(), m_buffer.Get(), 1, &copyRegion);
+	commandBuffer.copyBuffer(m_stagingBuffer->Get(), m_buffer.Get(), 1, &copyRegion);
 }
 
 UniqueImage::UniqueImage(const vk::ImageCreateInfo& createInfo, const VmaAllocationCreateInfo& allocInfo)
@@ -44,12 +44,9 @@ UniqueImage::~UniqueImage()
 	vmaDestroyImage(g_device->GetAllocator(), m_image, m_allocation);
 }
 
-void UniqueImage::Reset(const vk::ImageCreateInfo& createInfo, const VmaAllocationCreateInfo& allocInfo)
+void UniqueImage::Init(const vk::ImageCreateInfo& createInfo, const VmaAllocationCreateInfo& allocInfo)
 {
-	if (m_image)
-	{
-		vmaDestroyImage(g_device->GetAllocator(), m_image, m_allocation);
-	}
+	ASSERT(!m_image);
 	const VkImageCreateInfo& imageCreateInfo = createInfo;
 	vmaCreateImage(g_device->GetAllocator(), &imageCreateInfo, &allocInfo, &m_image, &m_allocation, nullptr);
 	vmaGetAllocationInfo(g_device->GetAllocator(), m_allocation, &m_allocationInfo);

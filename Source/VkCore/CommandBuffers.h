@@ -30,6 +30,7 @@ public:
 
 		// Fences
 		m_fences.reserve(m_nbConcurrentSubmit);
+		m_resourcesToDestroy.resize(m_nbConcurrentSubmit);
 		for (size_t i = 0; i < m_nbConcurrentSubmit; ++i)
 		{
 			m_fences.push_back(g_device->Get().createFenceUnique(
@@ -59,6 +60,8 @@ public:
 
 		// Fence
 		m_fences.clear();
+		m_fences.reserve(m_nbConcurrentSubmit);
+		m_resourcesToDestroy.resize(m_nbConcurrentSubmit);
 		for (size_t i = 0; i < m_nbConcurrentSubmit; ++i)
 		{
 			m_fences.push_back(g_device->Get().createFenceUnique(
@@ -105,6 +108,16 @@ public:
 			true, // wait for all fences (we only have 1 though)
 			UINT64_MAX // indefinitely
 		);
+		for (const auto& resource : m_resourcesToDestroy[m_fenceIndex])
+		{
+			delete resource;
+		}
+		m_resourcesToDestroy[m_fenceIndex].clear();
+	}
+
+	void DestroyAfterSubmit(DeferredDestructible* resource)
+	{
+		m_resourcesToDestroy[m_fenceIndex].push_back(resource);
 	}
 
 private:
@@ -116,4 +129,5 @@ private:
 	std::vector<vk::UniqueCommandPool> m_commandBufferPools;
 	std::vector<vk::UniqueCommandBuffer> m_commandBuffers;
 	std::vector<vk::UniqueFence> m_fences; // to know when commands have completed
+	std::vector<std::vector<DeferredDestructible*>> m_resourcesToDestroy; // once submission has completed
 };

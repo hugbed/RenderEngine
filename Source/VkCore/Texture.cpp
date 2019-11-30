@@ -12,10 +12,10 @@ Texture::Texture(
 	uint32_t mipLevels
 )
 	: Image(width, height, depth, format, tiling, usage, aspectFlags, mipLevels)
-	, m_stagingBuffer(
+	, m_stagingBuffer(std::make_unique<UniqueBuffer>(
 		vk::BufferCreateInfo({}, static_cast<size_t>(width)* height* depth, vk::BufferUsageFlagBits::eTransferSrc),
-		{ VMA_ALLOCATION_CREATE_MAPPED_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, }
-	)
+		VmaAllocationCreateInfo{ VMA_ALLOCATION_CREATE_MAPPED_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, }
+	))
 {
 }
 
@@ -37,7 +37,7 @@ void Texture::UploadStagingToGPU(vk::CommandBuffer& commandBuffer, vk::ImageLayo
 		),
 		vk::Offset3D(0, 0, 0), m_extent
 	);
-	commandBuffer.copyBufferToImage(m_stagingBuffer.Get(), m_image.Get(), vk::ImageLayout::eTransferDstOptimal, 1, &region);
+	commandBuffer.copyBufferToImage(m_stagingBuffer->Get(), m_image.Get(), vk::ImageLayout::eTransferDstOptimal, 1, &region);
 
 	if (m_mipLevels > 1)
 		GenerateMipmaps(commandBuffer, dstImageLayout); // transfers the image layout for each mip level

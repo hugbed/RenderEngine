@@ -4,6 +4,8 @@
 
 #include <vulkan/vulkan.hpp>
 
+#include <memory>
+
 // An extension of Image to support mipmaps and copying data to the image buffer
 class Texture : public Image
 {
@@ -20,7 +22,10 @@ public:
 		uint32_t mipLevels = 1
 	);
 
-	void* GetStagingMappedData() const { return m_stagingBuffer.GetMappedData(); }
+	// Useful for one time upload
+	UniqueBuffer* ReleaseStagingBuffer() { return m_stagingBuffer.release(); }
+
+	void* GetStagingMappedData() const { return m_stagingBuffer->GetMappedData(); }
 
 	void UploadStagingToGPU(vk::CommandBuffer& commandBuffer, vk::ImageLayout dstImageLayout);
 
@@ -28,5 +33,5 @@ public:
 
 private:
 	uint32_t m_depth;
-	UniqueBuffer m_stagingBuffer;
+	std::unique_ptr<UniqueBuffer> m_stagingBuffer;
 };

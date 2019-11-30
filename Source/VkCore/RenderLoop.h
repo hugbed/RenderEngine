@@ -64,6 +64,6 @@ protected:
 	bool m_frameBufferResized{ false };
 	vk::SurfaceKHR m_surface;
 	std::unique_ptr<Swapchain> m_swapchain;
-	CommandBufferPool m_renderCommandBuffers;
+	CommandBufferPool m_commandBufferPool;
 	GPUSync m_gpuSync;
 };
