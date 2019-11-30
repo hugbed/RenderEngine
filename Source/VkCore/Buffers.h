@@ -10,13 +10,13 @@
 
 class CommandBuffer;
 
-struct UniqueBuffer
+struct UniqueBuffer : public DeferredDestructible
 {
 	using value_type = vk::Buffer;
 
 	UniqueBuffer(const vk::BufferCreateInfo& createInfo, const VmaAllocationCreateInfo& allocInfo);
 	
-	~UniqueBuffer();
+	~UniqueBuffer() override;
 
 	IMPLEMENT_MOVABLE_ONLY(UniqueBuffer);
 
@@ -32,39 +32,43 @@ private:
 	VmaAllocationInfo m_allocationInfo;
 };
 
-class UniqueBufferWithStaging
+class UniqueBufferWithStaging : public DeferredDestructible
 {
 public:
+	using value_type = vk::Buffer;
+
 	UniqueBufferWithStaging(size_t size, vk::BufferUsageFlags bufferUsage);
 
 	IMPLEMENT_MOVABLE_ONLY(UniqueBufferWithStaging);
 
-	void* GetStagingMappedData() const { return m_stagingBuffer.GetMappedData(); }
+	UniqueBuffer* ReleaseStagingBuffer() { return m_stagingBuffer.release(); }
+
+	void* GetStagingMappedData() const { return m_stagingBuffer->GetMappedData(); }
 
 	void CopyStagingToGPU(vk::CommandBuffer& commandBuffer);
 
-	vk::Buffer Get() const { return m_buffer.Get(); }
+	value_type Get() const { return m_buffer.Get(); }
 
 private:
 	UniqueBuffer m_buffer;
-	UniqueBuffer m_stagingBuffer;
+	std::unique_ptr<UniqueBuffer> m_stagingBuffer;
 };
 
-struct UniqueImage
+struct UniqueImage : public DeferredDestructible
 {
 	using value_type = vk::Image;
 
-	UniqueImage() = default;
-
 	UniqueImage(const vk::ImageCreateInfo& createInfo, const VmaAllocationCreateInfo& allocInfo);
 
-	~UniqueImage();
+	~UniqueImage() override;
 
-	void Reset(const vk::ImageCreateInfo& createInfo, const VmaAllocationCreateInfo& allocInfo);
+	// For deferred initialization
+	UniqueImage() = default;
+	void Init(const vk::ImageCreateInfo& createInfo, const VmaAllocationCreateInfo& allocInfo);
 
 	IMPLEMENT_MOVABLE_ONLY(UniqueImage);
 
-	const value_type& Get() const { return m_image; }
+	value_type Get() const { return m_image; }
 
 private:
 	VkImage m_image = VK_NULL_HANDLE;

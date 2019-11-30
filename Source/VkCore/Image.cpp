@@ -37,7 +37,7 @@ void Image::CreateImage(vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::S
 		1, queueFamilies,
 		vk::ImageLayout::eUndefined
 	);
-	m_image.Reset(imageInfo, VmaAllocationCreateInfo{ {}, VMA_MEMORY_USAGE_GPU_ONLY });
+	m_image.Init(imageInfo, VmaAllocationCreateInfo{ {}, VMA_MEMORY_USAGE_GPU_ONLY });
 }
 
 void Image::TransitionLayout(vk::CommandBuffer& commandBuffer, vk::ImageLayout newLayout)

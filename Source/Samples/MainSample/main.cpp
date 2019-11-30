@@ -257,6 +257,10 @@ protected:
 		memcpy(m_texture->GetStagingMappedData(), reinterpret_cast<const void*>(pixels), texWidth * texHeight * 4UL);
 		m_texture->UploadStagingToGPU(commandBuffer, vk::ImageLayout::eShaderReadOnlyOptimal);
 
+		// We won't need the staging buffer after the initial upload
+		auto* stagingBuffer = m_texture->ReleaseStagingBuffer();
+		m_commandBufferPool.DestroyAfterSubmit(stagingBuffer);
+
 		stbi_image_free(pixels);
 	}
 
@@ -334,12 +338,18 @@ protected:
 			m_vertexBuffer = std::make_unique<UniqueBufferWithStaging>(bufferSize, vk::BufferUsageFlagBits::eVertexBuffer);
 			memcpy(m_vertexBuffer->GetStagingMappedData(), reinterpret_cast<const void*>(m_vertices.data()), bufferSize);
 			m_vertexBuffer->CopyStagingToGPU(commandBuffer);
+
+			// We won't need the staging buffer after the initial upload
+			m_commandBufferPool.DestroyAfterSubmit(m_vertexBuffer->ReleaseStagingBuffer());
 		}
 		{
 			vk::DeviceSize bufferSize = sizeof(m_indices[0]) * m_indices.size();
 			m_indexBuffer = std::make_unique<UniqueBufferWithStaging>(bufferSize, vk::BufferUsageFlagBits::eIndexBuffer);
 			memcpy(m_indexBuffer->GetStagingMappedData(), reinterpret_cast<const void*>(m_indices.data()), bufferSize);
 			m_indexBuffer->CopyStagingToGPU(commandBuffer);
+
+			// We won't need the staging buffer after the initial upload
+			m_commandBufferPool.DestroyAfterSubmit(m_indexBuffer->ReleaseStagingBuffer());
 		}
 	}
 
