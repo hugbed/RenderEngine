@@ -3,58 +3,54 @@
 #include "PhysicalDevice.h"
 #include "Device.h"
 
-Buffer::Buffer(size_t size, vk::BufferUsageFlags bufferUsage, vk::MemoryPropertyFlags memoryProperties)
-	: m_size(size)
+UniqueBuffer::UniqueBuffer(const vk::BufferCreateInfo& createInfo, const VmaAllocationCreateInfo& allocInfo)
 {
-	vk::BufferCreateInfo bufferInfo({}, size, bufferUsage, vk::SharingMode::eExclusive);
-	m_buffer = g_device->Get().createBufferUnique(bufferInfo);
-
-	vk::MemoryRequirements memRequirements = g_device->Get().getBufferMemoryRequirements(m_buffer.get());
-	vk::MemoryAllocateInfo allocInfo(
-		memRequirements.size,
-		g_physicalDevice->FindMemoryType(
-			memRequirements.memoryTypeBits,
-			memoryProperties
-		)
-	);
-	m_deviceMemory = g_device->Get().allocateMemoryUnique(allocInfo);
-	g_device->Get().bindBufferMemory(m_buffer.get(), m_deviceMemory.get(), 0);
+	const VkBufferCreateInfo& bufferCreateInfo = createInfo;
+	vmaCreateBuffer(g_device->GetAllocator(), &bufferCreateInfo, &allocInfo, &m_buffer, &m_allocation, nullptr);
+	vmaGetAllocationInfo(g_device->GetAllocator(), m_allocation, &m_allocationInfo);
 }
 
-void Buffer::Overwrite(const void* dataToCopy)
+UniqueBuffer::~UniqueBuffer()
 {
-	void* data;
-	g_device->Get().mapMemory(m_deviceMemory.get(), 0, m_size, {}, &data);
-	{
-		memcpy(data, dataToCopy, m_size);
-	}
-	g_device->Get().unmapMemory(m_deviceMemory.get());
+	vmaDestroyBuffer(g_device->GetAllocator(), m_buffer, m_allocation);
 }
 
-BufferWithStaging::BufferWithStaging(size_t size, vk::BufferUsageFlags bufferUsage)
-	: m_buffer(
-		size,
-		bufferUsage | vk::BufferUsageFlagBits::eTransferDst,
-		vk::MemoryPropertyFlagBits::eDeviceLocal)
-	, m_stagingBuffer(
-		size,
-		vk::BufferUsageFlagBits::eTransferSrc,
-		vk::MemoryPropertyFlagBits::eHostVisible |
-		vk::MemoryPropertyFlagBits::eHostCoherent)
+UniqueBufferWithStaging::UniqueBufferWithStaging(size_t size, vk::BufferUsageFlags bufferUsage)
+	: m_stagingBuffer(
+		vk::BufferCreateInfo({}, size,  vk::BufferUsageFlagBits::eTransferSrc),
+		{ VMA_ALLOCATION_CREATE_MAPPED_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU })
+	, m_buffer(
+		vk::BufferCreateInfo({}, size, bufferUsage | vk::BufferUsageFlagBits::eTransferDst),
+		{ {}, VMA_MEMORY_USAGE_GPU_ONLY })
 {
 }
 
-void BufferWithStaging::Overwrite(vk::CommandBuffer& commandBuffer, const void* dataToCopy)
+void UniqueBufferWithStaging::CopyStagingToGPU(vk::CommandBuffer& commandBuffer)
 {
-	// Copy data to staging buffer
-	void* data;
-	g_device->Get().mapMemory(m_stagingBuffer.GetMemory(), 0, m_stagingBuffer.size(), {}, &data);
-	{
-		memcpy(data, dataToCopy, m_stagingBuffer.size());
-	}
-	g_device->Get().unmapMemory(m_stagingBuffer.GetMemory());
-
 	// Copy staging buffer to buffer
-	vk::BufferCopy copyRegion(0, 0, m_stagingBuffer.size());
+	vk::BufferCopy copyRegion(0, 0, m_buffer.Size());
 	commandBuffer.copyBuffer(m_stagingBuffer.Get(), m_buffer.Get(), 1, &copyRegion);
+}
+
+UniqueImage::UniqueImage(const vk::ImageCreateInfo& createInfo, const VmaAllocationCreateInfo& allocInfo)
+{
+	const VkImageCreateInfo& imageCreateInfo = createInfo;
+	vmaCreateImage(g_device->GetAllocator(), &imageCreateInfo, &allocInfo, &m_image, &m_allocation, nullptr);
+	vmaGetAllocationInfo(g_device->GetAllocator(), m_allocation, &m_allocationInfo);
+}
+
+UniqueImage::~UniqueImage()
+{
+	vmaDestroyImage(g_device->GetAllocator(), m_image, m_allocation);
+}
+
+void UniqueImage::Reset(const vk::ImageCreateInfo& createInfo, const VmaAllocationCreateInfo& allocInfo)
+{
+	if (m_image)
+	{
+		vmaDestroyImage(g_device->GetAllocator(), m_image, m_allocation);
+	}
+	const VkImageCreateInfo& imageCreateInfo = createInfo;
+	vmaCreateImage(g_device->GetAllocator(), &imageCreateInfo, &allocInfo, &m_image, &m_allocation, nullptr);
+	vmaGetAllocationInfo(g_device->GetAllocator(), m_allocation, &m_allocationInfo);
 }

@@ -7,6 +7,7 @@ find_package(Vulkan REQUIRED)
 include_directories(
   ${PROJECT_SOURCE_DIR} 
   ${Vulkan_INCLUDE_DIRS}
+  ${VMA_INCLUDE_DIRS}
   ${GLM_INCLUDE_DIRS}
   ${STB_INCLUDE_DIRS}
   ${TINYOBJLOADER_INCLUDE_DIRS})

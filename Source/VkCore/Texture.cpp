@@ -8,30 +8,21 @@ Texture::Texture(
 	vk::Format format,
 	vk::ImageTiling tiling,
 	vk::ImageUsageFlags usage,
-	vk::MemoryPropertyFlags properties,
 	vk::ImageAspectFlags aspectFlags,
 	uint32_t mipLevels
 )
-	: Image(width, height, depth, format, tiling, usage, properties, aspectFlags, mipLevels)
+	: Image(width, height, depth, format, tiling, usage, aspectFlags, mipLevels)
 	, m_stagingBuffer(
-		static_cast<size_t>(width)* height* depth,
-		vk::BufferUsageFlagBits::eTransferSrc,
-		vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent)
+		vk::BufferCreateInfo({}, static_cast<size_t>(width)* height* depth, vk::BufferUsageFlagBits::eTransferSrc),
+		{ VMA_ALLOCATION_CREATE_MAPPED_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, }
+	)
 {
 }
 
-void Texture::Overwrite(vk::CommandBuffer& commandBuffer, const void* pixels, vk::ImageLayout dstImageLayout)
+void Texture::UploadStagingToGPU(vk::CommandBuffer& commandBuffer, vk::ImageLayout dstImageLayout)
 {
 	if (m_imageLayout == vk::ImageLayout::eUndefined)
 		TransitionLayout(commandBuffer, vk::ImageLayout::eTransferDstOptimal);
-
-	// Copy data to staging buffer
-	void* data;
-	g_device->Get().mapMemory(m_stagingBuffer.GetMemory(), 0, m_stagingBuffer.size(), {}, &data);
-	{
-		memcpy(data, pixels, m_stagingBuffer.size());
-	}
-	g_device->Get().unmapMemory(m_stagingBuffer.GetMemory());
 
 	// Copy staging buffer to image
 	vk::BufferImageCopy region(
@@ -46,7 +37,7 @@ void Texture::Overwrite(vk::CommandBuffer& commandBuffer, const void* pixels, vk
 		),
 		vk::Offset3D(0, 0, 0), m_extent
 	);
-	commandBuffer.copyBufferToImage(m_stagingBuffer.Get(), m_image.get(), vk::ImageLayout::eTransferDstOptimal, 1, &region);
+	commandBuffer.copyBufferToImage(m_stagingBuffer.Get(), m_image.Get(), vk::ImageLayout::eTransferDstOptimal, 1, &region);
 
 	if (m_mipLevels > 1)
 		GenerateMipmaps(commandBuffer, dstImageLayout); // transfers the image layout for each mip level
@@ -64,7 +55,7 @@ void Texture::GenerateMipmaps(vk::CommandBuffer& commandBuffer, vk::ImageLayout 
 
 	vk::ImageMemoryBarrier barrier;
 
-	barrier.image = m_image.get();
+	barrier.image = m_image.Get();
 	barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;// VK_IMAGE_ASPECT_COLOR_BIT;
 	barrier.subresourceRange.baseArrayLayer = 0;
 	barrier.subresourceRange.layerCount = 1;
@@ -103,8 +94,8 @@ void Texture::GenerateMipmaps(vk::CommandBuffer& commandBuffer, vk::ImageLayout 
 		blit.dstSubresource.layerCount = 1;
 
 		commandBuffer.blitImage(
-			m_image.get(), vk::ImageLayout::eTransferSrcOptimal,
-			m_image.get(), vk::ImageLayout::eTransferDstOptimal,
+			m_image.Get(), vk::ImageLayout::eTransferSrcOptimal,
+			m_image.Get(), vk::ImageLayout::eTransferDstOptimal,
 			1, &blit,
 			vk::Filter::eLinear
 		);

@@ -2,6 +2,8 @@
 
 #include <vulkan/vulkan.hpp>
 
+#include "defines.h"
+
 #include <optional>
 #include <vector>
 #include <cstdint>
@@ -17,8 +19,7 @@ public:
 	static void Init(vk::Instance instance, vk::SurfaceKHR surface);
 	static void Term();
 
-	PhysicalDevice(const PhysicalDevice& other) = delete;
-	PhysicalDevice& operator=(const PhysicalDevice) = delete;
+	IMPLEMENT_MOVABLE_ONLY(PhysicalDevice);
 
 public:
 	struct QueueFamilyIndices {

@@ -16,16 +16,17 @@ public:
 		vk::Format format,
 		vk::ImageTiling tiling,
 		vk::ImageUsageFlags usage,
-		vk::MemoryPropertyFlags properties,
 		vk::ImageAspectFlags aspectFlags,
 		uint32_t mipLevels = 1
 	);
 
-	void Overwrite(vk::CommandBuffer& commandBuffer, const void* pixels, vk::ImageLayout dstImageLayout);
+	void* GetStagingMappedData() const { return m_stagingBuffer.GetMappedData(); }
+
+	void UploadStagingToGPU(vk::CommandBuffer& commandBuffer, vk::ImageLayout dstImageLayout);
 
 	void GenerateMipmaps(vk::CommandBuffer& commandBuffer, vk::ImageLayout dstImageLayout);
 
 private:
 	uint32_t m_depth;
-	Buffer m_stagingBuffer;
+	UniqueBuffer m_stagingBuffer;
 };
