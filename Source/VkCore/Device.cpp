@@ -61,6 +61,17 @@ Device::Device(const PhysicalDevice& physicalDevice)
 #endif
 
 	m_device = physicalDevice.Get().createDeviceUnique(createInfo);
+
+	// Create memory allocator
+	VmaAllocatorCreateInfo allocatorInfo = {};
+	allocatorInfo.physicalDevice = physicalDevice.Get();
+	allocatorInfo.device = m_device.get();
+	vmaCreateAllocator(&allocatorInfo, &m_allocator);
+}
+
+Device::~Device()
+{
+	vmaDestroyAllocator(m_allocator);
 }
 
 // Could be in header

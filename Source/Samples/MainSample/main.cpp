@@ -205,7 +205,13 @@ protected:
 		m_uniformBuffers.reserve(m_swapchain->GetImageCount());
 		for (uint32_t i = 0; i < m_swapchain->GetImageCount(); ++i)
 		{
-			m_uniformBuffers.emplace_back(sizeof(UniformBufferObject));
+			m_uniformBuffers.emplace_back(
+				vk::BufferCreateInfo(
+					{},
+					sizeof(UniformBufferObject),
+					vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eTransferSrc
+				), VmaAllocationCreateInfo{ VMA_ALLOCATION_CREATE_MAPPED_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU }
+			);
 		}
 	}
 
@@ -245,17 +251,11 @@ protected:
 			vk::ImageTiling::eOptimal,
 			vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst | // src and dst for mipmaps blit
 				vk::ImageUsageFlagBits::eSampled,
-			vk::MemoryPropertyFlagBits::eDeviceLocal,
 			vk::ImageAspectFlagBits::eColor,
 			mipLevels
 		);
-
-		// Copy image data to staging buffer
-		m_texture->Overwrite(
-			commandBuffer,
-			reinterpret_cast<const void*>(pixels),
-			vk::ImageLayout::eShaderReadOnlyOptimal // dstImageLayout
-		);
+		memcpy(m_texture->GetStagingMappedData(), reinterpret_cast<const void*>(pixels), texWidth * texHeight * 4UL);
+		m_texture->UploadStagingToGPU(commandBuffer, vk::ImageLayout::eShaderReadOnlyOptimal);
 
 		stbi_image_free(pixels);
 	}
@@ -329,11 +329,18 @@ protected:
 
 	void UploadGeometry(vk::CommandBuffer& commandBuffer)
 	{
-		m_vertexBuffer = std::make_unique<VertexBuffer>(sizeof(m_vertices[0]) * m_vertices.size());
-		m_vertexBuffer->Overwrite(commandBuffer, reinterpret_cast<const void*>(m_vertices.data()));
-
-		m_indexBuffer = std::make_unique<IndexBuffer>(sizeof(m_indices[0]) * m_indices.size());
-		m_indexBuffer->Overwrite(commandBuffer, reinterpret_cast<const void*>(m_indices.data()));
+		{
+			vk::DeviceSize bufferSize = sizeof(m_vertices[0]) * m_vertices.size();
+			m_vertexBuffer = std::make_unique<UniqueBufferWithStaging>(bufferSize, vk::BufferUsageFlagBits::eVertexBuffer);
+			memcpy(m_vertexBuffer->GetStagingMappedData(), reinterpret_cast<const void*>(m_vertices.data()), bufferSize);
+			m_vertexBuffer->CopyStagingToGPU(commandBuffer);
+		}
+		{
+			vk::DeviceSize bufferSize = sizeof(m_indices[0]) * m_indices.size();
+			m_indexBuffer = std::make_unique<UniqueBufferWithStaging>(bufferSize, vk::BufferUsageFlagBits::eIndexBuffer);
+			memcpy(m_indexBuffer->GetStagingMappedData(), reinterpret_cast<const void*>(m_indices.data()), bufferSize);
+			m_indexBuffer->CopyStagingToGPU(commandBuffer);
+		}
 	}
 
 	void UpdateUniformBuffer(uint32_t imageIndex)
@@ -350,7 +357,8 @@ protected:
 		ubo.proj[1][1] *= -1; // inverse Y for OpenGL -> Vulkan (clip coordinates)
 
 		// Upload to GPU
-		m_uniformBuffers[imageIndex].Overwrite(reinterpret_cast<const void*>(&ubo));
+		void* data = m_uniformBuffers[imageIndex].GetMappedData();
+		memcpy(data, reinterpret_cast<const void*>(&ubo), sizeof(UniformBufferObject));
 	}
 
 	void Update() override 
@@ -453,9 +461,10 @@ private:
 	vk::UniqueCommandPool m_secondaryCommandPool;
 	std::vector<vk::UniqueCommandBuffer> m_renderPassCommandBuffers;
 
-	std::unique_ptr<VertexBuffer> m_vertexBuffer{ nullptr };
-	std::unique_ptr<IndexBuffer> m_indexBuffer{ nullptr };
-	std::vector<UniformBuffer> m_uniformBuffers; // one per image since these change every frame
+	std::unique_ptr<UniqueBufferWithStaging> m_vertexBuffer{ nullptr };
+	std::unique_ptr<UniqueBufferWithStaging> m_indexBuffer{ nullptr };
+
+	std::vector<UniqueBuffer> m_uniformBuffers; // one per image since these change every frame
 
 	std::unique_ptr<Texture> m_texture{ nullptr };
 	vk::UniqueSampler m_sampler;

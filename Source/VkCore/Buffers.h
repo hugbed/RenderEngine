@@ -1,79 +1,73 @@
 #pragma once
 
+#include "defines.h"
+
+#include "vk_mem_alloc.h"
+
 #include <vulkan/vulkan.hpp>
 
 #include <vector>
 
 class CommandBuffer;
 
-class Buffer
+struct UniqueBuffer
 {
-public:
 	using value_type = vk::Buffer;
 
-	Buffer(size_t size, vk::BufferUsageFlags bufferUsage, vk::MemoryPropertyFlags memoryProperties);
+	UniqueBuffer(const vk::BufferCreateInfo& createInfo, const VmaAllocationCreateInfo& allocInfo);
+	
+	~UniqueBuffer();
 
-	void Overwrite(const void* dataToCopy);
+	IMPLEMENT_MOVABLE_ONLY(UniqueBuffer);
 
-	value_type Get() const { return m_buffer.get(); }
-	vk::DeviceMemory GetMemory() const { return m_deviceMemory.get(); }
-	size_t size() const { return m_size; }
+	void* GetMappedData() const { return m_allocationInfo.pMappedData; }
+
+	vk::DeviceSize Size() { return m_allocationInfo.size; }
+
+	value_type Get() const { return m_buffer; }
 
 private:
-	size_t m_size; // this one might not be necessary
-	vk::UniqueBuffer m_buffer;
-	vk::UniqueDeviceMemory m_deviceMemory;
+	VkBuffer m_buffer;
+	VmaAllocation m_allocation;
+	VmaAllocationInfo m_allocationInfo;
 };
 
-class BufferWithStaging
+class UniqueBufferWithStaging
 {
 public:
-	BufferWithStaging(size_t size, vk::BufferUsageFlags bufferUsage);
+	UniqueBufferWithStaging(size_t size, vk::BufferUsageFlags bufferUsage);
 
-	void Overwrite(vk::CommandBuffer& commandBuffer, const void* dataToCopy);
+	IMPLEMENT_MOVABLE_ONLY(UniqueBufferWithStaging);
+
+	void* GetStagingMappedData() const { return m_stagingBuffer.GetMappedData(); }
+
+	void CopyStagingToGPU(vk::CommandBuffer& commandBuffer);
 
 	vk::Buffer Get() const { return m_buffer.Get(); }
 
-	size_t size() const { return m_buffer.size(); }
+private:
+	UniqueBuffer m_buffer;
+	UniqueBuffer m_stagingBuffer;
+};
+
+struct UniqueImage
+{
+	using value_type = vk::Image;
+
+	UniqueImage() = default;
+
+	UniqueImage(const vk::ImageCreateInfo& createInfo, const VmaAllocationCreateInfo& allocInfo);
+
+	~UniqueImage();
+
+	void Reset(const vk::ImageCreateInfo& createInfo, const VmaAllocationCreateInfo& allocInfo);
+
+	IMPLEMENT_MOVABLE_ONLY(UniqueImage);
+
+	const value_type& Get() const { return m_image; }
 
 private:
-	Buffer m_buffer;
-	Buffer m_stagingBuffer;
-};
-
-class VertexBuffer : public BufferWithStaging
-{
-public:
-	using value_type = vk::Buffer;
-
-	VertexBuffer(size_t size)
-		: BufferWithStaging(size, vk::BufferUsageFlagBits::eVertexBuffer)
-	{}
-
-	const std::vector<vk::DeviceSize>& GetOffsets() const { return m_offsets; }
-
-private:
-	std::vector<vk::DeviceSize> m_offsets;
-};
-
-class IndexBuffer : public BufferWithStaging
-{
-public:
-	using value_type = vk::Buffer;
-
-	IndexBuffer(size_t size)
-		: BufferWithStaging(size, vk::BufferUsageFlagBits::eIndexBuffer)
-	{}
-};
-
-class UniformBuffer : public Buffer
-{
-public:
-	using value_type = vk::Buffer;
-
-	UniformBuffer(size_t size)
-		: Buffer(size, vk::BufferUsageFlagBits::eUniformBuffer,
-			vk::MemoryPropertyFlagBits::eHostCoherent |
-			vk::MemoryPropertyFlagBits::eHostCoherent)
-	{}
+	VkImage m_image = VK_NULL_HANDLE;
+	VmaAllocation m_allocation = VK_NULL_HANDLE;
+	VmaAllocationInfo m_allocationInfo = {};
 };

@@ -8,7 +8,6 @@ Image::Image(
 	vk::Format format,
 	vk::ImageTiling tiling,
 	vk::ImageUsageFlags usage,
-	vk::MemoryPropertyFlags properties,
 	vk::ImageAspectFlags aspectFlags,
 	uint32_t mipLevels,
 	vk::SampleCountFlagBits nbSamples
@@ -18,7 +17,6 @@ Image::Image(
 	, m_extent(static_cast<uint32_t>(width), static_cast<uint32_t>(height), 1)
 {
 	CreateImage(tiling, usage, nbSamples);
-	InitImageMemory(properties);
 	CreateImageView(aspectFlags);
 }
 
@@ -39,19 +37,7 @@ void Image::CreateImage(vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::S
 		1, queueFamilies,
 		vk::ImageLayout::eUndefined
 	);
-	m_image = g_device->Get().createImageUnique(imageInfo);
-}
-
-void Image::InitImageMemory(vk::MemoryPropertyFlags properties)
-{
-	vk::MemoryRequirements memRequirements = g_device->Get().getImageMemoryRequirements(m_image.get());
-	m_memory = g_device->Get().allocateMemoryUnique(
-		vk::MemoryAllocateInfo(
-			memRequirements.size,
-			g_physicalDevice->FindMemoryType(memRequirements.memoryTypeBits, properties)
-		)
-	);
-	g_device->Get().bindImageMemory(m_image.get(), m_memory.get(), 0);
+	m_image.Reset(imageInfo, VmaAllocationCreateInfo{ {}, VMA_MEMORY_USAGE_GPU_ONLY });
 }
 
 void Image::TransitionLayout(vk::CommandBuffer& commandBuffer, vk::ImageLayout newLayout)
@@ -64,7 +50,7 @@ void Image::TransitionLayout(vk::CommandBuffer& commandBuffer, vk::ImageLayout n
 		vk::AccessFlags(),
 		m_imageLayout, newLayout,
 		0, 0,
-		m_image.get(),
+		m_image.Get(),
 		vk::ImageSubresourceRange(
 			vk::ImageAspectFlagBits::eColor, // aspect mask
 			0, // baseMipLevel
@@ -116,7 +102,7 @@ void Image::CreateImageView(vk::ImageAspectFlags aspectFlags)
 {
 	vk::ImageViewCreateInfo createInfo(
 		vk::ImageViewCreateFlags(),
-		m_image.get(),
+		m_image.Get(),
 		vk::ImageViewType::e2D,
 		m_format,
 		vk::ComponentMapping(vk::ComponentSwizzle::eIdentity),

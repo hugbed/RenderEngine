@@ -22,7 +22,6 @@ public:
 		vk::Format format,
 		vk::ImageTiling tiling,
 		vk::ImageUsageFlags usage,
-		vk::MemoryPropertyFlags properties,
 		vk::ImageAspectFlags aspectFlags,
 		uint32_t mipLevels = 1,
 		vk::SampleCountFlagBits nbSamples = vk::SampleCountFlagBits::e1
@@ -32,20 +31,19 @@ public:
 
 	uint32_t GetMipLevels() const { return m_mipLevels; }
 
-	value_type Get() const { return m_image.get(); }
+	value_type Get() const { return m_image.Get(); }
 
 protected:
 	void TransitionLayout(vk::CommandBuffer& commandBuffer, vk::ImageLayout newLayout);
 
 	void CreateImage(vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::SampleCountFlagBits nbSamples);
-	void InitImageMemory(vk::MemoryPropertyFlags properties);
+
 	void CreateImageView(vk::ImageAspectFlags aspectFlags);
 
 	vk::Extent3D m_extent;
 	vk::Format m_format;
 	uint32_t m_mipLevels;
 	vk::ImageLayout m_imageLayout{ vk::ImageLayout::eUndefined };
-	vk::UniqueImage m_image;
-	vk::UniqueDeviceMemory m_memory;
 	vk::UniqueImageView m_imageView;
+	UniqueImage m_image;
 };
