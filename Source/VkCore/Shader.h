@@ -15,6 +15,14 @@ public:
 
 	static vk::UniqueShaderModule CreateShaderModule(const std::vector<char>& code);
 
+	template <class T>
+	void SetSpecializationConstants(const T& obj)
+	{
+		SetSpecializationConstants(reinterpret_cast<const void*>(&obj), sizeof(T));
+	}
+
+	void SetSpecializationConstants(const void* data, size_t size);
+
 	vk::PipelineShaderStageCreateInfo GetShaderStageInfo() const;
 
 	vk::PipelineVertexInputStateCreateInfo GetVertexInputStateInfo() const;
@@ -28,6 +36,8 @@ protected:
 	vk::VertexInputBindingDescription m_bindingDescription;
 	std::vector<vk::VertexInputAttributeDescription> m_attributeDescriptions;
 	std::vector<vk::DescriptorSetLayoutBinding> m_descriptorSetLayouts;
+	std::vector<vk::SpecializationMapEntry> m_specializationMapEntries;
+	vk::SpecializationInfo m_specializationInfo;
 
 private:
 	vk::ShaderStageFlagBits m_shaderStage;

@@ -110,6 +110,34 @@ Shader::Shader(const std::string& filename, std::string entryPoint)
 		return a.binding < b.binding;
 	});
 
+	//  ---- Specialization constants --- //
+
+	auto constants = comp.get_specialization_constants();
+	m_specializationMapEntries.reserve(constants.size());
+	for (auto& c : constants)
+	{
+		const auto& constant = comp.get_constant(c.id);
+
+		m_specializationMapEntries.push_back(vk::SpecializationMapEntry(
+			c.constant_id,
+			0,
+			spirv_vk::sizeof_constant(comp, constant.constant_type)
+		));
+	}
+
+	// Sort by constant_id
+	std::sort(m_specializationMapEntries.begin(), m_specializationMapEntries.end(), [](const auto& a, const auto& b) {
+		return a.constantID < b.constantID;
+	});
+
+	// Compute offsets
+	offset = 0;
+	for (auto& entry : m_specializationMapEntries)
+	{
+		entry.offset = offset;
+		offset += entry.size;
+	}
+
 	if (shaderResources.separate_images.empty() == false ||
 		shaderResources.storage_images.empty() == false ||
 		shaderResources.separate_samplers.empty() == false ||
@@ -137,7 +165,8 @@ vk::PipelineShaderStageCreateInfo Shader::GetShaderStageInfo() const
 		vk::PipelineShaderStageCreateFlags(),
 		m_shaderStage,
 		m_shaderModule.get(),
-		m_entryPoint.c_str()
+		m_entryPoint.c_str(),
+		&m_specializationInfo
 	);
 }
 
@@ -149,4 +178,13 @@ vk::PipelineVertexInputStateCreateInfo Shader::GetVertexInputStateInfo() const
 		static_cast<uint32_t>(m_attributeDescriptions.size()), m_attributeDescriptions.data()
 	);
 	return vertexInputInfo;
+}
+
+void Shader::SetSpecializationConstants(const void* data, size_t size)
+{
+	m_specializationInfo = {};
+	m_specializationInfo.dataSize = size;
+	m_specializationInfo.mapEntryCount = static_cast<uint32_t>(m_specializationMapEntries.size());
+	m_specializationInfo.pMapEntries = m_specializationMapEntries.data();
+	m_specializationInfo.pData = data;
 }

@@ -71,19 +71,29 @@ namespace std {
 class App : public RenderLoop
 {
 public:
+	// todo: per material please
+	struct Constants
+	{
+		uint32_t lightingModel = 0;
+	} m_specializationConstants;
+
 	App(vk::SurfaceKHR surface, vk::Extent2D extent, Window& window)
 		: RenderLoop(surface, extent, window)
 		, m_renderPass(std::make_unique<RenderPass>(m_swapchain->GetImageDescription().format))
 		, m_framebuffers(Framebuffer::FromSwapchain(*m_swapchain, m_renderPass->Get()))
-		, m_vertexShader(std::make_unique<Shader>("vert.spv", "main"))
-		, m_fragmentShader(std::make_unique<Shader>("frag.spv", "main"))
-		, m_graphicsPipeline(
-			std::make_unique<GraphicsPipeline>(m_renderPass->Get(),
-			m_swapchain->GetImageDescription().extent,
-			*m_vertexShader,
-			*m_fragmentShader))
+		, m_vertexShader(std::make_unique<Shader>("mvp_vert.spv", "main"))
+		, m_fragmentShader(std::make_unique<Shader>("surface_frag.spv", "main"))
 		, camera(0.25f * glm::vec3(1.0f, 1.0f, 1.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f), 45.0f)
 	{
+		m_fragmentShader->SetSpecializationConstants(m_specializationConstants);
+
+		m_graphicsPipeline= std::make_unique<GraphicsPipeline>(
+			m_renderPass->Get(),
+			m_swapchain->GetImageDescription().extent,
+			*m_vertexShader,
+			*m_fragmentShader
+		);
+
 		window.SetMouseButtonCallback(reinterpret_cast<void*>(this), OnMouseButton);
 		window.SetMouseScrollCallback(reinterpret_cast<void*>(this), OnMouseScroll);
 		window.SetCursorPositionCallback(reinterpret_cast<void*>(this), OnCursorPosition);
@@ -174,7 +184,6 @@ protected:
 			m_renderPassCommandBuffers[i]->end();
 		}
 	}
-
 
 	void RenderFrame(uint32_t imageIndex, vk::CommandBuffer commandBuffer) override
 	{
