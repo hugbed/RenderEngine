@@ -46,11 +46,11 @@ public:
 
 	void SetFieldOfView(float fov) { m_fieldOfView = fov; }
 
-	void SetCameraView(glm::vec3 eye, glm::vec3 up, glm::vec3 lookat)
+	void SetCameraView(glm::vec3 eye, glm::vec3 lookat, glm::vec3 up)
 	{
 		m_eye = std::move(eye);
-		m_upVector = std::move(up);
 		m_lookAt = std::move(lookat);
+		m_upVector = std::move(up);
 		UpdateViewMatrix();
 	}
 

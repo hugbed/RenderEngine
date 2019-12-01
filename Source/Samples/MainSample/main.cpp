@@ -20,6 +20,7 @@
 #include <GLFW/glfw3.h>
 #define _USE_MATH_DEFINES
 #include <cmath>
+#include <algorithm>
 
 // For Uniform Buffer
 #define GLM_FORCE_RADIANS
@@ -74,7 +75,7 @@ public:
 	// todo: per material please
 	struct Constants
 	{
-		uint32_t lightingModel = 0;
+		uint32_t lightingModel = 1;
 	} m_specializationConstants;
 
 	App(vk::SurfaceKHR surface, vk::Extent2D extent, Window& window)
@@ -312,6 +313,9 @@ protected:
 
 		m_vertexOffsets.reserve(shapes.size());
 
+		float maxDist = 0;
+		glm::vec3 zeroVect(0,0,0);
+
 		for (const auto& shape : shapes)
 		{
 			m_vertexOffsets.push_back(m_indices.size());
@@ -324,6 +328,11 @@ protected:
 					attrib.vertices[3UL * index.vertex_index + 1],
 					attrib.vertices[3UL * index.vertex_index + 2]
 				};
+
+				float dist = glm::distance(vertex.pos, zeroVect);
+				if(dist > maxDist) {
+					maxDist = dist;
+				}
 				vertex.texCoord = {
 					attrib.texcoords[2UL * index.texcoord_index + 0],
 					1.0f - attrib.texcoords[2UL * index.texcoord_index + 1]
@@ -338,6 +347,9 @@ protected:
 				m_indices.push_back(uniqueVertices[vertex]);
 			}
 		}
+
+		std::cout << maxDist;
+		this->camera.SetCameraView(glm::vec3(maxDist * 2, maxDist * 2, maxDist * 2), glm::vec3(0, 0, 0), glm::vec3(0, 0, 1));
 	}
 
 	void UploadGeometry(vk::CommandBuffer& commandBuffer)
@@ -427,7 +439,8 @@ protected:
 	static void OnMouseScroll(void* data, double xOffset, double yOffset)
 	{
 		App* app = reinterpret_cast<App*>(data);
-		app->camera.SetFieldOfView(app->camera.GetFieldOfView() - yOffset);
+		float fov = std::clamp(app->camera.GetFieldOfView() - yOffset, 30.0, 130.0);
+		app->camera.SetFieldOfView(fov);
 	}
 
 	static void OnCursorPosition(void* data, double xPos, double yPos)
