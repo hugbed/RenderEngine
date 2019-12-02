@@ -42,6 +42,12 @@ public:
 
 	glm::vec3 GetLookAt() const { return m_lookAt; }
 
+	glm::vec3 GetRightVector() const
+	{ 
+		glm::vec3 directionVector = glm::normalize(m_lookAt - m_eye);
+		return glm::normalize(glm::cross(directionVector, m_upVector));
+	}
+
 	float GetFieldOfView() const { return m_fieldOfView; }
 
 	void SetFieldOfView(float fov) { m_fieldOfView = fov; }
