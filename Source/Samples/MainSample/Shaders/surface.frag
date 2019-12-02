@@ -5,7 +5,13 @@ layout(location = 0) in vec3 fragColor;
 layout(location = 1) in vec2 fragTexCoord;
 
 layout(constant_id = 0) const int LIGHTING_MODEL = 0;
-layout(binding = 1) uniform sampler2D texSampler;
+
+// Set 0: always bound (nothing yet)
+
+// Set 1: bound for each material (nothing yet)
+
+// Set 2: bound for each object
+layout(set = 2, binding = 1) uniform sampler2D texSampler;
 
 layout(location = 0) out vec4 outColor;
 

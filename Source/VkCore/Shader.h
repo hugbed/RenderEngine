@@ -27,7 +27,7 @@ public:
 
 	vk::PipelineVertexInputStateCreateInfo GetVertexInputStateInfo() const;
 
-	const std::vector<vk::DescriptorSetLayoutBinding>& GetDescriptorSetLayoutBindings() const
+	const std::vector<std::vector<vk::DescriptorSetLayoutBinding>>& GetDescriptorSetLayoutBindings() const
 	{
 		return m_descriptorSetLayouts;
 	}
@@ -35,7 +35,7 @@ public:
 protected:
 	vk::VertexInputBindingDescription m_bindingDescription;
 	std::vector<vk::VertexInputAttributeDescription> m_attributeDescriptions;
-	std::vector<vk::DescriptorSetLayoutBinding> m_descriptorSetLayouts;
+	std::vector<std::vector<vk::DescriptorSetLayoutBinding>> m_descriptorSetLayouts;
 	std::vector<vk::SpecializationMapEntry> m_specializationMapEntries;
 	vk::SpecializationInfo m_specializationInfo;
 

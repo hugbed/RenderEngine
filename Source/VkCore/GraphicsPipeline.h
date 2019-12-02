@@ -10,33 +10,6 @@
 
 struct ImageDescription;
 
-struct DescriptorSetPool
-{
-	DescriptorSetPool() = default;
-	
-	DescriptorSetPool(const DescriptorSetPool&) = delete;
-
-	DescriptorSetPool(DescriptorSetPool&&) = default;
-
-	DescriptorSetPool& operator=(DescriptorSetPool&& other)
-	{
-		descriptorSets = std::move(other).descriptorSets;
-		descriptorPool = std::move(other).descriptorPool;
-		return *this;
-	}
-
-	~DescriptorSetPool()
-	{
-		// Clear descriptor sets before descriptor pool
-		descriptorSets.clear();
-		descriptorPool.reset();
-	}
-
-	// todo: descriptor sets could possibly use the same pool
-	std::vector<vk::UniqueDescriptorSet> descriptorSets;
-	vk::UniqueDescriptorPool descriptorPool;
-};
-
 class GraphicsPipeline
 {
 public:
@@ -54,7 +27,9 @@ public:
 		VkDeviceSize* vertexOffsets,
 		vk::DescriptorSet descriptorSet);
 
-	DescriptorSetPool CreateDescriptorSetPool(uint32_t size) const;
+	vk::DescriptorSetLayout GetDescriptorSetLayout(size_t set) const { return m_descriptorSetLayouts[set].get(); }
+
+	vk::PipelineLayout GetPipelineLayout() const { return m_pipelineLayout.get(); }
 
 	value_type Get() const { return m_graphicsPipeline.get(); }
 
@@ -62,7 +37,7 @@ private:
 	vk::UniquePipelineLayout m_pipelineLayout;
 	vk::UniquePipeline m_graphicsPipeline;
 
-	// Optional in a generic render pass / for a graphics pipeline
-	std::vector<vk::DescriptorSetLayoutBinding> m_descriptorSetLayoutBindings;
-	vk::UniqueDescriptorSetLayout m_descriptorSetLayout;
+	// A list of DescriptorSetLayoutBinding per descriptor set
+	std::vector<std::vector<vk::DescriptorSetLayoutBinding>> m_descriptorSetLayoutBindings;
+	std::vector<vk::UniqueDescriptorSetLayout> m_descriptorSetLayouts;
 };

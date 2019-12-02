@@ -3,6 +3,7 @@
 #include "Image.h"
 #include "Device.h"
 #include "PhysicalDevice.h"
+#include "vk_utils.h"
 
 #include <array>
 
@@ -56,24 +57,42 @@ GraphicsPipeline::GraphicsPipeline(vk::RenderPass renderPass, vk::Extent2D viewp
 		1, &colorBlendAttachment
 	);
 
+	// Get each descriptor set layout bindings (1 list per descriptor set)
 	const auto& vertexShaderBindings = vertexShader.GetDescriptorSetLayoutBindings();
 	const auto& fragmentShaderBindings = fragmentShader.GetDescriptorSetLayoutBindings();
 
-	m_descriptorSetLayoutBindings.clear();
-	m_descriptorSetLayoutBindings.insert(m_descriptorSetLayoutBindings.end(), vertexShaderBindings.begin(), vertexShaderBindings.end());
-	m_descriptorSetLayoutBindings.insert(m_descriptorSetLayoutBindings.end(), fragmentShaderBindings.begin(), fragmentShaderBindings.end());
-
-	std::sort(m_descriptorSetLayoutBindings.begin(), m_descriptorSetLayoutBindings.end(), [](const auto& a, const auto& b) {
-		return a.binding < b.binding;
-	});
-
-	m_descriptorSetLayout = g_device->Get().createDescriptorSetLayoutUnique(vk::DescriptorSetLayoutCreateInfo(
-		{}, static_cast<uint32_t>(m_descriptorSetLayoutBindings.size()), m_descriptorSetLayoutBindings.data()
-	));
+	// Combine sets from vertex and fragment shader
+ 	m_descriptorSetLayoutBindings.clear();
+	m_descriptorSetLayoutBindings.resize((std::max(vertexShaderBindings.size(), fragmentShaderBindings.size())));
 	
-	vk::DescriptorSetLayout descriptorSetLayouts[] = { m_descriptorSetLayout.get() };
+	for (size_t set = 0; set < m_descriptorSetLayoutBindings.size(); ++set)
+	{
+		auto& descriptorSetLayoutBinding = m_descriptorSetLayoutBindings[set];
+
+		if (set < vertexShaderBindings.size())
+		{
+			auto& vertexSetLayoutBindings = vertexShaderBindings[set];
+			descriptorSetLayoutBinding.insert(descriptorSetLayoutBinding.end(), vertexSetLayoutBindings.begin(), vertexSetLayoutBindings.end());
+		}
+		if (set < fragmentShaderBindings.size())
+		{
+			auto& fragmentSetLayoutBindings = fragmentShaderBindings[set];
+			descriptorSetLayoutBinding.insert(descriptorSetLayoutBinding.end(), fragmentSetLayoutBindings.begin(), fragmentSetLayoutBindings.end());
+		}
+
+		// and sort them by bindings
+		std::sort(descriptorSetLayoutBinding.begin(), descriptorSetLayoutBinding.end(), [](const auto& a, const auto& b) {
+			return a.binding < b.binding;
+		});
+
+		m_descriptorSetLayouts.push_back(g_device->Get().createDescriptorSetLayoutUnique(vk::DescriptorSetLayoutCreateInfo(
+			{}, static_cast<uint32_t>(descriptorSetLayoutBinding.size()), descriptorSetLayoutBinding.data()
+		)));
+	}
+
+	std::vector<vk::DescriptorSetLayout> descriptorSetLayouts = vk_utils::remove_unique(m_descriptorSetLayouts);
 	m_pipelineLayout = g_device->Get().createPipelineLayoutUnique(vk::PipelineLayoutCreateInfo(
-		{}, 1, descriptorSetLayouts
+		{}, static_cast<uint32_t>(descriptorSetLayouts.size()), descriptorSetLayouts.data()
 	));
 
 	vk::PipelineDepthStencilStateCreateInfo depthStencilState(
@@ -105,29 +124,6 @@ GraphicsPipeline::GraphicsPipeline(vk::RenderPass renderPass, vk::Extent2D viewp
 	);
 
 	m_graphicsPipeline = g_device->Get().createGraphicsPipelineUnique({}, graphicsPipelineCreateInfo);
-}
-
-DescriptorSetPool GraphicsPipeline::CreateDescriptorSetPool(uint32_t size) const
-{
-	DescriptorSetPool descriptors;
-
-	std::vector<vk::DescriptorPoolSize> poolSizes;
-	poolSizes.reserve(m_descriptorSetLayoutBindings.size());
-	for (const auto& descriptorSet : m_descriptorSetLayoutBindings)
-		poolSizes.emplace_back(descriptorSet.descriptorType, descriptorSet.descriptorCount * size);
-
-	descriptors.descriptorPool = g_device->Get().createDescriptorPoolUnique(vk::DescriptorPoolCreateInfo(
-		vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-		size,
-		static_cast<uint32_t>(poolSizes.size()), poolSizes.data()
-	));
-
-	std::vector<vk::DescriptorSetLayout> layouts(size, m_descriptorSetLayout.get());
-	descriptors.descriptorSets = g_device->Get().allocateDescriptorSetsUnique(vk::DescriptorSetAllocateInfo(
-		descriptors.descriptorPool.get(), size, layouts.data()
-	));
-
-	return descriptors;
 }
 
 void GraphicsPipeline::Draw(
