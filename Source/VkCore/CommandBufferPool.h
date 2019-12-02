@@ -25,6 +25,11 @@ public:
 		return m_commandBufferPools.size();
 	}
 
+	size_t GetNbConcurrentSubmits() const
+	{
+		return m_fences.size();
+	}
+
 	vk::CommandBuffer GetCommandBuffer()
 	{
 		return m_commandBuffers[m_commandBufferIndex].get();

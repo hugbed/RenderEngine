@@ -72,16 +72,22 @@ Shader::Shader(const std::string& filename, std::string entryPoint)
 
 	m_shaderStage = spirv_vk::execution_model_to_shader_stage(comp.get_execution_model());
 
-	m_descriptorSetLayouts.reserve(shaderResources.uniform_buffers.size() + shaderResources.sampled_images.size());
+	// Keep track of descriptor layout for each set (0, 1, 2, ...)
 
 	// Uniform buffers
 	for (const auto& ubo : shaderResources.uniform_buffers)
 	{
+		auto set = comp.get_decoration(ubo.id, spv::Decoration::DecorationDescriptorSet);
+		if (set >= m_descriptorSetLayouts.size())
+			m_descriptorSetLayouts.resize(set + 1);
+		
+		auto& descriptorSetLayout = m_descriptorSetLayouts[set];
+
 		auto binding = comp.get_decoration(ubo.id, spv::Decoration::DecorationBinding);
 
 		const auto& type = comp.get_type(ubo.type_id);
 
-		m_descriptorSetLayouts.push_back(vk::DescriptorSetLayoutBinding(
+		descriptorSetLayout.push_back(vk::DescriptorSetLayoutBinding(
 			binding, // binding
 			vk::DescriptorType::eUniformBuffer,
 			type.array.empty() ? 1ULL : type.array.size(), // descriptorCount
@@ -92,12 +98,18 @@ Shader::Shader(const std::string& filename, std::string entryPoint)
 	// Sampler2D
 	for (const auto& sampler : shaderResources.sampled_images)
 	{
+		auto set = comp.get_decoration(sampler.id, spv::Decoration::DecorationDescriptorSet);
+		if (m_descriptorSetLayouts.size() < set)
+			m_descriptorSetLayouts.resize(set + 1);
+
+		auto& descriptorSetLayout = m_descriptorSetLayouts[set];
+
 		auto binding = comp.get_decoration(sampler.id, spv::Decoration::DecorationBinding);
 
 		// to check if it's an array, e.g.: uniform sampler2D uSampler[10];
 		const auto& type = comp.get_type(sampler.type_id);
 
-		m_descriptorSetLayouts.push_back(vk::DescriptorSetLayoutBinding(
+		descriptorSetLayout.push_back(vk::DescriptorSetLayoutBinding(
 			binding, // binding
 			vk::DescriptorType::eCombinedImageSampler,
 			type.array.empty() ? 1ULL : type.array.size(), // descriptorCount
@@ -105,10 +117,13 @@ Shader::Shader(const std::string& filename, std::string entryPoint)
 		));
 	}
 
-	// Sort by binding
-	std::sort(m_descriptorSetLayouts.begin(), m_descriptorSetLayouts.end(), [](const auto& a, const auto& b) {
-		return a.binding < b.binding;
-	});
+	// Sort each layout by binding
+	for (auto& descriptorSetLayout : m_descriptorSetLayouts)
+	{
+		std::sort(descriptorSetLayout.begin(), descriptorSetLayout.end(), [](const auto& a, const auto& b) {
+			return a.binding < b.binding;
+		});
+	}
 
 	//  ---- Specialization constants --- //
 
