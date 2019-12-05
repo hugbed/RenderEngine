@@ -63,13 +63,16 @@ void RenderLoop::Render()
 {
 	m_commandBufferPool.WaitUntilSubmitComplete();
 
-	auto [result, imageIndex] = g_device->Get().acquireNextImageKHR(
+	// Use C API because eErrorOutOfDateKHR throws
+	uint32_t imageIndex = 0;
+	auto result = vkAcquireNextImageKHR(
+		g_device->Get(),
 		m_swapchain->Get(),
-		UINT64_MAX, // max timeout
+		UINT64_MAX,
 		m_gpuSync.imageAvailableSemaphore.get(),
-		nullptr
-	);
-	if (result == vk::Result::eErrorOutOfDateKHR) // todo: this one will throw
+		nullptr, // fence
+		&imageIndex);
+	if (result == (VkResult)vk::Result::eErrorOutOfDateKHR) 
 	{
 		RecreateSwapchain();
 		return;
@@ -102,16 +105,17 @@ void RenderLoop::Render()
 	presentInfo.pSwapchains = &m_swapchain->Get();
 	presentInfo.pImageIndices = &imageIndex;
 
-	result = g_device->GetPresentQueue().presentKHR(presentInfo);
-	if (result == vk::Result::eSuboptimalKHR ||
-		result == vk::Result::eErrorOutOfDateKHR || // todo: this one will throw
+	result = vkQueuePresentKHR(g_device->GetPresentQueue(), &static_cast<const VkPresentInfoKHR&>(presentInfo));
+
+	if (result == (VkResult)vk::Result::eSuboptimalKHR ||
+		result == (VkResult)vk::Result::eErrorOutOfDateKHR ||
 		m_frameBufferResized)
 	{
 		m_frameBufferResized = false;
 		RecreateSwapchain();
 		return;
 	}
-	else if (result != vk::Result::eSuccess)
+	else if (result != (VkResult)vk::Result::eSuccess)
 	{
 		throw std::runtime_error("Failed to acquire swapchain image");
 	}

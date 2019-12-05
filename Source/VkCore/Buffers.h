@@ -22,11 +22,12 @@ struct UniqueBuffer : public DeferredDestructible
 
 	void* GetMappedData() const { return m_allocationInfo.pMappedData; }
 
-	vk::DeviceSize Size() { return m_allocationInfo.size; }
+	vk::DeviceSize Size() { return m_size; }
 
 	value_type Get() const { return m_buffer; }
 
 private:
+	size_t m_size;
 	VkBuffer m_buffer;
 	VmaAllocation m_allocation;
 	VmaAllocationInfo m_allocationInfo;

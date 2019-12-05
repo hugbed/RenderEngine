@@ -9,20 +9,20 @@ layout(location = 0) out vec3 fragColor;
 layout(location = 1) out vec2 fragTexCoord;
 
 // Set 0: always bound 
-layout(set = 0, binding = 0) uniform GlobalUniforms {
+layout(set = 0, binding = 0) uniform ViewUniforms {
     mat4 view;
     mat4 proj;
-} global_ubo;
+} view;
 
-// Set 1: bound per material (nothing yet)
+// Set 1: bound per object
+layout(set = 1, binding = 0) uniform ModelUniforms {
+    mat4 transform;
+} model;
 
-// Set 2: bound for each object
-layout(set = 2, binding = 0) uniform PerObjectUniforms {
-    mat4 model;
-} obj_ubo;
+// Set 2: bound for each material 
 
 void main() {
-    gl_Position = global_ubo.proj * global_ubo.view * obj_ubo.model * vec4(inPosition, 1.0);
+    gl_Position = view.proj * view.view * model.transform * vec4(inPosition, 1.0);
     fragTexCoord = inTexCoord;
     fragColor = inColor;
 }

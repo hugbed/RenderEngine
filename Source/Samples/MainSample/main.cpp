@@ -1,4 +1,6 @@
-#include <iostream>
+#if defined(_WIN32)
+#include <Windows.h>
+#endif
 
 #include "RenderLoop.h"
 #include "Window.h"
@@ -41,16 +43,32 @@
 #include <chrono>
 #include <unordered_map>
 
-struct GlobalUniforms {
+struct ViewUniforms
+{
 	glm::mat4 view;
 	glm::mat4 proj;
 };
 
-struct PerObjectUniforms {
-	glm::mat4 model;
+struct ModelUniforms
+{
+	glm::mat4 transform;
 };
 
-struct Vertex {
+struct MaterialUniforms
+{
+	vk::ImageView imageView = nullptr;
+	vk::Sampler sampler = nullptr;
+};
+
+enum class DescriptorSetIndices
+{
+	View = 0,
+	Model = 1,
+	Material = 2,
+};
+
+struct Vertex
+{
 	glm::vec3 pos;
 	glm::vec3 color;
 	glm::vec2 texCoord;
@@ -73,16 +91,63 @@ namespace std {
 
 struct Material
 {
-	GraphicsPipeline* pipeline = nullptr;
-	Texture* texture = nullptr;
-	vk::Sampler sampler = nullptr;
+	const vk::DescriptorSetLayout& GetDescriptorSetLayout() const
+	{
+		return pipeline->GetDescriptorSetLayout((size_t)DescriptorSetIndices::Material);
+	}
+
+	void Bind(vk::CommandBuffer commandBuffer) const
+	{
+		commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline->Get());
+	}
+
+	const GraphicsPipeline* pipeline = nullptr;
 };
 
-struct Object
+struct MaterialInstance
+{
+	void Bind(vk::CommandBuffer& commandBuffer) const
+	{
+		commandBuffer.bindDescriptorSets(
+			vk::PipelineBindPoint::eGraphics,
+			material->pipeline->GetPipelineLayout(),
+			(uint32_t)DescriptorSetIndices::Material,
+			1, &descriptorSet.get(), 0, nullptr
+		);
+	}
+
+	const Material* material;
+	MaterialUniforms uniforms; // todo: this can vary per material
+	vk::UniqueDescriptorSet descriptorSet; // per-material descriptors
+};
+
+struct Mesh
 {
 	vk::DeviceSize indexOffset;
 	vk::DeviceSize nbIndices;
-	Material* material;
+	const MaterialInstance* materialInstance;
+};
+
+struct Model
+{
+	void Bind(vk::CommandBuffer& commandBuffer, vk::PipelineLayout modelPipelineLayout) const
+	{
+		commandBuffer.bindDescriptorSets(
+			vk::PipelineBindPoint::eGraphics,
+			modelPipelineLayout,
+			(uint32_t)DescriptorSetIndices::Model,
+			1, &descriptorSet.get(), 0, nullptr
+		);
+	}
+
+	// All parts share the same model transform.
+	ModelUniforms uniforms;
+
+	// A model as multiple parts (meshes)
+	std::vector<Mesh> meshes;
+
+	// Per-object descriptors
+	vk::UniqueDescriptorSet descriptorSet;
 };
 
 class App : public RenderLoop
@@ -91,13 +156,6 @@ public:
 	struct SurfaceShaderConstants
 	{
 		uint32_t lightingModel = 1;
-	};
-
-	enum class DescriptorSetIndices
-	{
-		Global = 0, // Scene
-		PerMaterial = 1, // Material
-		PerObject = 2 // Node
 	};
 
 	// todo: per material please
@@ -111,15 +169,6 @@ public:
 		, m_fragmentShader(std::make_unique<Shader>("surface_frag.spv", "main"))
 		, camera(1.0f * glm::vec3(1.0f, 1.0f, 1.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f), 45.0f)
 	{
-		m_fragmentShader->SetSpecializationConstants(m_specializationConstants);
-
-		m_graphicsPipelines.emplace_back(
-			m_renderPass->Get(),
-			m_swapchain->GetImageDescription().extent,
-			*m_vertexShader,
-			*m_fragmentShader
-		);
-
 		window.SetMouseButtonCallback(reinterpret_cast<void*>(this), OnMouseButton);
 		window.SetMouseScrollCallback(reinterpret_cast<void*>(this), OnMouseScroll);
 		window.SetCursorPositionCallback(reinterpret_cast<void*>(this), OnCursorPosition);
@@ -138,6 +187,8 @@ protected:
 
 	void Init(vk::CommandBuffer& commandBuffer) override
 	{
+		LoadMaterials();
+		LoadTextures(commandBuffer);
 		LoadModel(commandBuffer);
 		UploadGeometry(commandBuffer);
 		CreateUniformBuffers();
@@ -157,12 +208,9 @@ protected:
 
 		m_renderPass = std::make_unique<RenderPass>(m_swapchain->GetImageDescription().format);
 		m_framebuffers = Framebuffer::FromSwapchain(*m_swapchain, m_renderPass->Get());
-		m_graphicsPipelines.emplace_back(
-			m_renderPass->Get(), m_swapchain->GetImageDescription().extent,
-			*m_vertexShader, *m_fragmentShader
-		);
 
 		// Recreate everything that depends on the number of images
+		LoadMaterials();
 		CreateUniformBuffers();
 		CreateDescriptorSets();
 
@@ -170,23 +218,8 @@ protected:
 		RecordRenderPassCommands();
 	}
 
-	void CreateSecondaryCommandBuffers()
-	{
-		m_renderPassCommandBuffers.clear();
-
-		// We don't need to repopulate draw commands every frame
-		// so keep them in a secondary command buffer
-		m_secondaryCommandPool = g_device->Get().createCommandPoolUnique(vk::CommandPoolCreateInfo(
-			vk::CommandPoolCreateFlagBits::eResetCommandBuffer, g_physicalDevice->GetQueueFamilies().graphicsFamily.value()
-		));
-
-		// Command Buffers
-		m_renderPassCommandBuffers = g_device->Get().allocateCommandBuffersUnique(vk::CommandBufferAllocateInfo(
-			m_secondaryCommandPool.get(), vk::CommandBufferLevel::eSecondary, m_framebuffers.size()
-		));
-	}
-
 	// Record commands that don't change each frame in secondary command buffers
+	// todo: add bind methods to Model, MaterialInstance
 	void RecordRenderPassCommands()
 	{
 		for (size_t i = 0; i < m_framebuffers.size(); ++i)
@@ -197,11 +230,11 @@ protected:
 			);
 			commandBuffer->begin({ vk::CommandBufferUsageFlagBits::eRenderPassContinue, &info });
 			{
-				// Bind global descriptor set
+				// Bind view uniforms
 				commandBuffer.get().bindDescriptorSets(
-					vk::PipelineBindPoint::eGraphics, m_globalPipelineLayout.get(),
-					(uint32_t)DescriptorSetIndices::Global,
-					1, &m_globalDescriptorSets[i % m_commandBufferPool.GetNbConcurrentSubmits()].get(), 0, nullptr
+					vk::PipelineBindPoint::eGraphics, m_viewPipelineLayout.get(),
+					(uint32_t)DescriptorSetIndices::View,
+					1, &m_viewDescriptorSets[i % m_commandBufferPool.GetNbConcurrentSubmits()].get(), 0, nullptr
 				);
 
 				// Bind the one big vertex + index buffers
@@ -210,28 +243,34 @@ protected:
 				commandBuffer.get().bindVertexBuffers(0, 1, vertexBuffers, offsets);
 				commandBuffer.get().bindIndexBuffer(m_indexBuffer->Get(), 0, vk::IndexType::eUint32);
 
-				// For each object
-				uint32_t materialIndex = ~0UL;
-				for (const auto& obj : m_objects)
+				const Model* model = nullptr;
+				const MaterialInstance* materialInstance = nullptr;
+				const GraphicsPipeline* pipeline = nullptr;
+				for (const auto& drawItem : m_drawCache)
 				{
-					// If we changed material (todo: this makes me sad)
-					if (obj.first != materialIndex)
+					// Bind model uniforms
+					if (model != drawItem.model)
 					{
-						// Bind material's graphics pipeline
-						commandBuffer.get().bindPipeline(vk::PipelineBindPoint::eGraphics, obj.second.material->pipeline->Get());
-						materialIndex = obj.first;
+						model = drawItem.model;
+						model->Bind(commandBuffer.get(), m_modelPipelineLayout.get());
 					}
 
-					// Bind object descriptor set
-					auto& objectDescriptorSet = m_objectDescriptorSets[i % m_commandBufferPool.GetNbConcurrentSubmits()];
-					commandBuffer.get().bindDescriptorSets(
-						vk::PipelineBindPoint::eGraphics,
-						obj.second.material->pipeline->GetPipelineLayout(),
-						(uint32_t)DescriptorSetIndices::PerObject,
-						1, &objectDescriptorSet.get(), 0, nullptr);
+					// Bind material uniforms
+					if (drawItem.mesh->materialInstance != materialInstance)
+					{
+						materialInstance = drawItem.mesh->materialInstance;
+						materialInstance->Bind(commandBuffer.get());
+					}
 
-					// Draw with the correct index offset
-					commandBuffer.get().drawIndexed(obj.second.nbIndices, 1, obj.second.indexOffset, 0, 0);
+					// Bind Graphics Pipeline
+					if (materialInstance->material->pipeline != pipeline)
+					{
+						pipeline = drawItem.mesh->materialInstance->material->pipeline;
+						drawItem.mesh->materialInstance->material->Bind(commandBuffer.get());
+					}
+
+					// Draw
+					commandBuffer.get().drawIndexed(drawItem.mesh->nbIndices, 1, drawItem.mesh->indexOffset, 0, 0);
 				}
 			}
 			commandBuffer->end();
@@ -261,57 +300,122 @@ protected:
 		commandBuffer.endRenderPass();
 	}
 
+	void CreateSecondaryCommandBuffers()
+	{
+		m_renderPassCommandBuffers.clear();
+
+		// We don't need to repopulate draw commands every frame
+		// so keep them in a secondary command buffer
+		m_secondaryCommandPool = g_device->Get().createCommandPoolUnique(vk::CommandPoolCreateInfo(
+			vk::CommandPoolCreateFlagBits::eResetCommandBuffer, g_physicalDevice->GetQueueFamilies().graphicsFamily.value()
+		));
+
+		// Command Buffers
+		m_renderPassCommandBuffers = g_device->Get().allocateCommandBuffersUnique(vk::CommandBufferAllocateInfo(
+			m_secondaryCommandPool.get(), vk::CommandBufferLevel::eSecondary, m_framebuffers.size()
+		));
+	}
+
+	void LoadMaterials()
+	{
+		m_graphicsPipelines.clear();
+		while (m_materials.size() < 2)
+			m_materials.push_back(std::make_unique<Material>());
+
+		std::vector<GraphicsPipeline> pipelines;
+
+		// Textured
+		{
+			m_specializationConstants.lightingModel = 1;
+			m_fragmentShader->SetSpecializationConstants(m_specializationConstants);
+			m_graphicsPipelines.push_back(std::make_unique<GraphicsPipeline>(
+				m_renderPass->Get(),
+				m_swapchain->GetImageDescription().extent,
+				*m_vertexShader,
+				*m_fragmentShader
+			));
+			m_materials[0]->pipeline = m_graphicsPipelines[m_graphicsPipelines.size() - 1].get();
+		}
+
+		// Unlit albedo
+		{
+			m_specializationConstants.lightingModel = 0;
+			m_fragmentShader->SetSpecializationConstants(m_specializationConstants);
+			m_graphicsPipelines.push_back(std::make_unique<GraphicsPipeline>(
+				m_renderPass->Get(),
+				m_swapchain->GetImageDescription().extent,
+				*m_vertexShader,
+				*m_fragmentShader
+			));
+			m_materials[1]->pipeline = m_graphicsPipelines[m_graphicsPipelines.size() - 1].get();
+		}
+	}
+
+	void LoadTextures(vk::CommandBuffer& commandBuffer)
+	{
+		CreateAndUploadTextureImage(commandBuffer);
+		CreateSamplerForLastTexture();
+	}
+
 	void CreateUniformBuffers()
 	{
-		m_dynamicUniformBuffers.clear();
-		m_dynamicUniformBuffers.reserve(m_commandBufferPool.GetNbConcurrentSubmits());
+		// Per view
+		m_viewUniformBuffers.clear();
+		m_viewUniformBuffers.reserve(m_commandBufferPool.GetNbConcurrentSubmits());
 		for (uint32_t i = 0; i < m_commandBufferPool.GetNbConcurrentSubmits(); ++i)
 		{
-			m_dynamicUniformBuffers.emplace_back(
+			m_viewUniformBuffers.emplace_back(
 				vk::BufferCreateInfo(
 					{},
-					sizeof(GlobalUniforms),
+					sizeof(ViewUniforms),
 					vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eTransferSrc // needs TransferSrc?
 				), VmaAllocationCreateInfo{ VMA_ALLOCATION_CREATE_MAPPED_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU }
 			);
 		}
 
 		// Upload identity matrix for model transform for each object
-		PerObjectUniforms ubo = {};
-		ubo.model = glm::mat4(1.0f);
-		m_staticUniformBuffers.clear();
-		m_staticUniformBuffers.reserve(m_objects.size());
-		for (int i = 0; i < m_objects.size(); ++i)
+		ModelUniforms ubo = {};
+		ubo.transform = glm::mat4(1.0f);
+		m_modelUniformBuffers.clear();
+		m_modelUniformBuffers.reserve(m_models.size());
+		for (int i = 0; i < m_models.size(); ++i)
 		{
-			m_staticUniformBuffers.emplace_back(
+			m_modelUniformBuffers.emplace_back(
 				vk::BufferCreateInfo(
 					{},
-					m_objects.size() * sizeof(PerObjectUniforms),
+					m_models.size() * sizeof(ModelUniforms),
 					vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eTransferSrc // needs TransferSrc?
 				), VmaAllocationCreateInfo{ VMA_ALLOCATION_CREATE_MAPPED_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU }
 			);
-			void* data = m_staticUniformBuffers[m_staticUniformBuffers.size() - 1].GetMappedData();
-			memcpy(data, &ubo, sizeof(PerObjectUniforms));
+			void* data = m_modelUniformBuffers[m_modelUniformBuffers.size() - 1].GetMappedData();
+			memcpy(data, &ubo, sizeof(ModelUniforms));
 		}
 	}
 
+	// This assumes that there's at least one graphics pipeline
 	void CreateDescriptorSets()
 	{
-		m_globalDescriptorSets.clear();
-		m_objectDescriptorSets.clear();
+		m_viewDescriptorSets.clear();
+
+		for (size_t i = 0; i < m_models.size(); ++i)
+			m_models[i].descriptorSet.reset();
+
+		for (auto& materialInstance : m_materialInstances)
+			materialInstance->descriptorSet.reset();
+
 		m_descriptorPool.reset();
 
 		// We have 1 global descriptor set (set = 0)
-		uint32_t nbCameras = 1;
+		uint32_t nbViews = 1 * m_commandBufferPool.GetNbConcurrentSubmits();
 
-		// 1 descriptor set per material (set = 1)
-		uint32_t nbMaterials = m_materials.size();
+		// 1 descriptor set per material instance (set = 1)
+		uint32_t nbMaterials = m_materialInstances.size();
 
-		// 1 descriptor set per object (set = 2)
-		uint32_t nbObjects = m_objects.size();
+		// 1 descriptor set per mesh (set = 2) // todo: have push constant instead
+		uint32_t nbModels = m_models.size();
 
 		// Dynamic uniform data (updated each frame) gets one set per swapchain image
-		uint32_t nbSets = nbCameras * m_commandBufferPool.GetNbConcurrentSubmits() + nbMaterials + nbObjects;
+		uint32_t totalSets = nbViews + nbMaterials + nbModels;
 		
 		// Create descriptor pool
 		std::vector<vk::DescriptorPoolSize> poolSizes;
@@ -322,77 +426,110 @@ protected:
 			static_cast<uint32_t>(m_samplers.size())
 		));
 
-		// Each set possibly needs a uniform buffer
 		poolSizes.push_back(vk::DescriptorPoolSize(
 			vk::DescriptorType::eUniformBuffer,
-			nbSets
+			nbViews + nbModels // view and model sets need a uniform buffer
 		));
 
+		// If the number of required descriptors were to change at run-time
+		// we could have a descriptorPool per concurrent frame and reset the pool
+		// to increase its size while it's not in use.
 		m_descriptorPool = g_device->Get().createDescriptorPoolUnique(vk::DescriptorPoolCreateInfo(
 			vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-			nbSets,
+			totalSets,
 			static_cast<uint32_t>(poolSizes.size()), poolSizes.data()
 		));
 
-		// Create global descriptor set (ask any graphics pipeline to provide the global layout)
+		// Create view descriptor set.
+		// Ask any graphics pipeline to provide the view layout
+		// since all surface materials should share this layout
 		{
-			m_globalSetLayout = m_graphicsPipelines[0].GetDescriptorSetLayout((size_t)DescriptorSetIndices::Global);
-			std::vector<vk::DescriptorSetLayout> layouts(nbCameras * m_commandBufferPool.GetNbConcurrentSubmits(), m_globalSetLayout);
-			m_globalDescriptorSets = g_device->Get().allocateDescriptorSetsUnique(vk::DescriptorSetAllocateInfo(
+			// todo: regroup these fields into some kind of structure, they seem to go together
+			m_viewSetLayout = m_graphicsPipelines[0]->GetDescriptorSetLayout((size_t)DescriptorSetIndices::View);
+			std::vector<vk::DescriptorSetLayout> layouts(nbViews, m_viewSetLayout);
+			m_viewDescriptorSets = g_device->Get().allocateDescriptorSetsUnique(vk::DescriptorSetAllocateInfo(
 				m_descriptorPool.get(), static_cast<uint32_t>(layouts.size()), layouts.data()
 			));
-			m_globalPipelineLayout = g_device->Get().createPipelineLayoutUnique(vk::PipelineLayoutCreateInfo(
-				{}, 1, &m_globalSetLayout
+			m_viewPipelineLayout = g_device->Get().createPipelineLayoutUnique(vk::PipelineLayoutCreateInfo(
+				{}, 1, &m_viewSetLayout
+			));
+
+			// Update view descriptor sets
+			for (size_t i = 0; i < m_viewDescriptorSets.size(); ++i)
+			{
+				uint32_t binding = 0;
+				vk::DescriptorBufferInfo descriptorBufferInfo(m_viewUniformBuffers[i].Get(), 0, sizeof(ViewUniforms));
+				std::array<vk::WriteDescriptorSet, 1> writeDescriptorSets = {
+					vk::WriteDescriptorSet(
+						m_viewDescriptorSets[i].get(), binding, {},
+						1, vk::DescriptorType::eUniformBuffer, nullptr, &descriptorBufferInfo
+					) // binding = 0
+				};
+				g_device->Get().updateDescriptorSets(static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
+			}
+		}
+
+		// Create model descriptor sets
+		// Ask any graphics pipeline to provide the model layout
+		// since all surface materials should share this layout
+		{
+			// Create layouts first
+			m_modelSetLayout = m_graphicsPipelines[0]->GetDescriptorSetLayout((size_t)DescriptorSetIndices::Model);
+			std::vector<vk::DescriptorSetLayout> layouts = {
+				m_viewSetLayout, m_modelSetLayout // sets 0, 1
+			};
+			m_modelPipelineLayout = g_device->Get().createPipelineLayoutUnique(vk::PipelineLayoutCreateInfo(
+				{}, static_cast<uint32_t>(layouts.size()), layouts.data()
 			));
 		}
-
-		// Update global descriptor sets
-		for (size_t i = 0; i < m_globalDescriptorSets.size(); ++i)
 		{
-			vk::DescriptorBufferInfo descriptorBufferInfo(m_dynamicUniformBuffers[i].Get(), 0, sizeof(GlobalUniforms));
-			std::array<vk::WriteDescriptorSet, 1> writeDescriptorSets = {
-				vk::WriteDescriptorSet(
-					m_globalDescriptorSets[i].get(), 0, 0, 1, vk::DescriptorType::eUniformBuffer, nullptr, &descriptorBufferInfo
-				) // binding = 0
-			};
-			g_device->Get().updateDescriptorSets(static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
-		}
-
-		// No per material descriptor layouts yet
-		//for (uint32_t i = 0; i < m_materials.size(); ++i)
-		//{
-		//	// Create per material set layout (ask material pipeline to get layout for set = 1)
-		//}
-
-		// Create per-object descriptor sets
-		{
-			m_objectSetLayout = m_graphicsPipelines[0].GetDescriptorSetLayout((size_t)DescriptorSetIndices::PerObject);
-			std::vector<vk::DescriptorSetLayout> layouts(nbObjects, m_objectSetLayout);
-			m_objectDescriptorSets = g_device->Get().allocateDescriptorSetsUnique(vk::DescriptorSetAllocateInfo(
+			// Then allocate one descriptor set per model
+			std::vector<vk::DescriptorSetLayout> layouts(m_models.size(), m_modelSetLayout);
+			auto modelDescriptorSets = g_device->Get().allocateDescriptorSetsUnique(vk::DescriptorSetAllocateInfo(
 				m_descriptorPool.get(), static_cast<uint32_t>(layouts.size()), layouts.data()
 			));
+
+			// and update each one
+			for (size_t i = 0; i < m_models.size(); ++i)
+			{
+
+				m_models[i].descriptorSet = std::move(modelDescriptorSets[i]);
+
+				uint32_t binding = 0;
+				vk::DescriptorBufferInfo descriptorBufferInfo(m_modelUniformBuffers[i].Get(), 0, sizeof(ModelUniforms));
+				std::array<vk::WriteDescriptorSet, 1> writeDescriptorSets = {
+					vk::WriteDescriptorSet(
+						m_models[i].descriptorSet.get(), binding, {},
+						1, vk::DescriptorType::eUniformBuffer, nullptr, &descriptorBufferInfo
+					) // binding = 0
+				};
+				g_device->Get().updateDescriptorSets(static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
+			}
 		}
-		// Update per object descriptor sets
-		for (size_t i = 0; i < m_objectDescriptorSets.size(); ++i)
+
+		// Create material instance descriptor sets.
 		{
-			auto& set = m_objectDescriptorSets[i];
+			for (auto& materialInstance : m_materialInstances)
+			{
+				auto descriptorSets = g_device->Get().allocateDescriptorSetsUnique(vk::DescriptorSetAllocateInfo(
+					m_descriptorPool.get(), 1, &materialInstance->material->GetDescriptorSetLayout()
+				));
+				materialInstance->descriptorSet = std::move(descriptorSets[0]);
 
-			vk::DescriptorBufferInfo descriptorBufferInfo(m_staticUniformBuffers[i].Get(), 0, sizeof(PerObjectUniforms));
+				// Use the material's sampler and texture
+				auto& sampler = materialInstance->uniforms.sampler;
+				auto& imageView = materialInstance->uniforms.imageView;
+				vk::DescriptorImageInfo imageInfo(sampler, imageView, vk::ImageLayout::eShaderReadOnlyOptimal);
 
-			// Use the material's sampler and texture
-			auto& sampler = m_objects[i].second.material->sampler;
-			auto& imageView = m_objects[i].second.material->texture->GetImageView();
-			vk::DescriptorImageInfo imageInfo(sampler, imageView, vk::ImageLayout::eShaderReadOnlyOptimal);
-
-			std::array<vk::WriteDescriptorSet, 2> writeDescriptorSets = {
-				vk::WriteDescriptorSet(
-					set.get(), 0, 0, 1, vk::DescriptorType::eUniformBuffer, nullptr, &descriptorBufferInfo
-				), // binding = 0
-				vk::WriteDescriptorSet(
-					set.get(), 1, 0, 1, vk::DescriptorType::eCombinedImageSampler, &imageInfo, nullptr
-				) // binding = 1
-			};
-			g_device->Get().updateDescriptorSets(static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
+				uint32_t binding = 0;
+				std::array<vk::WriteDescriptorSet, 1> writeDescriptorSets = {
+					vk::WriteDescriptorSet(
+						materialInstance->descriptorSet.get(), binding, {},
+						1, vk::DescriptorType::eCombinedImageSampler, &imageInfo, nullptr
+					)
+				};
+				g_device->Get().updateDescriptorSets(static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
+			}
 		}
 	}
 
@@ -469,40 +606,47 @@ protected:
 		
 		std::unordered_map<Vertex, uint32_t> uniqueVertices;
 
-		// Create default material and assign it to all objects
-		// Todo: create material for each material
-		// Also material creation should handle creating
-		// loading shaders and creating pipelines
-		CreateAndUploadTextureImage(commandBuffer);
-		CreateSamplerForLastTexture();
-		{
-			Material material;
-			material.pipeline = &m_graphicsPipelines[0];
-			material.texture = &m_textures[0];
-			material.sampler = m_samplers[0].get();
-			m_materials.push_back(std::move(material));
-		}
+		Model model;
+		model.uniforms.transform = glm::mat4(1.0f);
+		//model.descriptorSet // todo: set later
+		model.meshes.reserve(shapes.size());
 
-		m_objects.reserve(shapes.size());
+		// At the moment assign one material per mesh to test multiple materials
+		size_t materialIndex = 0; // Figure this out by name 
 		for (const auto& shape : shapes)
 		{
-			Object object;
-			object.indexOffset = m_indices.size();
-			object.nbIndices = shape.mesh.indices.size();
-			object.material = &m_materials[0];
-			m_objects.push_back(std::make_pair(0, std::move(object))); // this pair structure makes me sad
+			// todo: if model needs a new material instance, create it here
+			auto materialInstance = std::make_unique<MaterialInstance>();
+			materialInstance->material = m_materials[materialIndex].get();
+			// materialInstance.descriptorSet // set in CreateDescriptors()
+
+			// todo: load texture referenced by model here, as we discover them
+			// or take not and load later asynchroneously
+			MaterialUniforms bindings;
+			bindings.imageView = m_textures[0].GetImageView(); // use 0 for now
+			bindings.sampler = m_samplers[0].get();
+			materialInstance->uniforms = std::move(bindings);
+
+			Mesh mesh;
+			mesh.indexOffset = m_indices.size();
+			mesh.nbIndices = shape.mesh.indices.size();
+			mesh.materialInstance = materialInstance.get();
+			model.meshes.push_back(std::move(mesh));
+
+			m_materialInstances.push_back(std::move(materialInstance));
+			m_models.push_back(std::move(model));
 
 			for (const auto& index : shape.mesh.indices)
 			{
 				Vertex vertex = {};
 				vertex.pos = {
-					attrib.vertices[3UL * index.vertex_index + 0],
-					attrib.vertices[3UL * index.vertex_index + 1],
-					attrib.vertices[3UL * index.vertex_index + 2]
+					attrib.vertices[3 * index.vertex_index + 0],
+					attrib.vertices[3 * index.vertex_index + 1],
+					attrib.vertices[3 * index.vertex_index + 2]
 				};
 				vertex.texCoord = {
-					attrib.texcoords[2UL * index.texcoord_index + 0],
-					1.0f - attrib.texcoords[2UL * index.texcoord_index + 1]
+					attrib.texcoords[2 * index.texcoord_index + 0],
+					1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
 				};
 				vertex.color = { 1.0f, 1.0f, 1.0f };
 
@@ -513,12 +657,36 @@ protected:
 				}
 				m_indices.push_back(uniqueVertices[vertex]);
 			}
+
+			materialIndex = (materialIndex + 1) % m_materials.size();
 		}
 		
-		// Sort objects by material id (this makes me sad)
-		std::sort(m_objects.begin(), m_objects.end(), [](const auto& a, const auto& b) {
-			return a.first < b.first;
-		});
+		// --- Ordered draw cache --- //
+
+		for (auto& model : m_models)
+			for (auto& mesh : model.meshes)
+				m_drawCache.push_back(MeshDrawInfo{ &model, &mesh });
+
+		// Sort draw calls by material, then materialInstance, then mesh.
+		// This minimizes the number of pipeline bindings (costly),
+		// then descriptor set bindings (a bit less costly).
+		//
+		// For example (m = material, i = materialInstance, o = object mesh):
+		//
+		// | m0, i0, o0 | m0, i0, o1 | m0, i1, o2 | m1, i2, o3 |
+		//
+		std::sort(m_drawCache.begin(), m_drawCache.end(),
+			[](const MeshDrawInfo& a, const MeshDrawInfo& b) {
+				// Sort by material first
+				if (a.mesh->materialInstance->material == b.mesh->materialInstance->material)
+					return a.mesh->materialInstance->material == b.mesh->materialInstance->material;
+				// Then material instance
+				else if (a.mesh->materialInstance == b.mesh->materialInstance)
+					return a.mesh->materialInstance < b.mesh->materialInstance;
+				// Then object
+				else
+					return a.model < b.model;
+			});
 	}
 
 	void UploadGeometry(vk::CommandBuffer& commandBuffer)
@@ -531,6 +699,7 @@ protected:
 
 			// We won't need the staging buffer after the initial upload
 			m_commandBufferPool.DestroyAfterSubmit(m_vertexBuffer->ReleaseStagingBuffer());
+			m_vertices.clear();
 		}
 		{
 			vk::DeviceSize bufferSize = sizeof(m_indices[0]) * m_indices.size();
@@ -540,6 +709,7 @@ protected:
 
 			// We won't need the staging buffer after the initial upload
 			m_commandBufferPool.DestroyAfterSubmit(m_indexBuffer->ReleaseStagingBuffer());
+			m_indices.clear();
 		}
 	}
 
@@ -549,16 +719,15 @@ protected:
 
 		vk::Extent2D extent = m_swapchain->GetImageDescription().extent;
 
-		GlobalUniforms ubo = {};
-		//ubo.model = glm::rotate(glm::mat4(1.0f), 0.0f, glm::vec3(0.0f, 0.0f, 1.0f));
+		ViewUniforms ubo = {};
 		ubo.view = camera.GetViewMatrix();
 		ubo.proj = glm::perspective(glm::radians(camera.GetFieldOfView()), extent.width / (float)extent.height, 0.1f, 10.0f);
 
 		ubo.proj[1][1] *= -1; // inverse Y for OpenGL -> Vulkan (clip coordinates)
 
 		// Upload to GPU
-		auto& uniformBuffer = m_dynamicUniformBuffers[imageIndex % m_commandBufferPool.GetNbConcurrentSubmits()];
-		memcpy(uniformBuffer.GetMappedData(), reinterpret_cast<const void*>(&ubo), sizeof(GlobalUniforms));
+		auto& uniformBuffer = m_viewUniformBuffers[imageIndex % m_commandBufferPool.GetNbConcurrentSubmits()];
+		memcpy(uniformBuffer.GetMappedData(), reinterpret_cast<const void*>(&ubo), sizeof(ViewUniforms));
 	}
 
 	void Update() override 
@@ -655,41 +824,56 @@ private:
 	std::vector<Framebuffer> m_framebuffers;
 	std::unique_ptr<Shader> m_vertexShader;
 	std::unique_ptr<Shader> m_fragmentShader;
-	std::vector<GraphicsPipeline> m_graphicsPipelines;
+	std::vector<std::unique_ptr<GraphicsPipeline>> m_graphicsPipelines;
 
 	// Secondary command buffers
 	vk::UniqueCommandPool m_secondaryCommandPool;
 	std::vector<vk::UniqueCommandBuffer> m_renderPassCommandBuffers;
 
+	// Geometry
+	std::vector<Vertex> m_vertices;
+	std::vector<uint32_t> m_indices;
 	std::unique_ptr<UniqueBufferWithStaging> m_vertexBuffer{ nullptr };
 	std::unique_ptr<UniqueBufferWithStaging> m_indexBuffer{ nullptr };
 
+	vk::UniqueDescriptorPool m_descriptorPool;
+
+	// --- View --- //
+
 	// For uniforms that change every frame
-	std::vector<UniqueBuffer> m_dynamicUniformBuffers; // one per in flight frame since these change every frame
+	std::vector<UniqueBuffer> m_viewUniformBuffers; // one per in flight frame since these change every frame
 	
+	// View descriptor sets
+	vk::DescriptorSetLayout m_viewSetLayout;
+	vk::UniquePipelineLayout m_viewPipelineLayout;
+	std::vector<vk::UniqueDescriptorSet> m_viewDescriptorSets;
+
+	// --- Model --- //
+
 	// One per object (could be one big, in this case, make sure to align to minUniformBufferOffsetAlignment)
-	std::vector<UniqueBuffer> m_staticUniformBuffers;
+	std::vector<UniqueBuffer> m_modelUniformBuffers;
+
+	// Model descriptor sets
+	vk::DescriptorSetLayout m_modelSetLayout;
+	vk::UniquePipelineLayout m_modelPipelineLayout;
+
+	std::vector<Model> m_models;
+
+	// --- Material --- //
 
 	std::vector<Texture> m_textures;
 	std::vector<vk::UniqueSampler> m_samplers;
+	std::vector<std::unique_ptr<Material>> m_materials;
+	std::vector<std::unique_ptr<MaterialInstance>> m_materialInstances;
 
-	vk::UniqueDescriptorPool m_descriptorPool;
-	vk::DescriptorSetLayout m_globalSetLayout;
-	std::vector<vk::UniqueDescriptorSet> m_globalDescriptorSets;
-	vk::UniquePipelineLayout m_globalPipelineLayout;
-	//vk::DescriptorSetLayout m_materialSetLayout;
-	vk::DescriptorSetLayout m_objectSetLayout;
-	//std::vector<vk::UniqueDescriptorSet> m_materialDescriptorSets;
-	std::vector<vk::UniqueDescriptorSet> m_objectDescriptorSets;
-
-	// Model data
-	std::vector<Vertex> m_vertices;
-	std::vector<uint32_t> m_indices;
-	std::vector<vk::DeviceSize> m_vertexOffsets; // 1 big vertex buffer for now
-
-	using material_index = size_t;
-	std::vector<Material> m_materials;
-	std::vector<std::pair<material_index, Object>> m_objects;
+	// Sort items to draw to minimize the number of bindings
+	// Less pipeline bindings, then descriptor set bindings.
+	struct MeshDrawInfo
+	{
+		Model* model;
+		Mesh* mesh;
+	};
+	std::vector<MeshDrawInfo> m_drawCache;
 };
 
 int main()

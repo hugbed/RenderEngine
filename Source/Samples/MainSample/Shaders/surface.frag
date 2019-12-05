@@ -8,10 +8,10 @@ layout(constant_id = 0) const int LIGHTING_MODEL = 0;
 
 // Set 0: always bound (nothing yet)
 
-// Set 1: bound for each material (nothing yet)
+// Set 1: bound for each object (nothing yet)
 
-// Set 2: bound for each object
-layout(set = 2, binding = 1) uniform sampler2D texSampler;
+// Set 2: bound for each material (nothing yet)
+layout(set = 2, binding = 0) uniform sampler2D texSampler;
 
 layout(location = 0) out vec4 outColor;
 
