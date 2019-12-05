@@ -4,6 +4,7 @@
 #include "Device.h"
 
 UniqueBuffer::UniqueBuffer(const vk::BufferCreateInfo& createInfo, const VmaAllocationCreateInfo& allocInfo)
+	: m_size(createInfo.size)
 {
 	const VkBufferCreateInfo& bufferCreateInfo = createInfo;
 	vmaCreateBuffer(g_device->GetAllocator(), &bufferCreateInfo, &allocInfo, &m_buffer, &m_allocation, nullptr);

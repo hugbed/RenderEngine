@@ -27,11 +27,11 @@ public:
 		VkDeviceSize* vertexOffsets,
 		vk::DescriptorSet descriptorSet);
 
-	vk::DescriptorSetLayout GetDescriptorSetLayout(size_t set) const { return m_descriptorSetLayouts[set].get(); }
+	const vk::DescriptorSetLayout& GetDescriptorSetLayout(size_t set) const { return m_descriptorSetLayouts[set].get(); }
 
 	vk::PipelineLayout GetPipelineLayout() const { return m_pipelineLayout.get(); }
 
-	value_type Get() const { return m_graphicsPipeline.get(); }
+	const value_type& Get() const { return m_graphicsPipeline.get(); }
 
 private:
 	vk::UniquePipelineLayout m_pipelineLayout;
