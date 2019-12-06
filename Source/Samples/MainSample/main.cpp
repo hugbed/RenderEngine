@@ -22,6 +22,7 @@
 #include <GLFW/glfw3.h>
 #define _USE_MATH_DEFINES
 #include <cmath>
+#include <algorithm>
 
 // For Uniform Buffer
 #define GLM_FORCE_RADIANS
@@ -31,6 +32,7 @@
 
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/hash.hpp>
+#include <glm/gtx/norm.hpp>
 
 // For Texture
 #define STB_IMAGE_IMPLEMENTATION
@@ -150,6 +152,8 @@ struct Model
 	vk::UniqueDescriptorSet descriptorSet;
 };
 
+enum CameraMode { OrbitCamera, FreeCamera };
+
 class App : public RenderLoop
 {
 public:
@@ -168,6 +172,7 @@ public:
 		, m_vertexShader(std::make_unique<Shader>("mvp_vert.spv", "main"))
 		, m_fragmentShader(std::make_unique<Shader>("surface_frag.spv", "main"))
 		, camera(1.0f * glm::vec3(1.0f, 1.0f, 1.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f), 45.0f)
+		, activeCameraMode(CameraMode::OrbitCamera)
 	{
 		window.SetMouseButtonCallback(reinterpret_cast<void*>(this), OnMouseButton);
 		window.SetMouseScrollCallback(reinterpret_cast<void*>(this), OnMouseScroll);
@@ -184,6 +189,8 @@ protected:
 	bool m_mouseIsDown = false;
 	std::map<int, bool> m_keyState;
 	Camera camera;
+	CameraMode activeCameraMode;
+	float InitOrbitCameraRadius;
 
 	void Init(vk::CommandBuffer& commandBuffer) override
 	{
@@ -613,6 +620,9 @@ protected:
 
 		// At the moment assign one material per mesh to test multiple materials
 		size_t materialIndex = 0; // Figure this out by name 
+		float maxDist = 0;
+		glm::vec3 zeroVect(0,0,0);
+
 		for (const auto& shape : shapes)
 		{
 			// todo: if model needs a new material instance, create it here
@@ -649,6 +659,10 @@ protected:
 					1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
 				};
 				vertex.color = { 1.0f, 1.0f, 1.0f };
+
+				auto dist = (vertex.pos - zeroVect).length();
+				if (dist > maxDist)
+					maxDist = dist;
 
 				if (uniqueVertices.count(vertex) == 0)
 				{
@@ -687,6 +701,10 @@ protected:
 				else
 					return a.model < b.model;
 			});
+
+		// Init camera to see the model
+		InitOrbitCameraRadius = maxDist * 2;
+		this->camera.SetCameraView(glm::vec3(InitOrbitCameraRadius, InitOrbitCameraRadius, InitOrbitCameraRadius), glm::vec3(0, 0, 0), glm::vec3(0, 0, 1));
 	}
 
 	void UploadGeometry(vk::CommandBuffer& commandBuffer)
@@ -738,7 +756,7 @@ protected:
 
 		for (const std::pair<int,bool>& key : m_keyState)
 		{
-			if (key.second) 
+			if (key.second && activeCameraMode == CameraMode::FreeCamera) 
 			{
 				glm::vec3 forward = glm::normalize(camera.GetLookAt() - camera.GetEye());
 				glm::vec3 rightVector = glm::normalize(glm::cross(forward, camera.GetUpVector()));
@@ -777,7 +795,8 @@ protected:
 	static void OnMouseScroll(void* data, double xOffset, double yOffset)
 	{
 		App* app = reinterpret_cast<App*>(data);
-		app->camera.SetFieldOfView(app->camera.GetFieldOfView() - yOffset);
+		float fov = std::clamp(app->camera.GetFieldOfView() - yOffset, 30.0, 130.0);
+		app->camera.SetFieldOfView(fov);
 	}
 
 	static void OnCursorPosition(void* data, double xPos, double yPos)
@@ -786,14 +805,42 @@ protected:
 		int width = 0;
 		int height = 0;
 		app->m_window.GetSize(&width, &height);
-		float speed = 0.0000001;
 
-		auto dt_s = app->GetDeltaTime();
-
-		float dx = speed * dt_s.count();
-
-		if (app->m_mouseIsDown)
+		if ((app->m_mouseIsDown) && app->activeCameraMode == CameraMode::OrbitCamera) 
 		{
+			glm::vec3 rightVector = app->camera.GetRightVector();
+			glm::vec3 zVector(0, 0, 1);
+			glm::vec4 position(app->camera.GetEye().x, app->camera.GetEye().y, app->camera.GetEye().z, 1);
+			glm::vec4 target(app->camera.GetLookAt().x, app->camera.GetLookAt().y, app->camera.GetLookAt().z, 1);
+
+			float dist = glm::distance2(zVector, glm::normalize(app->camera.GetEye() - app->camera.GetLookAt()));
+
+			float xAngle = (app->m_mouseDownPos.x - xPos) * (M_PI/300);
+			float yAngle = (app->m_mouseDownPos.y - yPos) * (M_PI/300);
+
+			if (dist < 0.01 && yAngle < 0 || 4.0 - dist < 0.01 && yAngle > 0) {
+				yAngle = 0;
+			}
+
+			glm::mat4x4 rotationMatrixY(1.0f);
+			rotationMatrixY = glm::rotate(rotationMatrixY, yAngle, rightVector);
+
+			glm::mat4x4 rotationMatrixX(1.0f);
+			rotationMatrixX = glm::rotate(rotationMatrixX, xAngle, zVector);
+
+			position = (rotationMatrixX * (position - target)) + target;
+
+			glm::vec3 finalPositionV3 = (rotationMatrixY * (position - target)) + target;
+
+			app->camera.SetCameraView(finalPositionV3, app->camera.GetLookAt(), zVector);
+		}
+		else if (app->m_mouseIsDown && app->activeCameraMode == CameraMode::FreeCamera) 
+		{
+			float speed = 0.0000001;
+
+			auto dt_s = app->GetDeltaTime();
+			float dx = speed * dt_s.count();
+
 			float diffX = app->m_mouseDownPos.x - xPos;
 			float diffY = app->m_mouseDownPos.y - yPos;
 
@@ -809,14 +856,22 @@ protected:
 
 			app->camera.LookAt(lookat + rightVector * dx * angleX);
 		}
-
-		app->m_mouseDownPos.x = xPos;
+		app->m_mouseDownPos.x = xPos; 
 		app->m_mouseDownPos.y = yPos;
 	}
 
 	static void onKey(void* data, int key, int scancode, int action, int mods) {
 		App* app = reinterpret_cast<App*>(data);
 		app->m_keyState[key] = action == GLFW_PRESS ? true : action == GLFW_REPEAT ? true : false;
+
+		if (key == GLFW_KEY_F && action == GLFW_PRESS) {
+			if (app->activeCameraMode == CameraMode::FreeCamera) 
+			{
+				// Reset camera position
+				app->camera.SetCameraView(glm::vec3(app->InitOrbitCameraRadius, app->InitOrbitCameraRadius, app->InitOrbitCameraRadius), glm::vec3(0, 0, 0), glm::vec3(0, 0, 1));
+			}
+			app->activeCameraMode = app->activeCameraMode == CameraMode::FreeCamera ? CameraMode::OrbitCamera : CameraMode::FreeCamera;
+		}
 	}
 
 private:
