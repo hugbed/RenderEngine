@@ -703,7 +703,7 @@ protected:
 			});
 
 		// Init camera to see the model
-		InitOrbitCameraRadius = maxDist * 2;
+		InitOrbitCameraRadius = maxDist * 2.5f;
 		this->camera.SetCameraView(glm::vec3(InitOrbitCameraRadius, InitOrbitCameraRadius, InitOrbitCameraRadius), glm::vec3(0, 0, 0), glm::vec3(0, 0, 1));
 	}
 
@@ -741,7 +741,14 @@ protected:
 		ubo.view = camera.GetViewMatrix();
 		ubo.proj = glm::perspective(glm::radians(camera.GetFieldOfView()), extent.width / (float)extent.height, 0.1f, 10.0f);
 
-		ubo.proj[1][1] *= -1; // inverse Y for OpenGL -> Vulkan (clip coordinates)
+		// OpenGL -> Vulkan invert y, half z
+		auto clip = glm::mat4(
+			1.0f,  0.0f, 0.0f, 0.0f,
+			0.0f, -1.0f, 0.0f, 0.0f,
+			0.0f,  0.0f, 0.5f, 0.0f,
+			0.0f,  0.0f, 0.5f, 1.0f
+		);
+		ubo.proj *= clip;
 
 		// Upload to GPU
 		auto& uniformBuffer = m_viewUniformBuffers[imageIndex % m_commandBufferPool.GetNbConcurrentSubmits()];
