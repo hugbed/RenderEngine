@@ -309,6 +309,7 @@ namespace spirv_vk
 			return 1;
 		case Type::Short:
 		case Type::UShort:
+		case Type::Half:
 			return 2;
 		case Type::Int:
 		case Type::UInt:
