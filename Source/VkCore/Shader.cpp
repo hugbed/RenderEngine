@@ -1,28 +1,9 @@
 #include "Shader.h"
 
 #include "Device.h"
+#include "file_utils.h"
 
 #include "spirv_vk.h"
-
-#include <fstream>
-
-namespace file_utils
-{
-	// todo: move to file utils class or something
-	static std::vector<char> ReadFile(const std::string& filename) {
-		std::ifstream file(filename, std::ios::ate | std::ios::binary);
-		if (!file.is_open())
-			throw std::runtime_error("failed to open file!");
-
-		size_t fileSize = (size_t)file.tellg();
-		std::vector<char> buffer(fileSize);
-		file.seekg(0);
-		file.read(reinterpret_cast<char*>(buffer.data()), fileSize);
-		file.close();
-
-		return buffer;
-	}
-}
 
 Shader::Shader(const std::string& filename, std::string entryPoint)
 	: m_entryPoint(std::move(entryPoint))
@@ -153,10 +134,35 @@ Shader::Shader(const std::string& filename, std::string entryPoint)
 		offset += entry.size;
 	}
 
+	// ---- Push Constants ---- //
+
+	size_t rangeSize = 0;
+	size_t rangeOffset = (std::numeric_limits<size_t>::max)();
+	for (int i = 0; i < shaderResources.push_constant_buffers.size(); ++i)
+	{
+		auto& buffer = shaderResources.push_constant_buffers[i];
+		auto& type = comp.get_type(buffer.base_type_id);
+
+		for (uint32_t i = 0; i < type.member_types.size(); ++i)
+		{
+			size_t memberSize = comp.get_declared_struct_member_size(type, i);
+			size_t memberOffset = comp.type_struct_member_offset(type, i);
+			rangeOffset = (std::min)(rangeOffset, memberOffset);
+			rangeSize += memberSize;
+		}
+	}
+	if (rangeSize > 0)
+	{
+		m_pushConstantRanges.push_back(vk::PushConstantRange(
+			m_shaderStage,
+			rangeOffset,
+			rangeSize
+		));
+	}
+
 	if (shaderResources.separate_images.empty() == false ||
 		shaderResources.storage_images.empty() == false ||
-		shaderResources.separate_samplers.empty() == false ||
-		shaderResources.push_constant_buffers.empty() == false)
+		shaderResources.separate_samplers.empty() == false)
 	{
 		throw std::runtime_error("Reflection not implemented for shader resource, please implement.");
 	}

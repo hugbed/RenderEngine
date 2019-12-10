@@ -43,7 +43,7 @@ protected:
 	};
 
 	virtual void Init(vk::CommandBuffer& commandBuffer) = 0;
-	virtual void OnSwapchainRecreated(CommandBufferPool& commandBuffers) = 0;
+	virtual void OnSwapchainRecreated() = 0;
 	virtual void Update() = 0;
 	virtual void RenderFrame(uint32_t imageIndex, vk::CommandBuffer commandBuffer) = 0;
 
