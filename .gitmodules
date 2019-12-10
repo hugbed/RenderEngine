@@ -7,3 +7,6 @@
 [submodule "ThirdParty/SPIRV-Cross"]
 	path = ThirdParty/SPIRV-Cross
 	url = git@github.com:KhronosGroup/SPIRV-Cross.git
+[submodule "ThirdParty/assimp"]
+	path = ThirdParty/assimp
+	url = git@github.com:assimp/assimp.git
