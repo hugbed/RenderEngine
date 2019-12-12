@@ -48,6 +48,7 @@
 
 #include <chrono>
 #include <unordered_map>
+#include <iostream>
 
 struct ViewUniforms
 {
@@ -200,11 +201,16 @@ public:
 		window.SetKeyCallback(reinterpret_cast<void*>(this), OnKey);
 	}
 
+	std::string m_sceneFilename;
+
+	void SetSceneFile(std::string sceneFilename)
+	{
+		m_sceneFilename = std::move(sceneFilename);
+	}
+
 	using RenderLoop::Init;
 
 protected:
-	const std::string kModelPath = "donut.dae";
-
 	glm::vec2 m_mouseDownPos = glm::vec2(0.0f);
 	bool m_isMouseDown = false;
 	std::map<int, bool> m_keyState;
@@ -215,7 +221,7 @@ protected:
 
 	void Init(vk::CommandBuffer& commandBuffer) override
 	{
-		LoadScene(commandBuffer, kModelPath);
+		LoadScene(commandBuffer, m_sceneFilename);
 		UploadGeometry(commandBuffer);
 
 		CreateViewUniformBuffers();
@@ -1029,8 +1035,16 @@ private:
 	std::vector<MeshDrawInfo> m_drawCache;
 };
 
-int main()
+int main(int argc, char* argv[])
 {
+	if (argc < 2)
+	{
+		std::cout << "Missing argument (1): Scene file (e.g. 'Something.obj')" << std::endl;
+		return 1;
+	}
+	
+	std::string sceneFile = argv[1];
+
 	vk::Extent2D extent(800, 600);
 	Window window(extent, "Vulkan");
 	window.SetInputMode(GLFW_STICKY_KEYS, GLFW_TRUE);
@@ -1042,6 +1056,7 @@ int main()
 	Device::Init(*g_physicalDevice);
 	{
 		App app(surface.get(), extent, window);
+		app.SetSceneFile(std::move(sceneFile));
 		app.Init();
 		app.Run();
 	}
