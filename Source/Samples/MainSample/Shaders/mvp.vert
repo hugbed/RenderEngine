@@ -9,6 +9,7 @@ layout(location = 3) in vec3 inNormal;
 layout(location = 0) out vec3 fragColor;
 layout(location = 1) out vec2 fragTexCoord;
 layout(location = 2) out vec3 fragNormal;
+layout(location = 3) out vec3 fragPos;
 
 // Set 0: always bound 
 layout(set = 0, binding = 0) uniform ViewUniforms {
@@ -24,7 +25,8 @@ layout(set = 1, binding = 0) uniform ModelUniforms {
 // Set 2: bound for each material 
 
 void main() {
-    gl_Position = view.proj * view.view * model.transform * vec4(inPosition, 1.0);
+    fragPos = vec3(model.transform * vec4(inPosition, 1.0));
+    gl_Position = view.proj * view.view * vec4(fragPos, 1.0);
     fragTexCoord = inTexCoord;
     fragColor = inColor;
     fragNormal = mat3(model.transform) * inNormal; // assumes afine transform
