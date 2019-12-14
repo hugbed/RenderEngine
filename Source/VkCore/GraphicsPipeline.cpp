@@ -90,9 +90,19 @@ GraphicsPipeline::GraphicsPipeline(vk::RenderPass renderPass, vk::Extent2D viewp
 		)));
 	}
 
+	// Combine push constants from vertex and fragment shader
+	const auto& vertexPushConstantRanges = vertexShader.GetPushConstantRanges();
+	const auto& fragmentPushConstantRanges = fragmentShader.GetPushConstantRanges();
+
+	m_pushConstantRanges.reserve(vertexPushConstantRanges.size() + fragmentPushConstantRanges.size());
+	m_pushConstantRanges.insert(m_pushConstantRanges.end(), vertexPushConstantRanges.begin(), vertexPushConstantRanges.end());
+	m_pushConstantRanges.insert(m_pushConstantRanges.end(), fragmentPushConstantRanges.begin(), fragmentPushConstantRanges.end());
+
 	std::vector<vk::DescriptorSetLayout> descriptorSetLayouts = vk_utils::remove_unique(m_descriptorSetLayouts);
 	m_pipelineLayout = g_device->Get().createPipelineLayoutUnique(vk::PipelineLayoutCreateInfo(
-		{}, static_cast<uint32_t>(descriptorSetLayouts.size()), descriptorSetLayouts.data()
+		{},
+		static_cast<uint32_t>(descriptorSetLayouts.size()), descriptorSetLayouts.data(),
+		static_cast<uint32_t>(m_pushConstantRanges.size()), m_pushConstantRanges.data()
 	));
 
 	vk::PipelineDepthStencilStateCreateInfo depthStencilState(
