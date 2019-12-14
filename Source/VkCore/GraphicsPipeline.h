@@ -28,6 +28,7 @@ public:
 		vk::DescriptorSet descriptorSet);
 
 	const vk::DescriptorSetLayout& GetDescriptorSetLayout(size_t set) const { return m_descriptorSetLayouts[set].get(); }
+	const std::vector<vk::PushConstantRange> GetPushConstantRanges() const { return m_pushConstantRanges; }
 
 	vk::PipelineLayout GetPipelineLayout() const { return m_pipelineLayout.get(); }
 
@@ -40,4 +41,5 @@ private:
 	// A list of DescriptorSetLayoutBinding per descriptor set
 	std::vector<std::vector<vk::DescriptorSetLayoutBinding>> m_descriptorSetLayoutBindings;
 	std::vector<vk::UniqueDescriptorSetLayout> m_descriptorSetLayouts;
+	std::vector<vk::PushConstantRange> m_pushConstantRanges;
 };

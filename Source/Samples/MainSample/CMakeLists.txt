@@ -10,7 +10,7 @@ include_directories(
   ${VMA_INCLUDE_DIRS}
   ${GLM_INCLUDE_DIRS}
   ${STB_INCLUDE_DIRS}
-  ${TINYOBJLOADER_INCLUDE_DIRS})
+  ${ASSIMP_INCLUDE_DIRS})
 
 file(GLOB_RECURSE SRC_FILES
     ${PROJECT_SOURCE_DIR}/*.h
@@ -23,7 +23,8 @@ target_link_libraries(
     ${Vulkan_LIBRARY}
     glfw
     VkCore
-    Engine)
+    Engine
+    assimp)
 
 if (WIN32)
   set_property(TARGET ${PROJECT_NAME} PROPERTY VS_DEBUGGER_WORKING_DIRECTORY ${PROJECT_BINARY_DIR}/Debug)

@@ -141,5 +141,5 @@ void RenderLoop::RecreateSwapchain()
 
 	m_commandBufferPool.Reset(m_swapchain->GetImageCount());
 
-	OnSwapchainRecreated(m_commandBufferPool);
+	OnSwapchainRecreated();
 }

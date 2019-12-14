@@ -32,12 +32,18 @@ public:
 		return m_descriptorSetLayouts;
 	}
 
+	const std::vector<vk::PushConstantRange>& GetPushConstantRanges() const
+	{
+		return m_pushConstantRanges;
+	}
+
 protected:
 	vk::VertexInputBindingDescription m_bindingDescription;
 	std::vector<vk::VertexInputAttributeDescription> m_attributeDescriptions;
 	std::vector<std::vector<vk::DescriptorSetLayoutBinding>> m_descriptorSetLayouts;
 	std::vector<vk::SpecializationMapEntry> m_specializationMapEntries;
 	vk::SpecializationInfo m_specializationInfo;
+	std::vector<vk::PushConstantRange> m_pushConstantRanges;
 
 private:
 	vk::ShaderStageFlagBits m_shaderStage;

@@ -16,6 +16,7 @@
 #include "Image.h"
 #include "Texture.h"
 #include "vk_utils.h"
+#include "file_utils.h"
 
 #include "Camera.h"
 
@@ -28,6 +29,7 @@
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
+#include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
 #define GLM_ENABLE_EXPERIMENTAL
@@ -38,12 +40,15 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
-// Model
-#define TINYOBJLOADER_IMPLEMENTATION
-#include <tiny_obj_loader.h>
+// Scene loading
+#include <assimp/Importer.hpp> 
+#include <assimp/scene.h>     
+#include <assimp/postprocess.h>
+#include <assimp/cimport.h>
 
 #include <chrono>
 #include <unordered_map>
+#include <iostream>
 
 struct ViewUniforms
 {
@@ -54,12 +59,6 @@ struct ViewUniforms
 struct ModelUniforms
 {
 	glm::mat4 transform;
-};
-
-struct MaterialUniforms
-{
-	vk::ImageView imageView = nullptr;
-	vk::Sampler sampler = nullptr;
 };
 
 enum class DescriptorSetIndices
@@ -74,10 +73,11 @@ struct Vertex
 	glm::vec3 pos;
 	glm::vec3 color;
 	glm::vec2 texCoord;
+	glm::vec3 normal;
 
 	bool operator==(const Vertex& other) const
 	{
-		return pos == other.pos && color == other.color && texCoord == other.texCoord;
+		return pos == other.pos && color == other.color && texCoord == other.texCoord && normal == other.normal;
 	}
 };
 
@@ -90,6 +90,14 @@ namespace std {
 		}
 	};
 }
+
+struct MaterialProperties
+{
+	glm::vec4 ambient;
+	glm::vec4 diffuse;
+	glm::vec4 specular;
+	float opacity;
+};
 
 struct Material
 {
@@ -106,6 +114,13 @@ struct Material
 	const GraphicsPipeline* pipeline = nullptr;
 };
 
+struct MaterialTexture
+{
+	uint32_t binding = 0;
+	Texture* texture = nullptr;
+	vk::Sampler sampler = nullptr;
+};
+
 struct MaterialInstance
 {
 	void Bind(vk::CommandBuffer& commandBuffer) const
@@ -119,8 +134,14 @@ struct MaterialInstance
 	}
 
 	const Material* material;
-	MaterialUniforms uniforms; // todo: this can vary per material
-	vk::UniqueDescriptorSet descriptorSet; // per-material descriptors
+	
+	std::string name;
+	MaterialProperties properties;
+	std::vector<MaterialTexture> textures;
+
+	// Per-material descriptors
+	std::unique_ptr<UniqueBufferWithStaging> uniformBuffer; // for properties
+	vk::UniqueDescriptorSet descriptorSet; 
 };
 
 struct Mesh
@@ -144,6 +165,7 @@ struct Model
 
 	// All parts share the same model transform.
 	ModelUniforms uniforms;
+	std::unique_ptr<UniqueBuffer> uniformBuffer;
 
 	// A model as multiple parts (meshes)
 	std::vector<Mesh> meshes;
@@ -179,13 +201,17 @@ public:
 		window.SetKeyCallback(reinterpret_cast<void*>(this), OnKey);
 	}
 
+	std::string m_sceneFilename;
+
+	void SetSceneFile(std::string sceneFilename)
+	{
+		m_sceneFilename = std::move(sceneFilename);
+	}
+
 	using RenderLoop::Init;
 
 protected:
-	const std::string kModelPath = "cubes.obj";
-	const std::string kTexturePath = "donut.png";
-
-	glm::vec2 m_mouseDownPos;
+	glm::vec2 m_mouseDownPos = glm::vec2(0.0f);
 	bool m_isMouseDown = false;
 	std::map<int, bool> m_keyState;
 
@@ -195,11 +221,10 @@ protected:
 
 	void Init(vk::CommandBuffer& commandBuffer) override
 	{
-		LoadMaterials();
-		LoadTextures(commandBuffer);
-		LoadModel(commandBuffer);
+		LoadScene(commandBuffer, m_sceneFilename);
 		UploadGeometry(commandBuffer);
-		CreateUniformBuffers();
+
+		CreateViewUniformBuffers();
 		CreateDescriptorSets();
 
 		CreateSecondaryCommandBuffers();
@@ -207,7 +232,7 @@ protected:
 	}
 
 	// Render pass commands are recorded once and executed every frame
-	void OnSwapchainRecreated(CommandBufferPool& commandBuffers) override
+	void OnSwapchainRecreated() override
 	{
 		// Reset resources that depend on the swapchain images
 		m_graphicsPipelines.clear();
@@ -217,10 +242,23 @@ protected:
 		m_renderPass = std::make_unique<RenderPass>(m_swapchain->GetImageDescription().format);
 		m_framebuffers = Framebuffer::FromSwapchain(*m_swapchain, m_renderPass->Get());
 
-		// Recreate everything that depends on the number of images
-		LoadMaterials();
-		CreateUniformBuffers();
-		CreateDescriptorSets();
+		// --- Recreate everything that depends on the number of images ---
+
+		// Use any command buffer for init
+		auto commandBuffer = m_commandBufferPool.ResetAndGetCommandBuffer();
+		commandBuffer.begin({ vk::CommandBufferUsageFlagBits::eOneTimeSubmit });
+		{
+			LoadMaterials(commandBuffer);
+			CreateViewUniformBuffers();
+			CreateDescriptorSets();
+		}
+		commandBuffer.end();
+
+		vk::SubmitInfo submitInfo;
+		submitInfo.commandBufferCount = 1;
+		submitInfo.pCommandBuffers = &commandBuffer;
+		m_commandBufferPool.Submit(submitInfo);
+		m_commandBufferPool.WaitUntilSubmitComplete();
 
 		CreateSecondaryCommandBuffers();
 		RecordRenderPassCommands();
@@ -253,7 +291,7 @@ protected:
 
 				const Model* model = nullptr;
 				const MaterialInstance* materialInstance = nullptr;
-				const GraphicsPipeline* pipeline = nullptr;
+				const Material* material = nullptr;
 				for (const auto& drawItem : m_drawCache)
 				{
 					// Bind model uniforms
@@ -263,18 +301,18 @@ protected:
 						model->Bind(commandBuffer.get(), m_modelPipelineLayout.get());
 					}
 
+					// Bind Graphics Pipeline
+					if (drawItem.mesh->materialInstance->material != material)
+					{
+						material = drawItem.mesh->materialInstance->material;
+						material->Bind(commandBuffer.get());
+					}
+
 					// Bind material uniforms
 					if (drawItem.mesh->materialInstance != materialInstance)
 					{
 						materialInstance = drawItem.mesh->materialInstance;
 						materialInstance->Bind(commandBuffer.get());
-					}
-
-					// Bind Graphics Pipeline
-					if (materialInstance->material->pipeline != pipeline)
-					{
-						pipeline = drawItem.mesh->materialInstance->material->pipeline;
-						drawItem.mesh->materialInstance->material->Bind(commandBuffer.get());
 					}
 
 					// Draw
@@ -324,16 +362,39 @@ protected:
 		));
 	}
 
-	void LoadMaterials()
+	// Keep this data available in case of Swapchain reset
+	struct AssimpData
+	{
+		std::unique_ptr<Assimp::Importer> importer = nullptr;
+		const aiScene* scene = nullptr;
+	}
+	m_assimp;
+
+	void LoadScene(vk::CommandBuffer commandBuffer, const std::string filename)
+	{
+		int flags = aiProcess_Triangulate
+			| aiProcess_PreTransformVertices
+			| aiProcess_GenNormals
+			| aiProcess_JoinIdenticalVertices;
+
+		m_assimp.importer = std::make_unique<Assimp::Importer>();
+		m_assimp.scene = m_assimp.importer->ReadFile(filename.c_str(), 0);
+		if (m_assimp.scene == nullptr)
+			throw std::runtime_error("Cannot load scene, file not found or parsing failed");
+
+		LoadMaterials(commandBuffer);
+		LoadModels(commandBuffer);
+	}
+
+	void LoadMaterials(vk::CommandBuffer commandBuffer)
 	{
 		m_graphicsPipelines.clear();
-		while (m_materials.size() < 2)
-			m_materials.push_back(std::make_unique<Material>());
 
-		std::vector<GraphicsPipeline> pipelines;
-
-		// Textured
+		// Create one material for all solid shading
 		{
+			while (m_materials.size() < 1)
+				m_materials.push_back(std::make_unique<Material>());
+
 			m_specializationConstants.lightingModel = 1;
 			m_fragmentShader->SetSpecializationConstants(m_specializationConstants);
 			m_graphicsPipelines.push_back(std::make_unique<GraphicsPipeline>(
@@ -342,30 +403,85 @@ protected:
 				*m_vertexShader,
 				*m_fragmentShader
 			));
-			m_materials[0]->pipeline = m_graphicsPipelines[m_graphicsPipelines.size() - 1].get();
+			m_materials.back()->pipeline = m_graphicsPipelines.back().get();
 		}
 
-		// Unlit albedo
+		// Check if we already have all materials set-up
+		if (m_materialInstances.size() == m_assimp.scene->mNumMaterials)
+			return;
+
+		// Create a material instance per material description in the scene
+		// todo: eventually create materials according to the needs of materials in the scene
+		// to support different types of materials
+		m_materialInstances.resize(m_assimp.scene->mNumMaterials);
+		for (size_t i = 0; i < m_materialInstances.size(); ++i)
 		{
-			m_specializationConstants.lightingModel = 0;
-			m_fragmentShader->SetSpecializationConstants(m_specializationConstants);
-			m_graphicsPipelines.push_back(std::make_unique<GraphicsPipeline>(
-				m_renderPass->Get(),
-				m_swapchain->GetImageDescription().extent,
-				*m_vertexShader,
-				*m_fragmentShader
-			));
-			m_materials[1]->pipeline = m_graphicsPipelines[m_graphicsPipelines.size() - 1].get();
+			m_materialInstances[i].reset();
+			m_materialInstances[i] = std::make_unique<MaterialInstance>();
+			auto& material = m_materialInstances[i];
+
+			// todo: choose or create material/permutation here if we need to
+			material->material = m_materials.back().get();
+
+			auto& assimpMaterial = m_assimp.scene->mMaterials[i];
+
+			aiString name;
+			m_assimp.scene->mMaterials[i]->Get(AI_MATKEY_NAME, name);
+			material->name = std::string(name.C_Str());
+			
+			// Properties
+
+			aiColor4D color;
+			assimpMaterial->Get(AI_MATKEY_COLOR_AMBIENT, color);
+			material->properties.ambient = glm::make_vec4(&color.r) + glm::vec4(0.1f);
+
+			assimpMaterial->Get(AI_MATKEY_COLOR_DIFFUSE, color);
+			material->properties.diffuse = glm::make_vec4(&color.r);
+
+			assimpMaterial->Get(AI_MATKEY_COLOR_SPECULAR, color);
+			material->properties.specular = glm::make_vec4(&color.r);
+
+			assimpMaterial->Get(AI_MATKEY_OPACITY, material->properties.opacity);
+
+			if ((material->properties.opacity) > 0.0f)
+				material->properties.specular = glm::vec4(0.0f);
+
+			// Upload properties to uniform buffer
+			material->uniformBuffer = std::make_unique<UniqueBufferWithStaging>(sizeof(MaterialProperties), vk::BufferUsageFlagBits::eUniformBuffer);
+			memcpy(material->uniformBuffer->GetStagingMappedData(), reinterpret_cast<const void*>(&material->properties), sizeof(MaterialProperties));
+			material->uniformBuffer->CopyStagingToGPU(commandBuffer);
+			m_commandBufferPool.DestroyAfterSubmit(material->uniformBuffer->ReleaseStagingBuffer());
+
+			// Textures
+
+			if (assimpMaterial->GetTextureCount(aiTextureType_DIFFUSE) > 0)
+			{
+				aiString textureFile;
+				assimpMaterial->GetTexture(aiTextureType_DIFFUSE, 0, &textureFile);
+				auto texture = LoadMaterialTexture(commandBuffer, std::string(textureFile.C_Str()));
+				texture.binding = 0; // diffuse
+				material->textures.push_back(std::move(texture));
+			}
+			else
+			{
+				// Load dummy texture
+				auto texture = LoadMaterialTexture(commandBuffer, "dummy_texture.png");
+				texture.binding = 0; // diffuse
+				material->textures.push_back(std::move(texture));
+			}
+
+			// todo: load other texture types
 		}
 	}
 
-	void LoadTextures(vk::CommandBuffer& commandBuffer)
+	MaterialTexture LoadMaterialTexture(vk::CommandBuffer& commandBuffer, const std::string filename)
 	{
-		CreateAndUploadTextureImage(commandBuffer);
-		CreateSamplerForLastTexture();
+		Texture* texture = CreateAndUploadTextureImage(commandBuffer, filename);
+		vk::Sampler sampler = CreateSampler(texture->GetMipLevels());
+		return MaterialTexture{ 0, texture, sampler };
 	}
 
-	void CreateUniformBuffers()
+	void CreateViewUniformBuffers()
 	{
 		// Per view
 		m_viewUniformBuffers.clear();
@@ -379,24 +495,6 @@ protected:
 					vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eTransferSrc // needs TransferSrc?
 				), VmaAllocationCreateInfo{ VMA_ALLOCATION_CREATE_MAPPED_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU }
 			);
-		}
-
-		// Upload identity matrix for model transform for each object
-		ModelUniforms ubo = {};
-		ubo.transform = glm::mat4(1.0f);
-		m_modelUniformBuffers.clear();
-		m_modelUniformBuffers.reserve(m_models.size());
-		for (int i = 0; i < m_models.size(); ++i)
-		{
-			m_modelUniformBuffers.emplace_back(
-				vk::BufferCreateInfo(
-					{},
-					m_models.size() * sizeof(ModelUniforms),
-					vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eTransferSrc // needs TransferSrc?
-				), VmaAllocationCreateInfo{ VMA_ALLOCATION_CREATE_MAPPED_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU }
-			);
-			void* data = m_modelUniformBuffers[m_modelUniformBuffers.size() - 1].GetMappedData();
-			memcpy(data, &ubo, sizeof(ModelUniforms));
 		}
 	}
 
@@ -436,7 +534,7 @@ protected:
 
 		poolSizes.push_back(vk::DescriptorPoolSize(
 			vk::DescriptorType::eUniformBuffer,
-			nbViews + nbModels // view and model sets need a uniform buffer
+			nbViews + nbModels + nbMaterials
 		));
 
 		// If the number of required descriptors were to change at run-time
@@ -500,11 +598,10 @@ protected:
 			// and update each one
 			for (size_t i = 0; i < m_models.size(); ++i)
 			{
-
 				m_models[i].descriptorSet = std::move(modelDescriptorSets[i]);
 
 				uint32_t binding = 0;
-				vk::DescriptorBufferInfo descriptorBufferInfo(m_modelUniformBuffers[i].Get(), 0, sizeof(ModelUniforms));
+				vk::DescriptorBufferInfo descriptorBufferInfo(m_models[i].uniformBuffer->Get(), 0, sizeof(ModelUniforms));
 				std::array<vk::WriteDescriptorSet, 1> writeDescriptorSets = {
 					vk::WriteDescriptorSet(
 						m_models[i].descriptorSet.get(), binding, {},
@@ -524,29 +621,40 @@ protected:
 				));
 				materialInstance->descriptorSet = std::move(descriptorSets[0]);
 
+				// Material properties in uniform buffer
+				vk::DescriptorBufferInfo descriptorBufferInfo(materialInstance->uniformBuffer->Get(), 0, sizeof(MaterialProperties));
+
 				// Use the material's sampler and texture
-				auto& sampler = materialInstance->uniforms.sampler;
-				auto& imageView = materialInstance->uniforms.imageView;
+				auto& sampler = materialInstance->textures[0].sampler;
+				auto& imageView = materialInstance->textures[0].texture->GetImageView();
 				vk::DescriptorImageInfo imageInfo(sampler, imageView, vk::ImageLayout::eShaderReadOnlyOptimal);
 
 				uint32_t binding = 0;
-				std::array<vk::WriteDescriptorSet, 1> writeDescriptorSets = {
+				std::array<vk::WriteDescriptorSet, 2> writeDescriptorSets = {
 					vk::WriteDescriptorSet(
-						materialInstance->descriptorSet.get(), binding, {},
+						materialInstance->descriptorSet.get(), binding++, {},
+						1, vk::DescriptorType::eUniformBuffer, nullptr, &descriptorBufferInfo
+					), // binding = 0
+					vk::WriteDescriptorSet(
+						materialInstance->descriptorSet.get(), binding++, {},
 						1, vk::DescriptorType::eCombinedImageSampler, &imageInfo, nullptr
-					)
+					) // binding = 1
 				};
 				g_device->Get().updateDescriptorSets(static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
 			}
 		}
 	}
 
-	// todo: extract reusable code from here and maybe move into a Image factory or something
-	void CreateAndUploadTextureImage(vk::CommandBuffer& commandBuffer)
+	Texture* CreateAndUploadTextureImage(vk::CommandBuffer& commandBuffer, const std::string filename)
 	{
+		// Check if we already loaded this texture
+		auto& cachedTexture = m_textures.find(filename);
+		if (cachedTexture != m_textures.end())
+			return cachedTexture->second.get();
+
 		// Read image from file
 		int texWidth = 0, texHeight = 0, texChannels = 0;
-		stbi_uc* pixels = stbi_load(kTexturePath.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+		stbi_uc* pixels = stbi_load(filename.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
 		if (pixels == nullptr || texWidth == 0 || texHeight == 0 || texChannels == 0) {
 			throw std::runtime_error("failed to load texture image!");
 		}
@@ -554,7 +662,7 @@ protected:
 		uint32_t mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(texWidth, texHeight)))) + 1;
 
 		// Texture image
-		m_textures.emplace_back(
+		auto [pair, res] = m_textures.emplace(filename, std::make_unique<Texture>(
 			texWidth, texHeight, 4UL, // R8G8B8A8, depth = 4
 			vk::Format::eR8G8B8A8Unorm,
 			vk::ImageTiling::eOptimal,
@@ -562,120 +670,113 @@ protected:
 				vk::ImageUsageFlagBits::eSampled,
 			vk::ImageAspectFlagBits::eColor,
 			mipLevels
-		);
-		auto& texture = m_textures[m_textures.size() - 1];
+		));
+		auto& texture = pair->second;
 
-		memcpy(texture.GetStagingMappedData(), reinterpret_cast<const void*>(pixels), texWidth * texHeight * 4UL);
-		texture.UploadStagingToGPU(commandBuffer, vk::ImageLayout::eShaderReadOnlyOptimal);
+		memcpy(texture->GetStagingMappedData(), reinterpret_cast<const void*>(pixels), texWidth * texHeight * 4UL);
+		texture->UploadStagingToGPU(commandBuffer, vk::ImageLayout::eShaderReadOnlyOptimal);
 
 		// We won't need the staging buffer after the initial upload
-		auto* stagingBuffer = texture.ReleaseStagingBuffer();
+		auto* stagingBuffer = texture->ReleaseStagingBuffer();
 		m_commandBufferPool.DestroyAfterSubmit(stagingBuffer);
 
 		stbi_image_free(pixels);
+
+		return texture.get();
 	}
 
-	void CreateSamplerForLastTexture()
+	vk::Sampler CreateSampler(uint32_t nbMipLevels)
 	{
-		// Add sampler for the last texture
-		auto& texture = m_textures[m_textures.size() - 1];
-		m_samplers.push_back(g_device->Get().createSamplerUnique(vk::SamplerCreateInfo(
-			{}, // flags
-			vk::Filter::eLinear, // magFilter
-			vk::Filter::eLinear, // minFilter
-			vk::SamplerMipmapMode::eLinear,
-			vk::SamplerAddressMode::eRepeat, // addressModeU
-			vk::SamplerAddressMode::eRepeat, // addressModeV
-			vk::SamplerAddressMode::eRepeat, // addressModeW
-			{}, // mipLodBias
-			true, // anisotropyEnable
-			16, // maxAnisotropy
-			false, // compareEnable
-			vk::CompareOp::eAlways, // compareOp
-			0.0f, // minLod
-			static_cast<float>(texture.GetMipLevels()), // maxLod
-			vk::BorderColor::eIntOpaqueBlack, // borderColor
-			false // unnormalizedCoordinates
-		)));
+		// Check if we already have a sampler
+		auto samplerIt = m_samplers.find(nbMipLevels);
+		if (samplerIt != m_samplers.end())
+			return samplerIt->second.get();
+
+		auto [pair, wasInserted] = m_samplers.emplace(nbMipLevels,
+			g_device->Get().createSamplerUnique(vk::SamplerCreateInfo(
+				{}, // flags
+				vk::Filter::eLinear, // magFilter
+				vk::Filter::eLinear, // minFilter
+				vk::SamplerMipmapMode::eLinear,
+				vk::SamplerAddressMode::eRepeat, // addressModeU
+				vk::SamplerAddressMode::eRepeat, // addressModeV
+				vk::SamplerAddressMode::eRepeat, // addressModeW
+				{}, // mipLodBias
+				true, // anisotropyEnable
+				16, // maxAnisotropy
+				false, // compareEnable
+				vk::CompareOp::eAlways, // compareOp
+				0.0f, // minLod
+				static_cast<float>(nbMipLevels), // maxLod
+				vk::BorderColor::eIntOpaqueBlack, // borderColor
+				false // unnormalizedCoordinates
+			)
+		));
+		return pair->second.get();
 	}
 
-	void LoadModel(vk::CommandBuffer& commandBuffer)
+	void LoadModels(vk::CommandBuffer commandBuffer)
 	{
 		m_vertices.clear();
 		m_indices.clear();
 
-		tinyobj::attrib_t attrib;
-		std::vector<tinyobj::shape_t> shapes;
-		std::vector<tinyobj::material_t> materials;
-		std::string warn, err;
-
-		if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, kModelPath.c_str()))
-			throw std::runtime_error(warn + err);
-		
-		std::unordered_map<Vertex, uint32_t> uniqueVertices;
-
 		Model model;
 		model.uniforms.transform = glm::mat4(1.0f);
-		//model.descriptorSet // todo: set later
-		model.meshes.reserve(shapes.size());
+		//model.descriptorSet // set later
 
-		// At the moment assign one material per mesh to test multiple materials
-		size_t materialIndex = 0; // Figure this out by name 
-		float maxDist = 0;
-		glm::vec3 zeroVect(0,0,0);
+		// to center object in viewport
+		float maxDist = 0.0f;
+		auto zeroVect = glm::vec3(0.0f);
 
-		for (const auto& shape : shapes)
+		model.meshes.reserve(m_assimp.scene->mNumMeshes);
+		for (size_t i = 0; i < m_assimp.scene->mNumMeshes; ++i)
 		{
-			// todo: if model needs a new material instance, create it here
-			auto materialInstance = std::make_unique<MaterialInstance>();
-			materialInstance->material = m_materials[materialIndex].get();
-			// materialInstance.descriptorSet // set in CreateDescriptors()
-
-			// todo: load texture referenced by model here, as we discover them
-			// or take not and load later asynchroneously
-			MaterialUniforms bindings;
-			bindings.imageView = m_textures[0].GetImageView(); // use 0 for now
-			bindings.sampler = m_samplers[0].get();
-			materialInstance->uniforms = std::move(bindings);
+			aiMesh* aMesh = m_assimp.scene->mMeshes[i];
 
 			Mesh mesh;
 			mesh.indexOffset = m_indices.size();
-			mesh.nbIndices = shape.mesh.indices.size();
-			mesh.materialInstance = materialInstance.get();
+			mesh.nbIndices = (vk::DeviceSize)aMesh->mNumFaces * 3U;
+			mesh.materialInstance = m_materialInstances[aMesh->mMaterialIndex].get();
 			model.meshes.push_back(std::move(mesh));
 
-			m_materialInstances.push_back(std::move(materialInstance));
-			m_models.push_back(std::move(model));
+			bool hasUV = aMesh->HasTextureCoords(0);
+			bool hasColor = aMesh->HasVertexColors(0);
+			bool hasNormals = aMesh->HasNormals();
 
-			for (const auto& index : shape.mesh.indices)
+			for (size_t v = 0; v < aMesh->mNumVertices; ++v)
 			{
-				Vertex vertex = {};
-				vertex.pos = {
-					attrib.vertices[3 * index.vertex_index + 0],
-					attrib.vertices[3 * index.vertex_index + 1],
-					attrib.vertices[3 * index.vertex_index + 2]
-				};
-				vertex.texCoord = {
-					attrib.texcoords[2 * index.texcoord_index + 0],
-					1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
-				};
-				vertex.color = { 1.0f, 1.0f, 1.0f };
+				Vertex vertex;
+				vertex.pos = glm::make_vec3(&aMesh->mVertices[v].x);
+				vertex.pos.y = -vertex.pos.y;
+				vertex.texCoord = hasUV ? glm::make_vec2(&aMesh->mTextureCoords[0][v].x) : glm::vec2(0.0f);
+				vertex.normal = hasNormals ? glm::make_vec3(&aMesh->mNormals[v].x) : glm::vec3(0.0f);
+				vertex.normal.y = -vertex.normal.y;
+				vertex.color = hasColor ? glm::make_vec3(&aMesh->mColors[0][v].r) : glm::vec3(1.0f);
 
-				auto dist = (vertex.pos - zeroVect).length();
-				if (dist > maxDist)
-					maxDist = dist;
+				maxDist = (std::max)(maxDist, glm::length(vertex.pos - zeroVect));
 
-				if (uniqueVertices.count(vertex) == 0)
-				{
-					uniqueVertices[vertex] = static_cast<uint32_t>(m_vertices.size());
-					m_vertices.push_back(vertex);
-				}
-				m_indices.push_back(uniqueVertices[vertex]);
+				m_vertices.push_back(vertex);
 			}
 
-			materialIndex = (materialIndex + 1) % m_materials.size();
+			for (size_t f = 0; f < aMesh->mNumFaces; ++f)
+			{
+				m_indices.push_back(aMesh->mFaces[f].mIndices[2] + mesh.indexOffset);
+				m_indices.push_back(aMesh->mFaces[f].mIndices[1] + mesh.indexOffset);
+				m_indices.push_back(aMesh->mFaces[f].mIndices[0] + mesh.indexOffset);
+			}
 		}
-		
+
+		// Upload model uniforms
+		model.uniformBuffer = std::make_unique<UniqueBuffer>(
+			vk::BufferCreateInfo(
+				{}, sizeof(ModelUniforms), vk::BufferUsageFlagBits::eUniformBuffer
+			), VmaAllocationCreateInfo{ VMA_ALLOCATION_CREATE_MAPPED_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU }
+		);
+		memcpy(model.uniformBuffer->GetMappedData(), &model.uniforms, sizeof(ModelUniforms));
+
+		// We're done
+		m_models.push_back(std::move(model));
+
 		// --- Ordered draw cache --- //
 
 		for (auto& model : m_models)
@@ -693,18 +794,18 @@ protected:
 		std::sort(m_drawCache.begin(), m_drawCache.end(),
 			[](const MeshDrawInfo& a, const MeshDrawInfo& b) {
 				// Sort by material first
-				if (a.mesh->materialInstance->material == b.mesh->materialInstance->material)
-					return a.mesh->materialInstance->material == b.mesh->materialInstance->material;
+				if (a.mesh->materialInstance->material != b.mesh->materialInstance->material)
+					return a.mesh->materialInstance->material < b.mesh->materialInstance->material;
 				// Then material instance
-				else if (a.mesh->materialInstance == b.mesh->materialInstance)
+				else if (a.mesh->materialInstance != b.mesh->materialInstance)
 					return a.mesh->materialInstance < b.mesh->materialInstance;
-				// Then object
+				// Then model
 				else
 					return a.model < b.model;
 			});
 
 		// Init camera to see the model
-		kInitOrbitCameraRadius = maxDist * 2.5f;
+		kInitOrbitCameraRadius = maxDist * 15.0f;
 		this->camera.SetCameraView(glm::vec3(kInitOrbitCameraRadius, kInitOrbitCameraRadius, kInitOrbitCameraRadius), glm::vec3(0, 0, 0), glm::vec3(0, 0, 1));
 	}
 
@@ -912,19 +1013,15 @@ private:
 
 	// --- Model --- //
 
-	// One per object (could be one big, in this case make sure to align to minUniformBufferOffsetAlignment)
-	std::vector<UniqueBuffer> m_modelUniformBuffers;
-
 	// Model descriptor sets
 	vk::DescriptorSetLayout m_modelSetLayout;
 	vk::UniquePipelineLayout m_modelPipelineLayout;
-
 	std::vector<Model> m_models;
 
 	// --- Material --- //
 
-	std::vector<Texture> m_textures;
-	std::vector<vk::UniqueSampler> m_samplers;
+	std::map<std::string, std::unique_ptr<Texture>> m_textures;
+	std::map<uint32_t, vk::UniqueSampler> m_samplers; // per mip level
 	std::vector<std::unique_ptr<Material>> m_materials;
 	std::vector<std::unique_ptr<MaterialInstance>> m_materialInstances;
 
@@ -938,8 +1035,16 @@ private:
 	std::vector<MeshDrawInfo> m_drawCache;
 };
 
-int main()
+int main(int argc, char* argv[])
 {
+	if (argc < 2)
+	{
+		std::cout << "Missing argument (1): Scene file (e.g. 'Something.obj')" << std::endl;
+		return 1;
+	}
+	
+	std::string sceneFile = argv[1];
+
 	vk::Extent2D extent(800, 600);
 	Window window(extent, "Vulkan");
 	window.SetInputMode(GLFW_STICKY_KEYS, GLFW_TRUE);
@@ -951,6 +1056,7 @@ int main()
 	Device::Init(*g_physicalDevice);
 	{
 		App app(surface.get(), extent, window);
+		app.SetSceneFile(std::move(sceneFile));
 		app.Init();
 		app.Run();
 	}
