@@ -155,6 +155,24 @@ struct Mesh
 
 struct Model
 {
+	Model()
+		: uniformBuffer(std::make_unique<UniqueBuffer>(
+			vk::BufferCreateInfo(
+				{}, sizeof(ModelUniforms), vk::BufferUsageFlagBits::eUniformBuffer
+			), VmaAllocationCreateInfo{ VMA_ALLOCATION_CREATE_MAPPED_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU }
+		))
+	{
+		memcpy(uniformBuffer->GetMappedData(), &transform, sizeof(glm::mat4));
+	}
+
+	void SetTransform(glm::mat4 transform)
+	{
+		this->transform = std::move(transform);
+		memcpy(uniformBuffer->GetMappedData(), &this->transform, sizeof(glm::mat4));
+	}
+
+	glm::mat4& GetTransform() { return transform; }
+
 	void Bind(vk::CommandBuffer& commandBuffer, vk::PipelineLayout modelPipelineLayout) const
 	{
 		commandBuffer.bindDescriptorSets(
@@ -165,8 +183,6 @@ struct Model
 		);
 	}
 
-	// All parts share the same model transform.
-	ModelUniforms uniforms;
 	std::unique_ptr<UniqueBuffer> uniformBuffer;
 
 	// A model as multiple parts (meshes)
@@ -174,6 +190,9 @@ struct Model
 
 	// Per-object descriptors
 	vk::UniqueDescriptorSet descriptorSet;
+
+private:
+	glm::mat4 transform = glm::mat4(1.0f);
 };
 
 enum CameraMode { OrbitCamera, FreeCamera };
@@ -382,7 +401,6 @@ protected:
 	void LoadScene(vk::CommandBuffer commandBuffer, const std::string filename)
 	{
 		int flags = aiProcess_Triangulate
-			| aiProcess_PreTransformVertices
 			| aiProcess_GenNormals
 			| aiProcess_JoinIdenticalVertices;
 
@@ -393,7 +411,7 @@ protected:
 
 		LoadLights(commandBuffer);
 		LoadMaterials(commandBuffer);
-		LoadModels(commandBuffer);
+		LoadSceneNodes(commandBuffer);
 	}
 
 	struct PointLight
@@ -409,13 +427,119 @@ protected:
 		for (int i = 0; i < m_assimp.scene->mNumLights; ++i)
 		{
 			aiLight* light = m_assimp.scene->mLights[i];
+			aiNode* node = m_assimp.scene->mRootNode->FindNode(light->mName);
 
-			// todo: handle position by parsing scene node graph
+			// todo: make sure this works with nested nodes
 			PointLight pointLight;
-			pointLight.pos = glm::vec3(-1.92f, 1.45f, 3.89f); //glm::make_vec3(&light->mPosition.x);
+			pointLight.pos = glm::vec3(
+				node->mTransformation.a4,
+				node->mTransformation.b4,
+				node->mTransformation.c4
+			);
 			pointLight.colorDiffuse = glm::normalize(glm::make_vec3(&light->mColorDiffuse.r));
 			pointLight.colorSpecular = glm::normalize(glm::make_vec3(&light->mColorSpecular.r));
 			m_pointLights.push_back(std::move(pointLight));
+		}
+	}
+
+	float m_maxVertexDist = 0.0f;
+
+	void LoadSceneNodes(vk::CommandBuffer commandBuffer)
+	{
+		m_vertices.clear();
+		m_indices.clear();
+		m_maxVertexDist = 0.0f;
+
+		LoadNodeAndChildren(m_assimp.scene->mRootNode, glm::mat4(1.0f));
+
+		for (auto& model : m_models)
+			for (auto& mesh : model.meshes)
+				m_drawCache.push_back(MeshDrawInfo{ &model, &mesh });
+
+		// Sort draw calls by material, then materialInstance, then mesh.
+		// This minimizes the number of pipeline bindings (costly),
+		// then descriptor set bindings (a bit less costly).
+		//
+		// For example (m = material, i = materialInstance, o = object mesh):
+		//
+		// | m0, i0, o0 | m0, i0, o1 | m0, i1, o2 | m1, i2, o3 |
+		//
+		std::sort(m_drawCache.begin(), m_drawCache.end(),
+			[](const MeshDrawInfo& a, const MeshDrawInfo& b) {
+				// Sort by material first
+				if (a.mesh->materialInstance->material != b.mesh->materialInstance->material)
+					return a.mesh->materialInstance->material < b.mesh->materialInstance->material;
+				// Then material instance
+				else if (a.mesh->materialInstance != b.mesh->materialInstance)
+					return a.mesh->materialInstance < b.mesh->materialInstance;
+				// Then model
+				else
+					return a.model < b.model;
+			});
+
+		// Init camera to see the model
+		kInitOrbitCameraRadius = m_maxVertexDist * 15.0f;
+		this->camera.SetCameraView(glm::vec3(kInitOrbitCameraRadius, kInitOrbitCameraRadius, kInitOrbitCameraRadius), glm::vec3(0, 0, 0), glm::vec3(0, 0, 1));
+	}
+
+	void LoadNodeAndChildren(aiNode* node, glm::mat4 transform)
+	{
+		glm::mat4 nodeTransform = glm::make_mat4(&node->mTransformation.a1);
+		glm::mat4 newTransform = transform * nodeTransform;
+
+		if (node->mNumMeshes > 0)
+		{
+			// Create a new model if it has mesh(es)
+			// Important note! For this to work:
+			// Export in blender with -Y up, Z forward (apply global orientation)
+			Model model;
+			LoadMeshes(*node, model);
+			model.SetTransform(newTransform);
+			m_models.push_back(std::move(model));
+		}
+
+		for (int i = 0; i < node->mNumChildren; ++i)
+			LoadNodeAndChildren(node->mChildren[i], newTransform);
+	}
+
+	void LoadMeshes(const aiNode& fileNode, Model& model)
+	{
+		model.meshes.reserve(m_assimp.scene->mNumMeshes);
+		for (size_t i = 0; i < fileNode.mNumMeshes; ++i)
+		{
+			aiMesh* aMesh = m_assimp.scene->mMeshes[fileNode.mMeshes[i]];
+
+			Mesh mesh;
+			mesh.indexOffset = m_indices.size();
+			mesh.nbIndices = (vk::DeviceSize)aMesh->mNumFaces * 3U;
+			mesh.materialInstance = m_materialInstances[aMesh->mMaterialIndex].get();
+			model.meshes.push_back(std::move(mesh));
+
+			bool hasUV = aMesh->HasTextureCoords(0);
+			bool hasColor = aMesh->HasVertexColors(0);
+			bool hasNormals = aMesh->HasNormals();
+
+			for (size_t v = 0; v < aMesh->mNumVertices; ++v)
+			{
+				Vertex vertex;
+				vertex.pos = glm::make_vec3(&aMesh->mVertices[v].x);
+				vertex.pos.y = -vertex.pos.y;
+				vertex.texCoord = hasUV ? glm::make_vec2(&aMesh->mTextureCoords[0][v].x) : glm::vec2(0.0f);
+				vertex.normal = hasNormals ? glm::make_vec3(&aMesh->mNormals[v].x) : glm::vec3(0.0f);
+				vertex.normal.y = -vertex.normal.y;
+				vertex.color = hasColor ? glm::make_vec3(&aMesh->mColors[0][v].r) : glm::vec3(1.0f);
+
+				m_maxVertexDist = (std::max)(m_maxVertexDist, glm::length(vertex.pos - glm::vec3(0.0f)));
+
+				m_vertices.push_back(vertex);
+			}
+
+			for (size_t f = 0; f < aMesh->mNumFaces; ++f)
+			{
+				m_indices.push_back(aMesh->mFaces[f].mIndices[2] + mesh.indexOffset);
+				m_indices.push_back(aMesh->mFaces[f].mIndices[1] + mesh.indexOffset);
+				m_indices.push_back(aMesh->mFaces[f].mIndices[0] + mesh.indexOffset);
+			}
 		}
 	}
 
@@ -546,7 +670,6 @@ protected:
 				), VmaAllocationCreateInfo{ VMA_ALLOCATION_CREATE_MAPPED_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU }
 			);
 		}
-
 	}
 
 	void CreateLightsUniformBuffers(vk::CommandBuffer commandBuffer)
@@ -790,100 +913,6 @@ protected:
 			)
 		));
 		return pair->second.get();
-	}
-
-	void LoadModels(vk::CommandBuffer commandBuffer)
-	{
-		m_vertices.clear();
-		m_indices.clear();
-
-		Model model;
-		model.uniforms.transform = glm::mat4(1.0f);
-		//model.descriptorSet // set later
-
-		// to center object in viewport
-		float maxDist = 0.0f;
-		auto zeroVect = glm::vec3(0.0f);
-
-		model.meshes.reserve(m_assimp.scene->mNumMeshes);
-		for (size_t i = 0; i < m_assimp.scene->mNumMeshes; ++i)
-		{
-			aiMesh* aMesh = m_assimp.scene->mMeshes[i];
-
-			Mesh mesh;
-			mesh.indexOffset = m_indices.size();
-			mesh.nbIndices = (vk::DeviceSize)aMesh->mNumFaces * 3U;
-			mesh.materialInstance = m_materialInstances[aMesh->mMaterialIndex].get();
-			model.meshes.push_back(std::move(mesh));
-
-			bool hasUV = aMesh->HasTextureCoords(0);
-			bool hasColor = aMesh->HasVertexColors(0);
-			bool hasNormals = aMesh->HasNormals();
-
-			for (size_t v = 0; v < aMesh->mNumVertices; ++v)
-			{
-				Vertex vertex;
-				vertex.pos = glm::make_vec3(&aMesh->mVertices[v].x);
-				vertex.pos.y = -vertex.pos.y;
-				vertex.texCoord = hasUV ? glm::make_vec2(&aMesh->mTextureCoords[0][v].x) : glm::vec2(0.0f);
-				vertex.normal = hasNormals ? glm::make_vec3(&aMesh->mNormals[v].x) : glm::vec3(0.0f);
-				vertex.normal.y = -vertex.normal.y;
-				vertex.color = hasColor ? glm::make_vec3(&aMesh->mColors[0][v].r) : glm::vec3(1.0f);
-
-				maxDist = (std::max)(maxDist, glm::length(vertex.pos - zeroVect));
-
-				m_vertices.push_back(vertex);
-			}
-
-			for (size_t f = 0; f < aMesh->mNumFaces; ++f)
-			{
-				m_indices.push_back(aMesh->mFaces[f].mIndices[2] + mesh.indexOffset);
-				m_indices.push_back(aMesh->mFaces[f].mIndices[1] + mesh.indexOffset);
-				m_indices.push_back(aMesh->mFaces[f].mIndices[0] + mesh.indexOffset);
-			}
-		}
-
-		// Upload model uniforms
-		model.uniformBuffer = std::make_unique<UniqueBuffer>(
-			vk::BufferCreateInfo(
-				{}, sizeof(ModelUniforms), vk::BufferUsageFlagBits::eUniformBuffer
-			), VmaAllocationCreateInfo{ VMA_ALLOCATION_CREATE_MAPPED_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU }
-		);
-		memcpy(model.uniformBuffer->GetMappedData(), &model.uniforms, sizeof(ModelUniforms));
-
-		// We're done
-		m_models.push_back(std::move(model));
-
-		// --- Ordered draw cache --- //
-
-		for (auto& model : m_models)
-			for (auto& mesh : model.meshes)
-				m_drawCache.push_back(MeshDrawInfo{ &model, &mesh });
-
-		// Sort draw calls by material, then materialInstance, then mesh.
-		// This minimizes the number of pipeline bindings (costly),
-		// then descriptor set bindings (a bit less costly).
-		//
-		// For example (m = material, i = materialInstance, o = object mesh):
-		//
-		// | m0, i0, o0 | m0, i0, o1 | m0, i1, o2 | m1, i2, o3 |
-		//
-		std::sort(m_drawCache.begin(), m_drawCache.end(),
-			[](const MeshDrawInfo& a, const MeshDrawInfo& b) {
-				// Sort by material first
-				if (a.mesh->materialInstance->material != b.mesh->materialInstance->material)
-					return a.mesh->materialInstance->material < b.mesh->materialInstance->material;
-				// Then material instance
-				else if (a.mesh->materialInstance != b.mesh->materialInstance)
-					return a.mesh->materialInstance < b.mesh->materialInstance;
-				// Then model
-				else
-					return a.model < b.model;
-			});
-
-		// Init camera to see the model
-		kInitOrbitCameraRadius = maxDist * 15.0f;
-		this->camera.SetCameraView(glm::vec3(kInitOrbitCameraRadius, kInitOrbitCameraRadius, kInitOrbitCameraRadius), glm::vec3(0, 0, 0), glm::vec3(0, 0, 1));
 	}
 
 	void UploadGeometry(vk::CommandBuffer& commandBuffer)
