@@ -297,11 +297,13 @@ namespace spirv_vk
 		return {};
 	}
 
-	uint32_t sizeof_constant(const spirv_cross::Compiler& comp, spirv_cross::TypeID type)
+	uint32_t sizeof_constant(const spirv_cross::Compiler& comp, spirv_cross::TypeID typeID)
 	{
 		using Type = spirv_cross::SPIRType::BaseType;
 
-		switch (type)
+		auto constantType = comp.get_type(typeID);
+
+		switch (constantType.basetype)
 		{
 		case Type::Boolean:
 		case Type::SByte:
