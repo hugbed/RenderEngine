@@ -54,8 +54,8 @@
 
 struct ViewUniforms
 {
-	glm::mat4 view;
-	glm::mat4 proj;
+	UNIFORM_ALIGNED glm::mat4 view;
+	UNIFORM_ALIGNED glm::mat4 proj;
 	UNIFORM_ALIGNED glm::vec3 dir;
 };
 
@@ -63,7 +63,7 @@ struct ViewUniforms
 
 struct ModelUniforms
 {
-	glm::mat4 transform;
+	UNIFORM_ALIGNED glm::mat4 transform;
 };
 
 enum class DescriptorSetIndices
@@ -557,9 +557,9 @@ protected:
 
 			Mesh mesh;
 			mesh.indexOffset = m_indices.size();
-			mesh.nbIndices = (vk::DeviceSize)aMesh->mNumFaces * 3U;
+			mesh.nbIndices = (vk::DeviceSize)aMesh->mNumFaces * aMesh->mFaces->mNumIndices;
 			mesh.materialInstance = m_materialInstances[aMesh->mMaterialIndex].get();
-			model.meshes.push_back(std::move(mesh));
+			size_t vertexIndexOffset = m_vertices.size();
 
 			bool hasUV = aMesh->HasTextureCoords(0);
 			bool hasColor = aMesh->HasVertexColors(0);
@@ -569,10 +569,9 @@ protected:
 			{
 				Vertex vertex;
 				vertex.pos = glm::make_vec3(&aMesh->mVertices[v].x);
-				vertex.pos.y = -vertex.pos.y;
-				vertex.texCoord = hasUV ? -glm::make_vec2(&aMesh->mTextureCoords[0][v].x) : glm::vec2(0.0f);
+				vertex.texCoord = hasUV ? glm::make_vec2(&aMesh->mTextureCoords[0][v].x) : glm::vec2(0.0f);
+				vertex.texCoord.y = -vertex.texCoord.y;
 				vertex.normal = hasNormals ? glm::make_vec3(&aMesh->mNormals[v].x) : glm::vec3(0.0f);
-				vertex.normal.y = -vertex.normal.y;
 				vertex.color = hasColor ? glm::make_vec3(&aMesh->mColors[0][v].r) : glm::vec3(1.0f);
 
 				m_maxVertexDist = (std::max)(m_maxVertexDist, glm::length(vertex.pos - glm::vec3(0.0f)));
@@ -582,10 +581,11 @@ protected:
 
 			for (size_t f = 0; f < aMesh->mNumFaces; ++f)
 			{
-				m_indices.push_back(aMesh->mFaces[f].mIndices[2] + mesh.indexOffset);
-				m_indices.push_back(aMesh->mFaces[f].mIndices[1] + mesh.indexOffset);
-				m_indices.push_back(aMesh->mFaces[f].mIndices[0] + mesh.indexOffset);
+				for (size_t fi = 0; fi < aMesh->mFaces->mNumIndices; ++fi)
+					m_indices.push_back(aMesh->mFaces[f].mIndices[fi] + vertexIndexOffset);
 			}
+
+			model.meshes.push_back(std::move(mesh));
 		}
 	}
 
