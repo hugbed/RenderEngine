@@ -6,6 +6,7 @@
 #include "PhysicalDevice.h"
 
 #include <iostream>
+#include <thread>
 
 RenderLoop::RenderLoop(vk::SurfaceKHR surface, vk::Extent2D extent, Window& window)
 	: m_window(window)
@@ -37,6 +38,9 @@ void RenderLoop::Run()
 	while (m_window.ShouldClose() == false)
 	{
 		m_window.PollEvents();
+
+		while (std::chrono::high_resolution_clock::now() - m_lastUpdateTime < m_framePeriod)
+			std::this_thread::yield();
 
 		UpdateDeltaTime();
 
