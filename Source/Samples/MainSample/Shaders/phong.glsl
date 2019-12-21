@@ -1,5 +1,12 @@
-struct Attenuation
-{
+struct PhongMaterial {
+	vec3 ambient;
+	vec3 diffuse;
+	vec3 specular;
+	float opacity;
+    float shininess;
+};
+
+struct Attenuation {
     float constant;
     float linear;
     float quadratic;
@@ -7,28 +14,27 @@ struct Attenuation
 
 struct PointLight {
     vec3 pos;
-    vec3 colorDiffuse;
-    vec3 colorSpecular;
+    vec3 diffuse;
+    vec3 specular;
     Attenuation attenuation; // constant, linear quadratic
 };
 
-vec3 PhongPointLight(PointLight light, vec3 normal, vec3 fragPos, vec3 viewDir, float shininess)
+vec3 PhongPointLight(PointLight light, PhongMaterial material, vec3 normal, vec3 fragPos, vec3 viewDir)
 {
     // diffuse
-    vec3 lightColor = light.colorDiffuse;
-    vec3 lightDir = light.pos - fragPos;
-    float dist = length(lightDir);
-    lightDir = normalize(lightDir);
-    float contribution = max(dot(lightDir, normal), 0.0);
-    Attenuation att = light.attenuation;
-    float distAttenuation = 1.0 / (att.constant + att.linear * dist + att.quadratic * dist*dist);
-    vec3 diffuseColor = contribution * lightColor * distAttenuation;
+    vec3 lightDir = normalize(light.pos - fragPos);
+    float k = max(dot(lightDir, normal), 0.0);
+    vec3 diffuse = k * light.diffuse * material.diffuse;
 
     // specular
-    lightColor = light.colorSpecular;
     vec3 lightDirReflect = reflect(-lightDir, normal);
-    contribution = pow(max(dot(viewDir, lightDirReflect), 0.0), shininess);
-    vec3 specularColor = contribution * lightColor * distAttenuation;
+    k = pow(max(dot(viewDir, lightDirReflect), 0.0), material.shininess);
+    vec3 specular =  k * light.specular * material.specular;
 
-    return diffuseColor + specularColor;
+    // distance attenuation
+    Attenuation att = light.attenuation;
+    float dist = length(light.pos - fragPos);
+    float attenuation = 1.0 / (att.constant + att.linear * dist + att.quadratic * dist*dist);
+
+    return (diffuse + specular) * attenuation;
 }

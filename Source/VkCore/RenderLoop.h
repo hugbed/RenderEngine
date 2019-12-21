@@ -56,7 +56,7 @@ private:
 	void RecreateSwapchain();
 	void UpdateDeltaTime();
 
-	std::chrono::duration<double> m_framePeriod{ 1 / 60.0f };
+	std::chrono::duration<float> m_framePeriod{ 1.0f / 60.0f };
 	std::chrono::high_resolution_clock::duration m_deltaTime;
 	std::chrono::time_point<std::chrono::high_resolution_clock> m_lastUpdateTime;
 
