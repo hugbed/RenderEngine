@@ -98,9 +98,9 @@ namespace std {
 
 struct MaterialProperties
 {
-	glm::vec4 ambient;
-	glm::vec4 diffuse;
-	glm::vec4 specular;
+	UNIFORM_ALIGNED glm::vec3 ambient;
+	UNIFORM_ALIGNED glm::vec3 diffuse;
+	UNIFORM_ALIGNED glm::vec3 specular;
 	float opacity;
 	float shininess;
 };
@@ -468,6 +468,11 @@ protected:
 		}
 	}
 
+	glm::vec3 ClampColor(glm::vec3 color)
+	{
+		return color / std::max(color.x, std::max(color.y, color.z));
+	}
+
 	void LoadLights(vk::CommandBuffer buffer)
 	{
 		for (int i = 0; i < m_assimp.scene->mNumLights; ++i)
@@ -479,13 +484,9 @@ protected:
 
 			PointLight pointLight;
 			pointLight.pos = transform[3];
-			pointLight.colorDiffuse = glm::make_vec3(&light->mColorDiffuse.r);
-			pointLight.colorSpecular = glm::make_vec3(&light->mColorSpecular.r);
-			pointLight.attenuation = glm::vec3(
-				light->mAttenuationConstant,
-				light->mAttenuationLinear,
-				light->mAttenuationQuadratic
-			);
+			pointLight.colorDiffuse = ClampColor(glm::make_vec3(&light->mColorDiffuse.r));
+			pointLight.colorSpecular = ClampColor(glm::make_vec3(&light->mColorSpecular.r));
+			pointLight.attenuation = glm::vec3(1.0f, 0.0f, 0.0001f); // todo: use gltf2 range
 
 			m_pointLights.push_back(std::move(pointLight));
 		}
@@ -648,13 +649,12 @@ protected:
 			material->name = std::string(name.C_Str());
 			
 			// Properties
-
 			aiColor4D color;
-			assimpMaterial->Get(AI_MATKEY_COLOR_AMBIENT, color);
-			material->properties.ambient = glm::make_vec4(&color.r);
-
 			assimpMaterial->Get(AI_MATKEY_COLOR_DIFFUSE, color);
 			material->properties.diffuse = glm::make_vec4(&color.r);
+
+			// Use darker diffuse as ambient to prevent the scene from being too dark
+			material->properties.ambient = material->properties.diffuse * 0.1f;
 
 			assimpMaterial->Get(AI_MATKEY_COLOR_SPECULAR, color);
 			material->properties.specular = glm::make_vec4(&color.r);
@@ -662,8 +662,8 @@ protected:
 			assimpMaterial->Get(AI_MATKEY_SHININESS, material->properties.shininess);
 			assimpMaterial->Get(AI_MATKEY_OPACITY, material->properties.opacity);
 
-			if ((material->properties.opacity) > 0.0f)
-				material->properties.specular = glm::vec4(0.0f);
+			//if ((material->properties.opacity) > 0.0f)
+			//	material->properties.specular = glm::vec4(0.0f);
 
 			// Upload properties to uniform buffer
 			material->uniformBuffer = std::make_unique<UniqueBufferWithStaging>(sizeof(MaterialProperties), vk::BufferUsageFlagBits::eUniformBuffer);
