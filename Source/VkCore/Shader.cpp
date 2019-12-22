@@ -60,7 +60,7 @@ Shader::Shader(const std::string& filename, std::string entryPoint)
 	{
 		auto set = comp.get_decoration(ubo.id, spv::Decoration::DecorationDescriptorSet);
 		if (set >= m_descriptorSetLayouts.size())
-			m_descriptorSetLayouts.resize(set + 1);
+			m_descriptorSetLayouts.resize(set + 1UL);
 		
 		auto& descriptorSetLayout = m_descriptorSetLayouts[set];
 
@@ -71,9 +71,12 @@ Shader::Shader(const std::string& filename, std::string entryPoint)
 		descriptorSetLayout.push_back(vk::DescriptorSetLayoutBinding(
 			binding, // binding
 			vk::DescriptorType::eUniformBuffer,
-			type.array.empty() ? 1ULL : type.array.size(), // descriptorCount
+			type.array.empty() ? 1ULL : type.array[0], // descriptorCount
 			m_shaderStage
 		));
+
+		// We only support 1D arrays for now
+		ASSERT(type.array.empty() || type.array.size() == 1);
 	}
 
 	// Sampler2D
@@ -93,9 +96,12 @@ Shader::Shader(const std::string& filename, std::string entryPoint)
 		descriptorSetLayout.push_back(vk::DescriptorSetLayoutBinding(
 			binding, // binding
 			vk::DescriptorType::eCombinedImageSampler,
-			type.array.empty() ? 1ULL : type.array.size(), // descriptorCount
+			type.array.empty() ? 1ULL : type.array[0],
 			m_shaderStage
 		));
+
+		// We only support 1D arrays for now
+		ASSERT(type.array.empty() || type.array.size() == 1);
 	}
 
 	// Sort each layout by binding
