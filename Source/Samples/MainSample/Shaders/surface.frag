@@ -32,17 +32,24 @@ layout(set = 2, binding = 0) uniform MaterialProperties {
     PhongMaterial phong;
 } material;
 
-layout(set = 2, binding = 1) uniform sampler2D texSampler; // could be array of textures
+const uint PHONG_TEX_DIFFUSE = 0;
+const uint PHONG_TEX_SPECULAR = 1;
+const uint PHONG_TEX_COUNT = 2;
+
+layout(set = 2, binding = 1) uniform sampler2D texSamplers[PHONG_TEX_COUNT];
 
 void main() {
-    vec3 shadedColor = material.phong.ambient;
+    vec3 shadedColor = vec3(0.0, 0.0, 0.0);
 
 #ifdef LIT
+    PhongMaterial phongMaterial = {
+        material.phong.diffuse * texture(texSamplers[PHONG_TEX_DIFFUSE], fragTexCoord).xyz,
+        material.phong.specular * texture(texSamplers[PHONG_TEX_SPECULAR], fragTexCoord).xyz,
+        material.phong.shininess
+    };
     for (int i = 0; i < NB_POINT_LIGHTS; ++i)
-        shadedColor += PhongPointLight(lights.point[i], material.phong, normalize(fragNormal), fragPos, -normalize(viewDir));
+        shadedColor += PhongPointLight(lights.point[i], phongMaterial, normalize(fragNormal), fragPos, -normalize(viewDir));
 #endif
-
-    shadedColor *= fragColor * texture(texSampler, fragTexCoord).xyz;
 
     outColor = vec4(shadedColor, 1.0);
 }

@@ -98,10 +98,8 @@ namespace std {
 
 struct MaterialProperties
 {
-	UNIFORM_ALIGNED glm::vec3 ambient;
 	UNIFORM_ALIGNED glm::vec3 diffuse;
 	UNIFORM_ALIGNED glm::vec3 specular;
-	float opacity;
 	float shininess;
 };
 
@@ -423,6 +421,7 @@ protected:
 	struct PointLight
 	{
 		UNIFORM_ALIGNED glm::vec3 pos;
+		UNIFORM_ALIGNED glm::vec3 colorAmbient;
 		UNIFORM_ALIGNED glm::vec3 colorDiffuse;
 		UNIFORM_ALIGNED glm::vec3 colorSpecular;
 		UNIFORM_ALIGNED glm::vec3 attenuation; // const, linear, quadratic
@@ -470,7 +469,12 @@ protected:
 
 	glm::vec3 ClampColor(glm::vec3 color)
 	{
-		return color / std::max(color.x, std::max(color.y, color.z));
+		float maxComponent = std::max(color.x, std::max(color.y, color.z));
+
+		if (maxComponent > 1.0f)
+			return color / maxComponent;
+	
+		return color;
 	}
 
 	void LoadLights(vk::CommandBuffer buffer)
@@ -484,6 +488,7 @@ protected:
 
 			PointLight pointLight;
 			pointLight.pos = transform[3];
+			pointLight.colorAmbient = glm::vec3(0.2f, 0.2f, 0.2f);
 			pointLight.colorDiffuse = ClampColor(glm::make_vec3(&light->mColorDiffuse.r));
 			pointLight.colorSpecular = ClampColor(glm::make_vec3(&light->mColorSpecular.r));
 			pointLight.attenuation = glm::vec3(1.0f, 0.0f, 0.0001f); // todo: use gltf2 range
@@ -653,17 +658,10 @@ protected:
 			assimpMaterial->Get(AI_MATKEY_COLOR_DIFFUSE, color);
 			material->properties.diffuse = glm::make_vec4(&color.r);
 
-			// Use darker diffuse as ambient to prevent the scene from being too dark
-			material->properties.ambient = material->properties.diffuse * 0.1f;
-
 			assimpMaterial->Get(AI_MATKEY_COLOR_SPECULAR, color);
 			material->properties.specular = glm::make_vec4(&color.r);
 
 			assimpMaterial->Get(AI_MATKEY_SHININESS, material->properties.shininess);
-			assimpMaterial->Get(AI_MATKEY_OPACITY, material->properties.opacity);
-
-			//if ((material->properties.opacity) > 0.0f)
-			//	material->properties.specular = glm::vec4(0.0f);
 
 			// Upload properties to uniform buffer
 			material->uniformBuffer = std::make_unique<UniqueBufferWithStaging>(sizeof(MaterialProperties), vk::BufferUsageFlagBits::eUniformBuffer);
@@ -673,23 +671,26 @@ protected:
 
 			// Textures
 
-			if (assimpMaterial->GetTextureCount(aiTextureType_DIFFUSE) > 0)
-			{
-				aiString textureFile;
-				assimpMaterial->GetTexture(aiTextureType_DIFFUSE, 0, &textureFile);
-				auto texture = LoadMaterialTexture(commandBuffer, m_basePath + "/" + std::string(textureFile.C_Str()));
-				texture.binding = 0; // diffuse
-				material->textures.push_back(std::move(texture));
-			}
-			else
-			{
-				// Load dummy texture
-				auto texture = LoadMaterialTexture(commandBuffer, "dummy_texture.png");
-				texture.binding = 0; // diffuse
-				material->textures.push_back(std::move(texture));
-			}
+			auto loadTexture = [this, &assimpMaterial, &material, &commandBuffer](aiTextureType type, uint32_t binding) { // todo: move this to a function
+				if (assimpMaterial->GetTextureCount(type) > 0)
+				{
+					aiString textureFile;
+					assimpMaterial->GetTexture(type, 0, &textureFile);
+					auto texture = LoadMaterialTexture(commandBuffer, m_basePath + "/" + std::string(textureFile.C_Str()));
+					texture.binding = binding;
+					material->textures.push_back(std::move(texture));
+				}
+				else
+				{
+					// Load dummy texture
+					auto texture = LoadMaterialTexture(commandBuffer, "dummy_texture.png");
+					texture.binding = binding;
+					material->textures.push_back(std::move(texture));
+				}
+			};
 
-			// todo: load other texture types
+			loadTexture(aiTextureType_DIFFUSE, 0);
+			loadTexture(aiTextureType_SPECULAR, 1);
 		}
 	}
 
@@ -871,11 +872,16 @@ protected:
 				// Material properties in uniform buffer
 				vk::DescriptorBufferInfo descriptorBufferInfo(materialInstance->uniformBuffer->Get(), 0, sizeof(MaterialProperties));
 
-				// Use the material's sampler and texture
-				auto& sampler = materialInstance->textures[0].sampler;
-				auto& imageView = materialInstance->textures[0].texture->GetImageView();
-				vk::DescriptorImageInfo imageInfo(sampler, imageView, vk::ImageLayout::eShaderReadOnlyOptimal);
-
+				// Use the material's samplers and textures
+				std::vector<vk::DescriptorImageInfo> imageInfos;
+				for (const auto& materialTexture : materialInstance->textures)
+				{
+					imageInfos.emplace_back(
+						materialTexture.sampler,
+						materialTexture.texture->GetImageView(),
+						vk::ImageLayout::eShaderReadOnlyOptimal
+					);
+				}
 				uint32_t binding = 0;
 				std::array<vk::WriteDescriptorSet, 2> writeDescriptorSets = {
 					vk::WriteDescriptorSet(
@@ -884,7 +890,7 @@ protected:
 					), // binding = 0
 					vk::WriteDescriptorSet(
 						materialInstance->descriptorSet.get(), binding++, {},
-						1, vk::DescriptorType::eCombinedImageSampler, &imageInfo, nullptr
+						static_cast<uint32_t>(imageInfos.size()), vk::DescriptorType::eCombinedImageSampler, imageInfos.data(), nullptr
 					) // binding = 1
 				};
 				g_device->Get().updateDescriptorSets(static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
