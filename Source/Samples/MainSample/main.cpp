@@ -37,6 +37,7 @@
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/hash.hpp>
 #include <glm/gtx/norm.hpp>
+#include <glm/gtx/type_aligned.hpp>
 
 // For Texture
 #define STB_IMAGE_IMPLEMENTATION
@@ -54,9 +55,9 @@
 
 struct ViewUniforms
 {
-	UNIFORM_ALIGNED glm::mat4 view;
-	UNIFORM_ALIGNED glm::mat4 proj;
-	UNIFORM_ALIGNED glm::vec3 dir;
+	glm::aligned_mat4 view;
+	glm::aligned_mat4 proj;
+	glm::aligned_vec3 dir;
 };
 
 // Array of point lights
@@ -76,31 +77,28 @@ enum class DescriptorSetIndices
 struct Vertex
 {
 	glm::vec3 pos;
-	glm::vec3 color;
 	glm::vec2 texCoord;
 	glm::vec3 normal;
 
 	bool operator==(const Vertex& other) const
 	{
-		return pos == other.pos && color == other.color && texCoord == other.texCoord && normal == other.normal;
+		return pos == other.pos && texCoord == other.texCoord && normal == other.normal;
 	}
 };
 
 namespace std {
 	template<> struct hash<Vertex> {
 		size_t operator()(Vertex const& vertex) const {
-			return ((hash<glm::vec3>()(vertex.pos) ^
-				(hash<glm::vec3>()(vertex.color) << 1)) >> 1) ^
-				(hash<glm::vec2>()(vertex.texCoord) << 1);
+			return ((hash<glm::vec3>()(vertex.pos) ^ (hash<glm::vec2>()(vertex.texCoord) << 1)));
 		}
 	};
 }
 
 struct MaterialProperties
 {
-	UNIFORM_ALIGNED glm::vec3 diffuse;
-	UNIFORM_ALIGNED glm::vec3 specular;
-	float shininess;
+	glm::aligned_vec4 diffuse;
+	glm::aligned_vec4 specular;
+	glm::aligned_float32 shininess;
 };
 
 struct Material
@@ -418,15 +416,17 @@ protected:
 		LoadCamera();
 	}
 
-	struct PointLight
+	struct Light
 	{
-		UNIFORM_ALIGNED glm::vec3 pos;
-		UNIFORM_ALIGNED glm::vec3 colorAmbient;
-		UNIFORM_ALIGNED glm::vec3 colorDiffuse;
-		UNIFORM_ALIGNED glm::vec3 colorSpecular;
-		UNIFORM_ALIGNED glm::vec3 attenuation; // const, linear, quadratic
+		glm::aligned_int32 type;
+		glm::aligned_vec3 pos;
+		glm::aligned_vec3 direction;
+		glm::aligned_vec3 ambient;
+		glm::aligned_vec3 diffuse;
+		glm::aligned_vec3 specular;
+		glm::aligned_vec3 attenuation; // const, linear, quadratic
 	};
-	std::vector<PointLight> m_pointLights;
+	std::vector<Light> m_lights;
 
 	glm::mat4 ComputeAiNodeGlobalTransform(const aiNode* node)
 	{
@@ -481,19 +481,27 @@ protected:
 	{
 		for (int i = 0; i < m_assimp.scene->mNumLights; ++i)
 		{
-			aiLight* light = m_assimp.scene->mLights[i];
+			aiLight* aLight = m_assimp.scene->mLights[i];
 
-			aiNode* node = m_assimp.scene->mRootNode->FindNode(light->mName);
+			aiNode* node = m_assimp.scene->mRootNode->FindNode(aLight->mName);
 			glm::mat4 transform = ComputeAiNodeGlobalTransform(node);
 
-			PointLight pointLight;
-			pointLight.pos = transform[3];
-			pointLight.colorAmbient = glm::vec3(0.2f, 0.2f, 0.2f);
-			pointLight.colorDiffuse = ClampColor(glm::make_vec3(&light->mColorDiffuse.r));
-			pointLight.colorSpecular = ClampColor(glm::make_vec3(&light->mColorSpecular.r));
-			pointLight.attenuation = glm::vec3(1.0f, 0.0f, 0.0001f); // todo: use gltf2 range
+			Light light;
+			light.type = (int)aLight->mType;
+			light.ambient = glm::vec3(0.0f); // glm::vec3(0.2f, 0.2f, 0.2f);
+			light.diffuse = ClampColor(glm::make_vec3(&aLight->mColorDiffuse.r));
+			light.specular = ClampColor(glm::make_vec3(&aLight->mColorSpecular.r));
+			light.pos = transform[3];
 
-			m_pointLights.push_back(std::move(pointLight));
+			if (aLight->mType == aiLightSource_DIRECTIONAL)
+			{
+				light.direction = glm::make_vec3(&aLight->mDirection.x);
+				light.direction = glm::vec4(transform * glm::vec4(light.direction, 0.0f));
+			}
+
+			light.attenuation = glm::vec3(1.0f, 0.0f, 0.0001f); // todo: use gltf2 range
+
+			m_lights.push_back(std::move(light));
 		}
 	}
 
@@ -578,7 +586,6 @@ protected:
 				vertex.texCoord = hasUV ? glm::make_vec2(&aMesh->mTextureCoords[0][v].x) : glm::vec2(0.0f);
 				vertex.texCoord.y = -vertex.texCoord.y;
 				vertex.normal = hasNormals ? glm::make_vec3(&aMesh->mNormals[v].x) : glm::vec3(0.0f);
-				vertex.color = hasColor ? glm::make_vec3(&aMesh->mColors[0][v].r) : glm::vec3(1.0f);
 
 				m_maxVertexDist = (std::max)(m_maxVertexDist, glm::length(vertex.pos - glm::vec3(0.0f)));
 
@@ -605,10 +612,10 @@ protected:
 				m_materials.push_back(std::make_unique<Material>());
 
 			// Choose between Lit/Unlit fragment shader depending if there are lights or not
-			if (m_pointLights.empty() == false)
+			if (m_lights.empty() == false)
 			{
 				Shader* fragmentShader = m_fragmentShaders[(size_t)FragmentShaders::Lit].get();
-				LitShaderConstants constants = { (uint32_t)m_pointLights.size() };
+				LitShaderConstants constants = { (uint32_t)m_lights.size() };
 				fragmentShader->SetSpecializationConstants(constants);
 				m_graphicsPipelines.push_back(std::make_unique<GraphicsPipeline>(
 					m_renderPass->Get(),
@@ -722,11 +729,11 @@ protected:
 
 	void CreateLightsUniformBuffers(vk::CommandBuffer commandBuffer)
 	{
-		if (m_pointLights.empty() == false)
+		if (m_lights.empty() == false)
 		{
-			vk::DeviceSize bufferSize = m_pointLights.size() * sizeof(PointLight);
+			vk::DeviceSize bufferSize = m_lights.size() * sizeof(Light);
 			m_lightsUniformBuffer = std::make_unique<UniqueBufferWithStaging>(bufferSize, vk::BufferUsageFlagBits::eUniformBuffer);
-			memcpy(m_lightsUniformBuffer->GetStagingMappedData(), reinterpret_cast<const void*>(m_pointLights.data()), bufferSize);
+			memcpy(m_lightsUniformBuffer->GetStagingMappedData(), reinterpret_cast<const void*>(m_lights.data()), bufferSize);
 			m_lightsUniformBuffer->CopyStagingToGPU(commandBuffer);
 
 			// We won't need the staging buffer after the initial upload
@@ -808,9 +815,9 @@ protected:
 					) // binding = 0
 				};
 
-				if (m_pointLights.empty() == false)
+				if (m_lights.empty() == false)
 				{
-					vk::DescriptorBufferInfo descriptorBufferInfoLights(m_lightsUniformBuffer->Get(), 0, sizeof(PointLight) * m_pointLights.size());
+					vk::DescriptorBufferInfo descriptorBufferInfoLights(m_lightsUniformBuffer->Get(), 0, sizeof(Light) * m_lights.size());
 					writeDescriptorSets.push_back(
 						vk::WriteDescriptorSet(
 							m_viewDescriptorSets[i].get(), binding++, {},
