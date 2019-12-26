@@ -9,11 +9,13 @@ Texture::Texture(
 	vk::ImageTiling tiling,
 	vk::ImageUsageFlags usage,
 	vk::ImageAspectFlags aspectFlags,
-	uint32_t mipLevels
+	vk::ImageViewType imageViewType,
+	uint32_t mipLevels,
+	uint32_t layerCount
 )
-	: Image(width, height, depth, format, tiling, usage, aspectFlags, mipLevels)
+	: Image(width, height, depth, format, tiling, usage, aspectFlags, imageViewType, mipLevels, layerCount)
 	, m_stagingBuffer(std::make_unique<UniqueBuffer>(
-		vk::BufferCreateInfo({}, static_cast<size_t>(width)* height* depth, vk::BufferUsageFlagBits::eTransferSrc),
+		vk::BufferCreateInfo({}, static_cast<size_t>(width)* height* depth * layerCount, vk::BufferUsageFlagBits::eTransferSrc),
 		VmaAllocationCreateInfo{ VMA_ALLOCATION_CREATE_MAPPED_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, }
 	))
 {
@@ -32,8 +34,7 @@ void Texture::UploadStagingToGPU(vk::CommandBuffer& commandBuffer, vk::ImageLayo
 		vk::ImageSubresourceLayers(
 			vk::ImageAspectFlagBits::eColor,
 			0, // mipLevel
-			0, // baseArrayLayer
-			1  // layerCount
+			0, m_layerCount
 		),
 		vk::Offset3D(0, 0, 0), m_extent
 	);

@@ -9,11 +9,15 @@ Image::Image(
 	vk::ImageTiling tiling,
 	vk::ImageUsageFlags usage,
 	vk::ImageAspectFlags aspectFlags,
+	vk::ImageViewType imageViewType,
 	uint32_t mipLevels,
+	uint32_t layerCount,
 	vk::SampleCountFlagBits nbSamples
 )
 	: m_format(format)
+	, m_imageViewType(imageViewType)
 	, m_mipLevels(mipLevels)
+	, m_layerCount(layerCount)
 	, m_extent(static_cast<uint32_t>(width), static_cast<uint32_t>(height), 1)
 {
 	CreateImage(tiling, usage, nbSamples);
@@ -24,12 +28,12 @@ void Image::CreateImage(vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::S
 {
 	uint32_t queueFamilies[] = { g_physicalDevice->GetQueueFamilies().graphicsFamily.value() };
 	vk::ImageCreateInfo imageInfo(
-		{}, // flags
+		m_imageViewType == vk::ImageViewType::eCube ? vk::ImageCreateFlagBits::eCubeCompatible : vk::ImageCreateFlagBits{},
 		vk::ImageType::e2D,
 		m_format,
 		m_extent,
-		m_mipLevels, // mipLevels
-		1, // layerCount
+		m_mipLevels,
+		m_layerCount,
 		nbSamples,
 		tiling,
 		usage,
@@ -53,10 +57,8 @@ void Image::TransitionLayout(vk::CommandBuffer& commandBuffer, vk::ImageLayout n
 		m_image.Get(),
 		vk::ImageSubresourceRange(
 			vk::ImageAspectFlagBits::eColor, // aspect mask
-			0, // baseMipLevel
-			m_mipLevels, // levelCount
-			0, // baseArrayLayer,
-			1 // layerCount
+			0, m_mipLevels,
+			0, m_layerCount
 		)
 	);
 
@@ -103,15 +105,13 @@ void Image::CreateImageView(vk::ImageAspectFlags aspectFlags)
 	vk::ImageViewCreateInfo createInfo(
 		vk::ImageViewCreateFlags(),
 		m_image.Get(),
-		vk::ImageViewType::e2D,
+		m_imageViewType,
 		m_format,
 		vk::ComponentMapping(vk::ComponentSwizzle::eIdentity),
 		vk::ImageSubresourceRange(
 			aspectFlags,
-			0, // baseMipLevel
-			m_mipLevels, // mipLevelsCount
-			0, // baseArrayLayer
-			1 // layerCount
+			0, m_mipLevels,
+			0, m_layerCount
 		)
 	);
 	m_imageView = g_device->Get().createImageViewUnique(createInfo);

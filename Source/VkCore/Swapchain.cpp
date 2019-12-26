@@ -104,7 +104,8 @@ Swapchain::Swapchain(vk::SurfaceKHR surface, vk::Extent2D desiredExtent)
 		vk::ImageTiling::eOptimal,
 		vk::ImageUsageFlagBits::eDepthStencilAttachment,
 		vk::ImageAspectFlagBits::eDepth,
-		1, // mipMapLevels
+		vk::ImageViewType::e2D,
+		1, 1, // mipLevels, layerCount
 		g_physicalDevice->GetMsaaSamples()
 	);
 
@@ -115,7 +116,8 @@ Swapchain::Swapchain(vk::SurfaceKHR surface, vk::Extent2D desiredExtent)
 		vk::ImageTiling::eOptimal,
 		vk::ImageUsageFlagBits::eTransientAttachment | vk::ImageUsageFlagBits::eColorAttachment,
 		vk::ImageAspectFlagBits::eColor,
-		1, // mipMapLevels
+		vk::ImageViewType::e2D,
+		1, 1, // mipLevels, layerCount
 		g_physicalDevice->GetMsaaSamples()
 	);
 }

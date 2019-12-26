@@ -19,7 +19,9 @@ public:
 		vk::ImageTiling tiling,
 		vk::ImageUsageFlags usage,
 		vk::ImageAspectFlags aspectFlags,
-		uint32_t mipLevels = 1
+		vk::ImageViewType imageViewType = vk::ImageViewType::e2D,
+		uint32_t mipLevels = 1,
+		uint32_t layerCount = 1 // e.g. 6 for cube map
 	);
 
 	// Useful for one time upload
