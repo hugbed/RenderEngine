@@ -15,6 +15,7 @@
 #include "Shader.h"
 #include "Image.h"
 #include "Texture.h"
+#include "Skybox.h"
 #include "vk_utils.h"
 #include "file_utils.h"
 
@@ -258,6 +259,7 @@ protected:
 		CreateViewUniformBuffers();
 		CreateLightsUniformBuffers(commandBuffer);
 		CreateDescriptorSets();
+		CreateSkybox(commandBuffer);
 
 		CreateSecondaryCommandBuffers();
 		RecordRenderPassCommands();
@@ -284,6 +286,7 @@ protected:
 			CreateViewUniformBuffers();
 			CreateDescriptorLayouts();
 			UpdateMaterialDescriptors();
+			m_skybox->Reset(*m_renderPass, m_swapchain->GetImageDescription().extent);
 		}
 		commandBuffer.end();
 
@@ -321,6 +324,7 @@ protected:
 				const MaterialInstance* materialInstance = nullptr;
 				const Material* material = nullptr;
 
+				// Draw all meshes using available materials
 				for (const auto& drawItem : m_drawCache)
 				{
 					// Bind descriptors using material type's { view + model } layouts
@@ -364,6 +368,19 @@ protected:
 					// Draw
 					commandBuffer.get().drawIndexed(drawItem.mesh->nbIndices, 1, drawItem.mesh->indexOffset, 0, 0);
 				}
+
+				// Draw skybox using unlit descriptors
+				if (materialType != MaterialType::Unlit)
+				{
+					const auto& layouts = m_layouts[(size_t)MaterialType::Unlit];
+					auto& viewDescriptorSet = layouts.m_viewDescriptorSets[i % m_commandBufferPool.GetNbConcurrentSubmits()].get();
+					commandBuffer.get().bindDescriptorSets(
+						vk::PipelineBindPoint::eGraphics, layouts.m_viewPipelineLayout.get(),
+						(uint32_t)DescriptorSetIndices::View,
+						1, &viewDescriptorSet, 0, nullptr
+					);
+				}
+				m_skybox->Draw(commandBuffer.get(), i);
 			}
 			commandBuffer->end();
 		}
@@ -1025,6 +1042,7 @@ protected:
 			vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst | // src and dst for mipmaps blit
 				vk::ImageUsageFlagBits::eSampled,
 			vk::ImageAspectFlagBits::eColor,
+			vk::ImageViewType::e2D,
 			mipLevels
 		));
 		auto& texture = pair->second;
@@ -1117,6 +1135,13 @@ protected:
 		// Upload to GPU
 		auto& uniformBuffer = m_viewUniformBuffers[imageIndex % m_commandBufferPool.GetNbConcurrentSubmits()];
 		memcpy(uniformBuffer.GetMappedData(), reinterpret_cast<const void*>(&ubo), sizeof(ViewUniforms));
+	}
+
+	void CreateSkybox(vk::CommandBuffer commandBuffer)
+	{
+		m_skybox.reset();
+		m_skybox = std::make_unique<Skybox>(*m_renderPass, m_swapchain->GetImageDescription().extent);
+		m_skybox->UploadToGPU(m_commandBufferPool, commandBuffer);
 	}
 
 	void Update() override 
@@ -1294,6 +1319,8 @@ private:
 	std::map<uint32_t, vk::UniqueSampler> m_samplers; // per mip level
 	std::vector<std::unique_ptr<Material>> m_materials;
 	std::vector<std::unique_ptr<MaterialInstance>> m_materialInstances;
+
+	std::unique_ptr<Skybox> m_skybox;
 
 	// Sort items to draw to minimize the number of bindings
 	// Less pipeline bindings, then descriptor set bindings.

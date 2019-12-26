@@ -23,7 +23,9 @@ public:
 		vk::ImageTiling tiling,
 		vk::ImageUsageFlags usage,
 		vk::ImageAspectFlags aspectFlags,
+		vk::ImageViewType imageViewType,
 		uint32_t mipLevels = 1,
+		uint32_t layerCount = 1, // e.g. 6 for cube map
 		vk::SampleCountFlagBits nbSamples = vk::SampleCountFlagBits::e1
 	);
 
@@ -43,7 +45,9 @@ protected:
 	vk::Extent3D m_extent;
 	vk::Format m_format;
 	uint32_t m_mipLevels;
+	uint32_t m_layerCount;
 	vk::ImageLayout m_imageLayout{ vk::ImageLayout::eUndefined };
+	vk::ImageViewType m_imageViewType;
 	vk::UniqueImageView m_imageView;
 	UniqueImage m_image;
 };

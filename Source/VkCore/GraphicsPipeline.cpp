@@ -110,7 +110,7 @@ GraphicsPipeline::GraphicsPipeline(vk::RenderPass renderPass, vk::Extent2D viewp
 		{},
 		true, // depthTestEnable
 		true, // depthWriteEnable
-		vk::CompareOp::eLess, // depthCompareOp
+		vk::CompareOp::eLessOrEqual, // depthCompareOp
 		false, // depthBoundsTestEnable
 		false, // stencilTestEnable
 		{}, // front
