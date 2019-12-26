@@ -12,24 +12,21 @@ layout(location = 2) out vec3 fragNormal;
 layout(location = 3) out vec3 fragPos;
 layout(location = 4) out vec3 viewDir;
 
-// Set 0: always bound 
+//--- Set 0 (Scene Uniforms) --- //
 layout(set = 0, binding = 0) uniform ViewUniforms {
     mat4 view;
     mat4 proj;
-    vec3 dir;
 } view;
 
-// Set 1: bound per object
+// --- Set 1 (Model Uniforms) --- //
 layout(set = 1, binding = 0) uniform ModelUniforms {
     mat4 transform;
 } model;
-
-// Set 2: bound for each material 
 
 void main() {
     fragPos = vec3(model.transform * vec4(inPosition, 1.0));
     gl_Position = view.proj * view.view * vec4(fragPos, 1.0);
     fragTexCoord = inTexCoord;
     fragNormal = mat3(model.transform) * inNormal; // assumes afine transform
-    viewDir = view.dir;
+    viewDir = -transpose(view)[2];
 }

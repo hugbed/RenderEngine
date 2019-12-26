@@ -57,7 +57,6 @@ struct ViewUniforms
 {
 	glm::aligned_mat4 view;
 	glm::aligned_mat4 proj;
-	glm::aligned_vec3 dir;
 };
 
 // Array of point lights
@@ -1015,8 +1014,7 @@ protected:
 
 		ViewUniforms ubo = {};
 		ubo.view = m_camera.GetViewMatrix();
-		ubo.proj = glm::perspective(glm::radians(m_camera.GetFieldOfView()), extent.width / (float)extent.height, 0.1f, 30000.0f);
-		ubo.dir = m_camera.GetLookAt() - m_camera.GetEye();
+		ubo.proj = glm::perspective(glm::radians(m_camera.GetFieldOfView()), extent.width / (float)extent.height, 0.001f, 30000.0f);
 
 		// OpenGL -> Vulkan invert y, half z
 		auto clip = glm::mat4(
