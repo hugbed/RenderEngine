@@ -19,11 +19,13 @@ struct Attenuation {
 
 struct Light {
     int type;
-    vec3 pos;
-    vec3 direction;
+    vec3 pos; // point
+    vec3 direction; // directional
     vec3 ambient;
     vec3 diffuse;
     vec3 specular;
+    float innerCutoff; // spot (cos of the inner angle)
+    float outerCutoff; // spot (cos of the outer angle)
     Attenuation attenuation;
 };
 
@@ -32,9 +34,9 @@ vec3 PhongLighting(
     PhongMaterial material,
     vec3 normal, vec3 fragPos, vec3 viewDir
 ) {
-    vec3 lightDir = light.type == LIGHT_TYPE_POINT ?
-        normalize(light.pos - fragPos) :
-        normalize(-light.direction);
+    vec3 lightDir = light.type == LIGHT_TYPE_DIRECTIONAL ?
+        normalize(-light.direction) :
+        normalize(light.pos - fragPos);
 
     // ambient
     vec3 ambient = light.ambient * material.diffuse;
@@ -55,6 +57,16 @@ vec3 PhongLighting(
         Attenuation att = light.attenuation;
         float dist = length(light.pos - fragPos);
         attenuation = 1.0 / (att.constant + att.linear * dist + att.quadratic * dist*dist);
+    }
+
+    // spotlight angle attenuation
+    if (light.type == LIGHT_TYPE_SPOT) {
+        float cos_theta = dot(-lightDir, normalize(light.direction));
+        float epsilon = light.innerCutoff - light.outerCutoff;
+        float intensity = clamp((cos_theta - light.outerCutoff) / epsilon, 0.0, 1.0);
+        // don't affect ambient
+        diffuse *= intensity;
+        specular *= intensity;
     }
 
     return (ambient + diffuse + specular) * attenuation;

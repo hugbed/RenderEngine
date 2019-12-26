@@ -424,6 +424,8 @@ protected:
 		glm::aligned_vec3 ambient;
 		glm::aligned_vec3 diffuse;
 		glm::aligned_vec3 specular;
+		glm::aligned_float32 innerCutoff; // (cos of the inner angle)
+		glm::aligned_float32 outerCutoff; // (cos of the outer angle)
 		glm::aligned_vec3 attenuation; // const, linear, quadratic
 	};
 	std::vector<Light> m_lights;
@@ -493,10 +495,18 @@ protected:
 			light.specular = ClampColor(glm::make_vec3(&aLight->mColorSpecular.r));
 			light.pos = transform[3];
 
-			if (aLight->mType == aiLightSource_DIRECTIONAL)
+			if (aLight->mType != aiLightSource_POINT)
 			{
 				light.direction = glm::make_vec3(&aLight->mDirection.x);
 				light.direction = glm::vec4(transform * glm::vec4(light.direction, 0.0f));
+			}
+
+			if (aLight->mType == aiLightSource_SPOT)
+			{
+				// falloff exponent is not correctly read from collada
+				// so set outer angle to 120% of inner angle for now
+				light.innerCutoff = std::cos(aLight->mAngleInnerCone);
+				light.outerCutoff = std::cos(aLight->mAngleInnerCone * 1.20f);
 			}
 
 			light.attenuation = glm::vec3(1.0f, 0.0f, 0.0001f); // todo: use gltf2 range
@@ -703,8 +713,6 @@ protected:
 
 	MaterialTexture LoadMaterialTexture(vk::CommandBuffer& commandBuffer, const std::string filename)
 	{
-		// todo: set base path to load textures from
-		// or load automatically next to the model
 		Texture* texture = CreateAndUploadTextureImage(commandBuffer, filename);
 		vk::Sampler sampler = CreateSampler(texture->GetMipLevels());
 		return MaterialTexture{ 0, texture, sampler };
@@ -905,7 +913,7 @@ protected:
 		}
 	}
 
-	Texture* CreateAndUploadTextureImage(vk::CommandBuffer& commandBuffer, const std::string filename)
+	Texture* CreateAndUploadTextureImage(vk::CommandBuffer& commandBuffer, const std::string& filename)
 	{
 		// Check if we already loaded this texture
 		auto& cachedTexture = m_textures.find(filename);
