@@ -692,7 +692,7 @@ protected:
 				{
 					aiString textureFile;
 					assimpMaterial->GetTexture(type, 0, &textureFile);
-					auto texture = LoadMaterialTexture(commandBuffer, m_basePath + "/" + std::string(textureFile.C_Str()));
+					auto texture = LoadMaterialTexture(commandBuffer, textureFile.C_Str());
 					texture.binding = binding;
 					material->textures.push_back(std::move(texture));
 				}
@@ -771,20 +771,20 @@ protected:
 		uint32_t nbModels = m_models.size();
 
 		// Dynamic uniform data (updated each frame) gets one set per swapchain image
-		uint32_t totalSets = nbViews + nbMaterials + nbModels;
+		uint32_t totalSets = nbViews * (1 + m_lights.size()) + nbModels + nbMaterials + m_samplers.size();
 		
 		// Create descriptor pool
 		std::vector<vk::DescriptorPoolSize> poolSizes;
 
 		// 1 sampler per texture
 		poolSizes.push_back(vk::DescriptorPoolSize(
-			vk::DescriptorType::eSampler,
-			static_cast<uint32_t>(m_samplers.size())
+			vk::DescriptorType::eCombinedImageSampler,
+			static_cast<uint32_t>(m_samplers.size()) * 2 // diffuse + specular
 		));
 
 		poolSizes.push_back(vk::DescriptorPoolSize(
 			vk::DescriptorType::eUniformBuffer,
-			nbViews + nbModels + nbMaterials
+			nbViews * (1 + m_lights.size()) + m_lights.size() + nbModels + nbMaterials
 		));
 
 		// If the number of required descriptors were to change at run-time
@@ -921,7 +921,7 @@ protected:
 
 		// Read image from file
 		int texWidth = 0, texHeight = 0, texChannels = 0;
-		stbi_uc* pixels = stbi_load(filename.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+		stbi_uc* pixels = stbi_load((m_basePath + "/" + filename).c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
 		if (pixels == nullptr || texWidth == 0 || texHeight == 0 || texChannels == 0) {
 			throw std::runtime_error("failed to load texture image!");
 		}
