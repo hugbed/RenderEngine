@@ -23,11 +23,30 @@ float checkerboard(vec2 R, float scale) {
 	) % 2);
 }
 
-float grid(vec2 R, float scale) {
-	return float((
-		int(floor(R.x / scale)) +
-		int(floor(R.y / scale))
-	) % 2);
+vec4 grid(vec3 R, float scale, bool drawAxis) {
+    // Pick a coordinate to visualize in a grid
+    vec2 coord = R.xz * scale;
+
+    float mult = 1;
+
+    if(scale == 1)
+        mult = 2;
+
+    // Compute anti-aliased world-space grid lines
+    vec2 grid = abs(fract(coord - 0.5) - 0.5) / (fwidth(coord) * mult);
+    float line = min(grid.x, grid.y); 
+
+    vec4 color = vec4(0.2, 0.2, 0.2, 1.0 - min(line, 1.0));
+
+    // z axis
+    if(coord.x > -0.001 && coord.x < 0.001)
+        color.z = 1.0;
+
+    //x axis
+    if(coord.y > -0.001 && coord.y < 0.001)
+        color.x = 1.0;
+
+    return color;
 }
 
 float computeDepth(vec3 pos) {
@@ -39,11 +58,8 @@ float computeDepth(vec3 pos) {
 void main() {
     float t = -nearPoint.y / (farPoint.y - nearPoint.y);
 	vec3 R = nearPoint + t * (farPoint - nearPoint);
-    float c =
-		checkerboard(R.xz, 0.1) * 0.3 +
-		checkerboard(R.xz, 1) * 0.2 +
-		checkerboard(R.xz, 10) * 0.15 +
-		0.1;
+
+    vec4 c = grid(R, 10, true) + grid(R, 1, true);
 
     c = c * float(t > 0);
 	float spotlight = min(1.0, 5.0 - length(R.xyz));
@@ -51,23 +67,5 @@ void main() {
     float depth = computeDepth(R);
 
     gl_FragDepth = depth;
-	outColor = vec4(vec3(c), 1) * spotlight;
-
-    //Z axis
-    if(R.x > -0.002 && R.x < 0.002)
-    {
-        if(R.z > 0)
-            outColor = vec4(vec3(0.25, 0.25, (1.0 - R.x) ), 1.0) * spotlight;
-        else
-            outColor = vec4(vec3(0.25, 0.25, (1.0 - R.x)), 1.0) * spotlight;
-    }
-
-    //X axis
-    if(R.z > -0.002 && R.z < 0.002)
-    {
-        if(R.x > 0)
-            outColor = vec4(vec3((1.0 - R.z), 0.25, 0.25), 1.0) * spotlight;
-        else
-            outColor = vec4(vec3((1.0 - R.z), 0.25, 0.25), 1.0) * spotlight;
-    }    
+	outColor = c * spotlight; 
 }
