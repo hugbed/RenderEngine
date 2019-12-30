@@ -8,7 +8,29 @@
 #include <array>
 #include <map>
 
-GraphicsPipeline::GraphicsPipeline(vk::RenderPass renderPass, vk::Extent2D viewportExtent, const Shader& vertexShader, const Shader& fragmentShader)
+GraphicsPipeline::GraphicsPipeline(
+	vk::RenderPass renderPass,
+	vk::Extent2D viewportExtent,
+	const Shader& vertexShader, const Shader& fragmentShader)
+{
+	GraphicsPipelineInfo info; // use default settings
+	Init(renderPass, viewportExtent, vertexShader, fragmentShader, info);
+}
+
+GraphicsPipeline::GraphicsPipeline(
+	vk::RenderPass renderPass,
+	vk::Extent2D viewportExtent,
+	const Shader& vertexShader, const Shader& fragmentShader,
+	const GraphicsPipelineInfo& info)
+{
+	Init(renderPass, viewportExtent, vertexShader, fragmentShader, info);
+}
+
+void GraphicsPipeline::Init(
+	vk::RenderPass renderPass,
+	vk::Extent2D viewportExtent,
+	const Shader& vertexShader, const Shader& fragmentShader,
+	const GraphicsPipelineInfo& info)
 {
 	vk::PipelineVertexInputStateCreateInfo vertexInputInfo = vertexShader.GetVertexInputStateInfo();
 
@@ -42,9 +64,18 @@ GraphicsPipeline::GraphicsPipeline(vk::RenderPass renderPass, vk::Extent2D viewp
 	multisampling.minSampleShading = 1.0f;
 	multisampling.rasterizationSamples = g_physicalDevice->GetMsaaSamples();
 
-	vk::PipelineColorBlendAttachmentState colorBlendAttachment(
-		false // blendEnable
-	);
+	vk::PipelineColorBlendAttachmentState colorBlendAttachment;
+	if (info.blendEnable)
+	{
+		colorBlendAttachment.blendEnable = true;
+		colorBlendAttachment.srcColorBlendFactor = vk::BlendFactor::eSrcAlpha;
+		colorBlendAttachment.dstColorBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha;
+		colorBlendAttachment.colorBlendOp = vk::BlendOp::eAdd;
+		colorBlendAttachment.srcAlphaBlendFactor = vk::BlendFactor::eSrcAlpha;
+		colorBlendAttachment.dstAlphaBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha;
+		colorBlendAttachment.alphaBlendOp = vk::BlendOp::eSubtract;
+	}
+
 	colorBlendAttachment.colorWriteMask =
 		vk::ColorComponentFlagBits::eR |
 		vk::ColorComponentFlagBits::eG |

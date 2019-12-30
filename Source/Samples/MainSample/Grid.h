@@ -20,10 +20,13 @@ public:
 	{
 		vertexShader = std::make_unique<Shader>("grid_vert.spv", "main");
 		fragmentShader = std::make_unique<Shader>("grid_frag.spv", "main");
+		GraphicsPipelineInfo info;
+		info.blendEnable = true;
 		pipeline = std::make_unique<GraphicsPipeline>(
 			renderPass.Get(),
 			swapchainExtent,
-			*vertexShader, *fragmentShader
+			*vertexShader, *fragmentShader,
+			info
 		);
 	}
 

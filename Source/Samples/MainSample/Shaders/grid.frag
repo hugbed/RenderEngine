@@ -51,23 +51,23 @@ void main() {
     float depth = computeDepth(R);
 
     gl_FragDepth = depth;
-	outColor = vec4(vec3(c*spotlight), 1);
+	outColor = vec4(vec3(c), 1) * spotlight;
 
     //Z axis
     if(R.x > -0.002 && R.x < 0.002)
     {
         if(R.z > 0)
-            outColor = vec4(vec3(0.25, 0.25, (1.0 - R.x) ) * spotlight , 1);
+            outColor = vec4(vec3(0.25, 0.25, (1.0 - R.x) ), 1.0) * spotlight;
         else
-            outColor = vec4(vec3(0.25, 0.25, (1.0 - R.x)) * spotlight , 1);
+            outColor = vec4(vec3(0.25, 0.25, (1.0 - R.x)), 1.0) * spotlight;
     }
 
     //X axis
     if(R.z > -0.002 && R.z < 0.002)
     {
         if(R.x > 0)
-            outColor = vec4(vec3((1.0 - R.z), 0.25, 0.25) * spotlight , 1);
+            outColor = vec4(vec3((1.0 - R.z), 0.25, 0.25), 1.0) * spotlight;
         else
-            outColor = vec4(vec3((1.0 - R.z), 0.25, 0.25) * spotlight, 1);
+            outColor = vec4(vec3((1.0 - R.z), 0.25, 0.25), 1.0) * spotlight;
     }    
 }

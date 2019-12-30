@@ -317,6 +317,8 @@ protected:
 			);
 			commandBuffer->begin({ vk::CommandBufferUsageFlagBits::eRenderPassContinue, &info });
 			{
+				// --- Draw all scene opaque objects --- //
+
 				// Bind the one big vertex + index buffers
 				vk::DeviceSize offsets[] = { 0 };
 				vk::Buffer vertexBuffers[] = { m_vertexBuffer->Get() };
@@ -374,7 +376,8 @@ protected:
 					commandBuffer.get().drawIndexed(drawItem.mesh->nbIndices, 1, drawItem.mesh->indexOffset, 0, 0);
 				}
 
-				// Draw skybox using unlit descriptors
+				// --- Draw skybox last to draw only visible pixels (also opaque) --- //
+
 				if (materialType != MaterialType::Unlit)
 				{
 					const auto& layouts = m_layouts[(size_t)MaterialType::Unlit];
@@ -385,12 +388,15 @@ protected:
 						1, &viewDescriptorSet, 0, nullptr
 					);
 				}
-				if (m_showGrid)
-				{
-					m_grid->Draw(commandBuffer.get());
-				}
 
 				m_skybox->Draw(commandBuffer.get(), i);
+
+				// --- Then draw transparent objects --- //
+
+				if (m_showGrid)
+					m_grid->Draw(commandBuffer.get());
+
+				// todo: also draw transparent scene materials (sorted back to front)
 			}
 			commandBuffer->end();
 		}
