@@ -20,6 +20,7 @@
 #include "file_utils.h"
 
 #include "Camera.h"
+#include "Grid.h"
 
 #include <GLFW/glfw3.h>
 #define _USE_MATH_DEFINES
@@ -222,7 +223,7 @@ public:
 		, m_renderPass(std::make_unique<RenderPass>(m_swapchain->GetImageDescription().format))
 		, m_framebuffers(Framebuffer::FromSwapchain(*m_swapchain, m_renderPass->Get()))
 		, m_vertexShader(std::make_unique<Shader>("mvp_vert.spv", "main"))
-		, m_camera(1.0f * glm::vec3(1.0f, 1.0f, 1.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f), 45.0f)
+		, m_camera(1.0f * glm::vec3(1.0f, 1.0f, 1.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f), 45.0f, 0.01f, 1000.0f)
 	{
 		// todo: support multiple fragment shaders for each material type
 		m_fragmentShaders.resize((size_t)MaterialIndex::Count);
@@ -250,6 +251,8 @@ protected:
 	Camera m_camera;
 	float kInitOrbitCameraRadius = 1.0f;
 	CameraMode m_cameraMode = CameraMode::OrbitCamera;
+	bool m_showGrid = true;
+	std::unique_ptr<Grid> m_grid;
 
 	void Init(vk::CommandBuffer& commandBuffer) override
 	{
@@ -260,6 +263,8 @@ protected:
 		CreateLightsUniformBuffers(commandBuffer);
 		CreateDescriptorSets();
 		CreateSkybox(commandBuffer);
+
+		m_grid = std::make_unique<Grid>(*m_renderPass, m_swapchain->GetImageDescription().extent);
 
 		CreateSecondaryCommandBuffers();
 		RecordRenderPassCommands();
@@ -380,6 +385,11 @@ protected:
 						1, &viewDescriptorSet, 0, nullptr
 					);
 				}
+				if (m_showGrid)
+				{
+					m_grid->Draw(commandBuffer.get());
+				}
+
 				m_skybox->Draw(commandBuffer.get(), i);
 			}
 			commandBuffer->end();
@@ -1121,7 +1131,7 @@ protected:
 
 		ViewUniforms ubo = {};
 		ubo.view = m_camera.GetViewMatrix();
-		ubo.proj = glm::perspective(glm::radians(m_camera.GetFieldOfView()), extent.width / (float)extent.height, 0.001f, 30000.0f);
+		ubo.proj = glm::perspective(glm::radians(m_camera.GetFieldOfView()), extent.width / (float)extent.height, m_camera.GetNearPlane(), m_camera.GetFarPlane());
 
 		// OpenGL -> Vulkan invert y, half z
 		auto clip = glm::mat4(
@@ -1208,22 +1218,23 @@ protected:
 			glm::vec4 position(app->m_camera.GetEye().x, app->m_camera.GetEye().y, app->m_camera.GetEye().z, 1);
 			glm::vec4 target(app->m_camera.GetLookAt().x, app->m_camera.GetLookAt().y, app->m_camera.GetLookAt().z, 1);
 
+			float deltaAngle = (M_PI / 300.0f);
+
+			float xAngle = (app->m_mouseDownPos.x - xPos) * deltaAngle;
+			float yAngle = (app->m_mouseDownPos.y - yPos) * deltaAngle;
+
 			float dist = glm::distance2(app->m_upVector, glm::normalize(app->m_camera.GetEye() - app->m_camera.GetLookAt()));
-
-			float xAngle = (app->m_mouseDownPos.x - xPos) * (M_PI/300);
-			float yAngle = (app->m_mouseDownPos.y - yPos) * (M_PI/300);
-
 			if (dist < 0.01 && yAngle < 0 || 4.0 - dist < 0.01 && yAngle > 0)
 				yAngle = 0;
 
-			glm::mat4x4 rotationMatrixY(1.0f);
-			rotationMatrixY = glm::rotate(rotationMatrixY, yAngle, rightVector);
-
+			// Rotate in X
 			glm::mat4x4 rotationMatrixX(1.0f);
 			rotationMatrixX = glm::rotate(rotationMatrixX, xAngle, app->m_upVector);
-
 			position = (rotationMatrixX * (position - target)) + target;
 
+			// Rotate in Y
+			glm::mat4x4 rotationMatrixY(1.0f);
+			rotationMatrixY = glm::rotate(rotationMatrixY, yAngle, rightVector);
 			glm::vec3 finalPositionV3 = (rotationMatrixY * (position - target)) + target;
 
 			app->m_camera.SetCameraView(finalPositionV3, app->m_camera.GetLookAt(), app->m_upVector);
@@ -1258,12 +1269,17 @@ protected:
 		App* app = reinterpret_cast<App*>(data);
 		app->m_keyState[key] = action == GLFW_PRESS ? true : action == GLFW_REPEAT ? true : false;
 
-		if (key == GLFW_KEY_F && action == GLFW_PRESS) {
+		if (key == GLFW_KEY_F && action == GLFW_PRESS) 
+		{
 			if (app->m_cameraMode == CameraMode::FreeCamera) 
 			{
 				app->LoadCamera();
 			}
 			app->m_cameraMode = app->m_cameraMode == CameraMode::FreeCamera ? CameraMode::OrbitCamera : CameraMode::FreeCamera;
+		}
+		if (key == GLFW_KEY_G && action == GLFW_PRESS) 
+		{
+			app->m_showGrid = !app->m_showGrid;
 		}
 	}
 

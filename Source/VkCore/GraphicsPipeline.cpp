@@ -136,23 +136,3 @@ GraphicsPipeline::GraphicsPipeline(vk::RenderPass renderPass, vk::Extent2D viewp
 
 	m_graphicsPipeline = g_device->Get().createGraphicsPipelineUnique({}, graphicsPipelineCreateInfo);
 }
-
-void GraphicsPipeline::Draw(
-	vk::CommandBuffer& commandBuffer,
-	uint32_t indexCount,
-	vk::Buffer vertexBuffer,
-	vk::Buffer indexBuffer,
-	VkDeviceSize* vertexOffsets,
-	vk::DescriptorSet descriptorSet) // todo: add constants
-{
-	commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, m_graphicsPipeline.get());
-
-	commandBuffer.bindIndexBuffer(indexBuffer, 0, vk::IndexType::eUint32);
-
-	vk::Buffer vertexBuffers[] = { vertexBuffer };
-	commandBuffer.bindVertexBuffers(0, 1, vertexBuffers, vertexOffsets);
-
-	commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pipelineLayout.get(), 0, 1, &descriptorSet, 0, nullptr);
-
-	commandBuffer.drawIndexed(indexCount, 1, 0, 0, 0);
-}

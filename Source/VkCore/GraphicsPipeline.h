@@ -20,14 +20,6 @@ public:
 
 	vk::PipelineLayout GetLayout() const { return m_pipelineLayout.get(); }
 
-	void Draw(
-		vk::CommandBuffer& commandBuffer,
-		uint32_t indexCount,
-		vk::Buffer vertexBuffer,
-		vk::Buffer indexBuffer,
-		VkDeviceSize* vertexOffsets,
-		vk::DescriptorSet descriptorSet);
-
 	const vk::DescriptorSetLayout& GetDescriptorSetLayout(size_t set) const
 	{
 		return m_descriptorSetLayouts[set].get();
