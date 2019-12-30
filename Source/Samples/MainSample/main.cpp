@@ -252,7 +252,6 @@ protected:
 	float kInitOrbitCameraRadius = 1.0f;
 	CameraMode m_cameraMode = CameraMode::OrbitCamera;
 	bool m_showGrid = true;
-	std::unique_ptr<Grid> m_grid;
 
 	void Init(vk::CommandBuffer& commandBuffer) override
 	{
@@ -312,102 +311,112 @@ protected:
 	{
 		for (size_t i = 0; i < m_framebuffers.size(); ++i)
 		{
-			auto& commandBuffer = m_renderPassCommandBuffers[i];
-			vk::CommandBufferInheritanceInfo info(
-				m_renderPass->Get(), 0, m_framebuffers[i].Get()
-			);
-			commandBuffer->begin({ vk::CommandBufferUsageFlagBits::eRenderPassContinue, &info });
+			RecordFrameRenderPassCommands(i);
+		}
+	}
+
+	void RecordFrameRenderPassCommands(uint32_t frameIndex)
+	{
+		auto& commandBuffer = m_renderPassCommandBuffers[frameIndex];
+		vk::CommandBufferInheritanceInfo info(
+			m_renderPass->Get(), 0, m_framebuffers[frameIndex].Get()
+		);
+		commandBuffer->begin({ vk::CommandBufferUsageFlagBits::eRenderPassContinue, &info });
+		{
+			// --- Draw all scene opaque objects --- //
+
+			// Bind the one big vertex + index buffers
+			vk::DeviceSize offsets[] = { 0 };
+			vk::Buffer vertexBuffers[] = { m_vertexBuffer->Get() };
+			commandBuffer.get().bindVertexBuffers(0, 1, vertexBuffers, offsets);
+			commandBuffer.get().bindIndexBuffer(m_indexBuffer->Get(), 0, vk::IndexType::eUint32);
+
+			MaterialType materialType = MaterialType::Count;
+			vk::PipelineLayout modelPipelineLayout;
+			const Model* model = nullptr;
+			const MaterialInstance* materialInstance = nullptr;
+			const Material* material = nullptr;
+
+			// Draw all meshes using available materials
+			for (const auto& drawItem : m_drawCache)
 			{
-				// --- Draw all scene opaque objects --- //
-
-				// Bind the one big vertex + index buffers
-				vk::DeviceSize offsets[] = { 0 };
-				vk::Buffer vertexBuffers[] = { m_vertexBuffer->Get() };
-				commandBuffer.get().bindVertexBuffers(0, 1, vertexBuffers, offsets);
-				commandBuffer.get().bindIndexBuffer(m_indexBuffer->Get(), 0, vk::IndexType::eUint32);
-
-				MaterialType materialType = MaterialType::Count;
-				vk::PipelineLayout modelPipelineLayout;
-				const Model* model = nullptr;
-				const MaterialInstance* materialInstance = nullptr;
-				const Material* material = nullptr;
-
-				// Draw all meshes using available materials
-				for (const auto& drawItem : m_drawCache)
+				// Bind descriptors using material type's { view + model } layouts
+				if (materialType != drawItem.mesh->materialInstance->material->type)
 				{
-					// Bind descriptors using material type's { view + model } layouts
-					if (materialType != drawItem.mesh->materialInstance->material->type)
-					{
-						materialType = drawItem.mesh->materialInstance->material->type;
+					materialType = drawItem.mesh->materialInstance->material->type;
 
-						const auto& layouts = m_layouts[(size_t)materialType];
-						const auto& viewPipelineLayout = layouts.m_viewPipelineLayout.get();
-						modelPipelineLayout = layouts.m_modelPipelineLayout.get();
-						auto& viewDescriptorSet = layouts.m_viewDescriptorSets[i % m_commandBufferPool.GetNbConcurrentSubmits()].get();
+					const auto& layouts = m_layouts[(size_t)materialType];
+					const auto& viewPipelineLayout = layouts.m_viewPipelineLayout.get();
+					modelPipelineLayout = layouts.m_modelPipelineLayout.get();
+					auto& viewDescriptorSet = layouts.m_viewDescriptorSets[frameIndex % m_commandBufferPool.GetNbConcurrentSubmits()].get();
 
-						commandBuffer.get().bindDescriptorSets(
-							vk::PipelineBindPoint::eGraphics, viewPipelineLayout,
-							(uint32_t)DescriptorSetIndices::View,
-							1, &viewDescriptorSet, 0, nullptr
-						);
-					}
-
-					// Bind model uniforms
-					if (model != drawItem.model)
-					{
-						model = drawItem.model;
-						model->Bind(commandBuffer.get(), modelPipelineLayout);
-					}
-
-					// Bind Graphics Pipeline
-					if (drawItem.mesh->materialInstance->material != material)
-					{
-						material = drawItem.mesh->materialInstance->material;
-						material->Bind(commandBuffer.get());
-					}
-
-					// Bind material uniforms
-					if (drawItem.mesh->materialInstance != materialInstance)
-					{
-						materialInstance = drawItem.mesh->materialInstance;
-						materialInstance->Bind(commandBuffer.get());
-					}
-
-					// Draw
-					commandBuffer.get().drawIndexed(drawItem.mesh->nbIndices, 1, drawItem.mesh->indexOffset, 0, 0);
-				}
-
-				// --- Draw skybox last to draw only visible pixels (also opaque) --- //
-
-				if (materialType != MaterialType::Unlit)
-				{
-					const auto& layouts = m_layouts[(size_t)MaterialType::Unlit];
-					auto& viewDescriptorSet = layouts.m_viewDescriptorSets[i % m_commandBufferPool.GetNbConcurrentSubmits()].get();
 					commandBuffer.get().bindDescriptorSets(
-						vk::PipelineBindPoint::eGraphics, layouts.m_viewPipelineLayout.get(),
+						vk::PipelineBindPoint::eGraphics, viewPipelineLayout,
 						(uint32_t)DescriptorSetIndices::View,
 						1, &viewDescriptorSet, 0, nullptr
 					);
 				}
 
-				m_skybox->Draw(commandBuffer.get(), i);
+				// Bind model uniforms
+				if (model != drawItem.model)
+				{
+					model = drawItem.model;
+					model->Bind(commandBuffer.get(), modelPipelineLayout);
+				}
 
-				// --- Then draw transparent objects --- //
+				// Bind Graphics Pipeline
+				if (drawItem.mesh->materialInstance->material != material)
+				{
+					material = drawItem.mesh->materialInstance->material;
+					material->Bind(commandBuffer.get());
+				}
 
-				if (m_showGrid)
-					m_grid->Draw(commandBuffer.get());
+				// Bind material uniforms
+				if (drawItem.mesh->materialInstance != materialInstance)
+				{
+					materialInstance = drawItem.mesh->materialInstance;
+					materialInstance->Bind(commandBuffer.get());
+				}
 
-				// todo: also draw transparent scene materials (sorted back to front)
+				// Draw
+				commandBuffer.get().drawIndexed(drawItem.mesh->nbIndices, 1, drawItem.mesh->indexOffset, 0, 0);
 			}
-			commandBuffer->end();
+
+			// --- Draw skybox last to draw only visible pixels (also opaque) --- //
+
+			if (materialType != MaterialType::Unlit)
+			{
+				const auto& layouts = m_layouts[(size_t)MaterialType::Unlit];
+				auto& viewDescriptorSet = layouts.m_viewDescriptorSets[frameIndex % m_commandBufferPool.GetNbConcurrentSubmits()].get();
+				commandBuffer.get().bindDescriptorSets(
+					vk::PipelineBindPoint::eGraphics, layouts.m_viewPipelineLayout.get(),
+					(uint32_t)DescriptorSetIndices::View,
+					1, &viewDescriptorSet, 0, nullptr
+				);
+			}
+
+			m_skybox->Draw(commandBuffer.get(), frameIndex);
+
+			if (m_showGrid)
+				m_grid->Draw(commandBuffer.get());
 		}
+		commandBuffer->end();
 	}
+
+	uint8_t m_frameDirty = 0xFF;
 
 	void RenderFrame(uint32_t imageIndex, vk::CommandBuffer commandBuffer) override
 	{
 		auto& framebuffer = m_framebuffers[imageIndex];
 
 		UpdateUniformBuffer(imageIndex);
+
+		// Record commands again if something changed
+		if ((m_frameDirty & (1 << (uint8_t)imageIndex)) > 0)
+		{
+			RecordFrameRenderPassCommands(imageIndex);
+			m_frameDirty &= ~(1 << (uint8_t)imageIndex);
+		}
 
 		std::array<vk::ClearValue, 2> clearValues = {
 			vk::ClearColorValue(std::array<float, 4>{ 0.0f, 0.0f, 0.0f, 1.0f }),
@@ -429,6 +438,7 @@ protected:
 	void CreateSecondaryCommandBuffers()
 	{
 		m_renderPassCommandBuffers.clear();
+		m_secondaryCommandPool.reset();
 
 		// We don't need to repopulate draw commands every frame
 		// so keep them in a secondary command buffer
@@ -1287,6 +1297,7 @@ protected:
 		if (key == GLFW_KEY_G && action == GLFW_PRESS)
 		{
 			app->m_showGrid = !app->m_showGrid;
+			app->m_frameDirty = 0xFF;
 		}
 	}
 
@@ -1300,6 +1311,7 @@ private:
 	// Secondary command buffers
 	vk::UniqueCommandPool m_secondaryCommandPool;
 	std::vector<vk::UniqueCommandBuffer> m_renderPassCommandBuffers;
+	std::vector<vk::UniqueCommandBuffer> m_helpersCommandBuffers;
 
 	// Geometry
 	std::vector<Vertex> m_vertices;
@@ -1344,6 +1356,7 @@ private:
 	std::vector<std::unique_ptr<MaterialInstance>> m_materialInstances;
 
 	std::unique_ptr<Skybox> m_skybox;
+	std::unique_ptr<Grid> m_grid;
 
 	// Sort items to draw to minimize the number of bindings
 	// Less pipeline bindings, then descriptor set bindings.
