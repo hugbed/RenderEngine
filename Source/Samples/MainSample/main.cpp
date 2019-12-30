@@ -292,6 +292,7 @@ protected:
 			CreateDescriptorLayouts();
 			UpdateMaterialDescriptors();
 			m_skybox->Reset(*m_renderPass, m_swapchain->GetImageDescription().extent);
+			m_grid->Reset(*m_renderPass, m_swapchain->GetImageDescription().extent);
 		}
 		commandBuffer.end();
 
@@ -1283,7 +1284,7 @@ protected:
 			}
 			app->m_cameraMode = app->m_cameraMode == CameraMode::FreeCamera ? CameraMode::OrbitCamera : CameraMode::FreeCamera;
 		}
-		if (key == GLFW_KEY_G && action == GLFW_PRESS) 
+		if (key == GLFW_KEY_G && action == GLFW_PRESS)
 		{
 			app->m_showGrid = !app->m_showGrid;
 		}
