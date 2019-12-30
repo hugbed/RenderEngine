@@ -36,6 +36,18 @@ public:
 		commandBuffer.draw(6, 1, 0, 0);
 	}
 
+	void Reset(const RenderPass& renderPass, vk::Extent2D swapchainExtent) 
+	{
+		GraphicsPipelineInfo info;
+		info.blendEnable = true;
+		pipeline = std::make_unique<GraphicsPipeline>(
+			renderPass.Get(),
+			swapchainExtent,
+			*vertexShader, *fragmentShader,
+			info
+		);
+	}
+
 private:
 	std::unique_ptr<GraphicsPipeline> pipeline;
 	std::unique_ptr<Shader> vertexShader;
