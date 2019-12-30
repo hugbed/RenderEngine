@@ -7,6 +7,7 @@
 
 #include <vector>
 #include <utility>
+#include <map>
 
 struct ImageDescription;
 
@@ -27,10 +28,25 @@ public:
 		VkDeviceSize* vertexOffsets,
 		vk::DescriptorSet descriptorSet);
 
-	const vk::DescriptorSetLayout& GetDescriptorSetLayout(size_t set) const { return m_descriptorSetLayouts[set].get(); }
-	const std::vector<vk::PushConstantRange> GetPushConstantRanges() const { return m_pushConstantRanges; }
+	const vk::DescriptorSetLayout& GetDescriptorSetLayout(size_t set) const
+	{
+		return m_descriptorSetLayouts[set].get();
+	}
 
-	vk::PipelineLayout GetPipelineLayout() const { return m_pipelineLayout.get(); }
+	const std::vector<vk::DescriptorSetLayoutBinding>& GetDescriptorSetLayoutBindings(size_t set) const 
+	{
+		return m_descriptorSetLayoutBindings[set];
+	}
+
+	const std::vector<vk::PushConstantRange> GetPushConstantRanges() const
+	{
+		return m_pushConstantRanges;
+	}
+
+	vk::PipelineLayout GetPipelineLayout() const
+	{
+		return m_pipelineLayout.get();
+	}
 
 	const value_type& Get() const { return m_graphicsPipeline.get(); }
 

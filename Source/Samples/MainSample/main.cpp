@@ -63,7 +63,7 @@ struct ViewUniforms
 
 struct ModelUniforms
 {
-	UNIFORM_ALIGNED glm::mat4 transform;
+	glm::aligned_mat4 transform;
 };
 
 enum class DescriptorSetIndices
@@ -93,11 +93,30 @@ namespace std {
 	};
 }
 
-struct MaterialProperties
+struct LitShaderConstants
+{
+	uint32_t nbPointLights = 1;
+};
+
+struct LitMaterialProperties
 {
 	glm::aligned_vec4 diffuse;
 	glm::aligned_vec4 specular;
 	glm::aligned_float32 shininess;
+};
+
+enum class MaterialType
+{
+	Unlit = 0,
+	Lit,
+	Count
+};
+
+enum class MaterialIndex
+{
+	TexturedUnlit = 0,
+	Phong = 1,
+	Count
 };
 
 struct Material
@@ -112,12 +131,12 @@ struct Material
 		commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline->Get());
 	}
 
+	MaterialType type;
 	const GraphicsPipeline* pipeline = nullptr;
 };
 
-struct MaterialTexture
+struct CombinedImageSampler
 {
-	uint32_t binding = 0;
 	Texture* texture = nullptr;
 	vk::Sampler sampler = nullptr;
 };
@@ -134,14 +153,12 @@ struct MaterialInstance
 		);
 	}
 
-	const Material* material;
-	
 	std::string name;
-	MaterialProperties properties;
-	std::vector<MaterialTexture> textures;
+	const Material* material;
 
 	// Per-material descriptors
-	std::unique_ptr<UniqueBufferWithStaging> uniformBuffer; // for properties
+	std::vector<CombinedImageSampler> textures;
+	std::unique_ptr<UniqueBufferWithStaging> uniformBuffer;
 	vk::UniqueDescriptorSet descriptorSet; 
 };
 
@@ -194,22 +211,11 @@ private:
 	glm::mat4 transform = glm::mat4(1.0f);
 };
 
-enum CameraMode { OrbitCamera, FreeCamera };
+enum class CameraMode { OrbitCamera, FreeCamera };
 
 class App : public RenderLoop
 {
 public:
-	enum class FragmentShaders
-	{
-		Unlit = 0,
-		Lit,
-		Count
-	};
-	struct LitShaderConstants
-	{
-		uint32_t nbPointLights = 1;
-	};
-
 	App(vk::SurfaceKHR surface, vk::Extent2D extent, Window& window)
 		: RenderLoop(surface, extent, window)
 		, m_renderPass(std::make_unique<RenderPass>(m_swapchain->GetImageDescription().format))
@@ -217,9 +223,10 @@ public:
 		, m_vertexShader(std::make_unique<Shader>("mvp_vert.spv", "main"))
 		, m_camera(1.0f * glm::vec3(1.0f, 1.0f, 1.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f), 45.0f)
 	{
-		m_fragmentShaders.resize((size_t)FragmentShaders::Count);
-		m_fragmentShaders[(size_t)FragmentShaders::Unlit] = std::make_unique<Shader>("surface_unlit_frag.spv", "main");
-		m_fragmentShaders[(size_t)FragmentShaders::Lit] = std::make_unique<Shader>("surface_frag.spv", "main");
+		// todo: support multiple fragment shaders for each material type
+		m_fragmentShaders.resize((size_t)MaterialIndex::Count);
+		m_fragmentShaders[(size_t)MaterialIndex::TexturedUnlit] = std::make_unique<Shader>("surface_unlit_frag.spv", "main");
+		m_fragmentShaders[(size_t)MaterialIndex::Phong] = std::make_unique<Shader>("surface_frag.spv", "main");
 
 		window.SetMouseButtonCallback(reinterpret_cast<void*>(this), OnMouseButton);
 		window.SetMouseScrollCallback(reinterpret_cast<void*>(this), OnMouseScroll);
@@ -273,9 +280,10 @@ protected:
 		auto commandBuffer = m_commandBufferPool.ResetAndGetCommandBuffer();
 		commandBuffer.begin({ vk::CommandBufferUsageFlagBits::eOneTimeSubmit });
 		{
-			LoadMaterials(commandBuffer);
+			CreateBaseMaterials();
 			CreateViewUniformBuffers();
-			CreateDescriptorSets();
+			CreateDescriptorLayouts();
+			UpdateMaterialDescriptors();
 		}
 		commandBuffer.end();
 
@@ -301,29 +309,42 @@ protected:
 			);
 			commandBuffer->begin({ vk::CommandBufferUsageFlagBits::eRenderPassContinue, &info });
 			{
-				// Bind view uniforms
-				commandBuffer.get().bindDescriptorSets(
-					vk::PipelineBindPoint::eGraphics, m_viewPipelineLayout.get(),
-					(uint32_t)DescriptorSetIndices::View,
-					1, &m_viewDescriptorSets[i % m_commandBufferPool.GetNbConcurrentSubmits()].get(), 0, nullptr
-				);
-
 				// Bind the one big vertex + index buffers
 				vk::DeviceSize offsets[] = { 0 };
 				vk::Buffer vertexBuffers[] = { m_vertexBuffer->Get() };
 				commandBuffer.get().bindVertexBuffers(0, 1, vertexBuffers, offsets);
 				commandBuffer.get().bindIndexBuffer(m_indexBuffer->Get(), 0, vk::IndexType::eUint32);
 
+				MaterialType materialType = MaterialType::Count;
+				vk::PipelineLayout modelPipelineLayout;
 				const Model* model = nullptr;
 				const MaterialInstance* materialInstance = nullptr;
 				const Material* material = nullptr;
+
 				for (const auto& drawItem : m_drawCache)
 				{
+					// Bind descriptors using material type's { view + model } layouts
+					if (materialType != drawItem.mesh->materialInstance->material->type)
+					{
+						materialType = drawItem.mesh->materialInstance->material->type;
+
+						const auto& layouts = m_layouts[(size_t)materialType];
+						const auto& viewPipelineLayout = layouts.m_viewPipelineLayout.get();
+						modelPipelineLayout = layouts.m_modelPipelineLayout.get();
+						auto& viewDescriptorSet = layouts.m_viewDescriptorSets[i % m_commandBufferPool.GetNbConcurrentSubmits()].get();
+
+						commandBuffer.get().bindDescriptorSets(
+							vk::PipelineBindPoint::eGraphics, viewPipelineLayout,
+							(uint32_t)DescriptorSetIndices::View,
+							1, &viewDescriptorSet, 0, nullptr
+						);
+					}
+
 					// Bind model uniforms
 					if (model != drawItem.model)
 					{
 						model = drawItem.model;
-						model->Bind(commandBuffer.get(), m_modelPipelineLayout.get());
+						model->Bind(commandBuffer.get(), modelPipelineLayout);
 					}
 
 					// Bind Graphics Pipeline
@@ -385,6 +406,38 @@ protected:
 		m_renderPassCommandBuffers = g_device->Get().allocateCommandBuffersUnique(vk::CommandBufferAllocateInfo(
 			m_secondaryCommandPool.get(), vk::CommandBufferLevel::eSecondary, m_framebuffers.size()
 		));
+	}
+
+	void CreateBaseMaterials()
+	{
+		m_graphicsPipelines.clear();
+		m_graphicsPipelines.resize((size_t)MaterialIndex::Count);
+
+		// Create materials for opaque shading
+		{
+			// Create a material for each material fragment shader
+			for (size_t materialIndex = 0; materialIndex < (size_t)MaterialIndex::Count; ++materialIndex)
+			{
+				Shader* fragmentShader = m_fragmentShaders[materialIndex].get();
+				m_graphicsPipelines[materialIndex] = std::make_unique<GraphicsPipeline>(
+					m_renderPass->Get(),
+					m_swapchain->GetImageDescription().extent,
+					*m_vertexShader,
+					*m_fragmentShaders[materialIndex]
+				);
+				m_materials.push_back(std::make_unique<Material>());
+			}
+			{
+				size_t materialIndex = (size_t)MaterialIndex::TexturedUnlit;
+				m_materials[materialIndex]->type = MaterialType::Unlit;
+				m_materials[materialIndex]->pipeline = m_graphicsPipelines[(size_t)MaterialType::Unlit].get();
+			}
+			{
+				size_t materialIndex = (size_t)MaterialIndex::Phong;
+				m_materials[materialIndex]->type = MaterialType::Lit;
+				m_materials[materialIndex]->pipeline = m_graphicsPipelines[(size_t)MaterialType::Lit].get();
+			}
+		}
 	}
 
 	// Keep this data available in case of Swapchain reset
@@ -538,8 +591,11 @@ protected:
 		//
 		std::sort(m_drawCache.begin(), m_drawCache.end(),
 			[](const MeshDrawInfo& a, const MeshDrawInfo& b) {
-				// Sort by material first
-				if (a.mesh->materialInstance->material != b.mesh->materialInstance->material)
+				// Sort by material type
+				if (a.mesh->materialInstance->material->type != b.mesh->materialInstance->material->type)
+					return a.mesh->materialInstance->material->type < b.mesh->materialInstance->material->type;
+				// Then by material
+				else if (a.mesh->materialInstance->material != b.mesh->materialInstance->material)
 					return a.mesh->materialInstance->material < b.mesh->materialInstance->material;
 				// Then material instance
 				else if (a.mesh->materialInstance != b.mesh->materialInstance)
@@ -613,38 +669,7 @@ protected:
 
 	void LoadMaterials(vk::CommandBuffer commandBuffer)
 	{
-		m_graphicsPipelines.clear();
-
-		// Create one material for all solid shading
-		{
-			while (m_materials.size() < 1)
-				m_materials.push_back(std::make_unique<Material>());
-
-			// Choose between Lit/Unlit fragment shader depending if there are lights or not
-			if (m_lights.empty() == false)
-			{
-				Shader* fragmentShader = m_fragmentShaders[(size_t)FragmentShaders::Lit].get();
-				LitShaderConstants constants = { (uint32_t)m_lights.size() };
-				fragmentShader->SetSpecializationConstants(constants);
-				m_graphicsPipelines.push_back(std::make_unique<GraphicsPipeline>(
-					m_renderPass->Get(),
-					m_swapchain->GetImageDescription().extent,
-					*m_vertexShader,
-					*fragmentShader
-				));
-			}
-			else
-			{
-				m_graphicsPipelines.push_back(std::make_unique<GraphicsPipeline>(
-					m_renderPass->Get(),
-					m_swapchain->GetImageDescription().extent,
-					*m_vertexShader,
-					*m_fragmentShaders[(size_t)FragmentShaders::Unlit]
-				));
-			}
-
-			m_materials.back()->pipeline = m_graphicsPipelines.back().get();
-		}
+		CreateBaseMaterials();
 
 		// Check if we already have all materials set-up
 		if (m_materialInstances.size() == m_assimp.scene->mNumMaterials)
@@ -660,8 +685,23 @@ protected:
 			m_materialInstances[i] = std::make_unique<MaterialInstance>();
 			auto& material = m_materialInstances[i];
 
-			// todo: choose or create material/permutation here if we need to
-			material->material = m_materials.back().get();
+			// Use Phong shading for all surface materials
+			const auto* baseMaterial = m_materials[(size_t)MaterialIndex::Phong].get();
+			material->material = baseMaterial;
+
+			// Create default textures
+			const auto& bindings = baseMaterial->pipeline->GetDescriptorSetLayoutBindings((size_t)DescriptorSetIndices::Material);
+			for (const auto& binding : bindings)
+			{
+				if (binding.descriptorType == vk::DescriptorType::eCombinedImageSampler)
+				{
+					for (int i = 0; i < binding.descriptorCount; ++i)
+					{
+						CombinedImageSampler texture = LoadMaterialTexture(commandBuffer, "dummy_texture.png");
+						material->textures.push_back(std::move(texture));
+					}
+				}
+			}
 
 			auto& assimpMaterial = m_assimp.scene->mMaterials[i];
 
@@ -670,38 +710,33 @@ protected:
 			material->name = std::string(name.C_Str());
 			
 			// Properties
+			LitMaterialProperties properties;
+
 			aiColor4D color;
 			assimpMaterial->Get(AI_MATKEY_COLOR_DIFFUSE, color);
-			material->properties.diffuse = glm::make_vec4(&color.r);
+			properties.diffuse = glm::make_vec4(&color.r);
 
 			assimpMaterial->Get(AI_MATKEY_COLOR_SPECULAR, color);
-			material->properties.specular = glm::make_vec4(&color.r);
+			properties.specular = glm::make_vec4(&color.r);
 
-			assimpMaterial->Get(AI_MATKEY_SHININESS, material->properties.shininess);
+			assimpMaterial->Get(AI_MATKEY_SHININESS, properties.shininess);
 
 			// Upload properties to uniform buffer
-			material->uniformBuffer = std::make_unique<UniqueBufferWithStaging>(sizeof(MaterialProperties), vk::BufferUsageFlagBits::eUniformBuffer);
-			memcpy(material->uniformBuffer->GetStagingMappedData(), reinterpret_cast<const void*>(&material->properties), sizeof(MaterialProperties));
+			material->uniformBuffer = std::make_unique<UniqueBufferWithStaging>(sizeof(LitMaterialProperties), vk::BufferUsageFlagBits::eUniformBuffer);
+			memcpy(material->uniformBuffer->GetStagingMappedData(), reinterpret_cast<const void*>(&properties), sizeof(LitMaterialProperties));
 			material->uniformBuffer->CopyStagingToGPU(commandBuffer);
 			m_commandBufferPool.DestroyAfterSubmit(material->uniformBuffer->ReleaseStagingBuffer());
 
 			// Textures
 
 			auto loadTexture = [this, &assimpMaterial, &material, &commandBuffer](aiTextureType type, uint32_t binding) { // todo: move this to a function
-				if (assimpMaterial->GetTextureCount(type) > 0)
+				int textureCount = assimpMaterial->GetTextureCount(type);
+				if (textureCount > 0 && binding < material->textures.size())
 				{
 					aiString textureFile;
 					assimpMaterial->GetTexture(type, 0, &textureFile);
 					auto texture = LoadMaterialTexture(commandBuffer, textureFile.C_Str());
-					texture.binding = binding;
-					material->textures.push_back(std::move(texture));
-				}
-				else
-				{
-					// Load dummy texture
-					auto texture = LoadMaterialTexture(commandBuffer, "dummy_texture.png");
-					texture.binding = binding;
-					material->textures.push_back(std::move(texture));
+					material->textures[binding] = std::move(texture); // replace dummy with real texture
 				}
 			};
 
@@ -710,11 +745,11 @@ protected:
 		}
 	}
 
-	MaterialTexture LoadMaterialTexture(vk::CommandBuffer& commandBuffer, const std::string filename)
+	CombinedImageSampler LoadMaterialTexture(vk::CommandBuffer& commandBuffer, const std::string filename)
 	{
 		Texture* texture = CreateAndUploadTextureImage(commandBuffer, filename);
 		vk::Sampler sampler = CreateSampler(texture->GetMipLevels());
-		return MaterialTexture{ 0, texture, sampler };
+		return CombinedImageSampler{ texture, sampler };
 	}
 
 	void CreateViewUniformBuffers()
@@ -748,86 +783,152 @@ protected:
 		}
 	}
 
-	// This assumes that there's at least one graphics pipeline
-	void CreateDescriptorSets()
+	void CreateDescriptorPool()
 	{
-		m_viewDescriptorSets.clear();
-
+		// Reset used descriptors while they're still valid
 		for (size_t i = 0; i < m_models.size(); ++i)
 			m_models[i].descriptorSet.reset();
 
 		for (auto& materialInstance : m_materialInstances)
 			materialInstance->descriptorSet.reset();
 
+		// Then reset pool
 		m_descriptorPool.reset();
 
-		// We have 1 global descriptor set (set = 0)
-		uint32_t nbViews = 1 * m_commandBufferPool.GetNbConcurrentSubmits();
+		// Sum view descriptor needs for all material types.
+		// Each material can need different view parameters (e.g. Unlit doesn't need lights).
+		// Need a set of descriptors per concurrent frame
+		std::map<vk::DescriptorType, uint32_t> descriptorCount;
+		for (const auto& material : m_materials)
+		{
+			const auto& bindings = material->pipeline->GetDescriptorSetLayoutBindings((size_t)DescriptorSetIndices::View);
+			for (const auto& binding : bindings)
+			{
+				descriptorCount[binding.descriptorType] += binding.descriptorCount * m_commandBufferPool.GetNbConcurrentSubmits();
+			}
+		}
 
-		// 1 descriptor set per material instance (set = 1)
-		uint32_t nbMaterials = m_materialInstances.size();
+		// Sum model descriptors
+		for (const auto& model : m_models)
+		{
+			// Pick model layout from any material, they should be compatible
+			const auto* pipeline = model.meshes[0].materialInstance->material->pipeline;
+			const auto& bindings = pipeline->GetDescriptorSetLayoutBindings((size_t)DescriptorSetIndices::Model);
+			for (const auto& binding : bindings)
+			{
+				descriptorCount[binding.descriptorType] += binding.descriptorCount;
+			}
+		}
 
-		// 1 descriptor set per mesh (set = 2) // todo: have push constant instead
-		uint32_t nbModels = m_models.size();
+		// Sum material instance descriptors
+		for (const auto& materialInstance : m_materialInstances)
+		{
+			// Each material can have different descriptor set layout
+			// Each material instance has its own descriptor sets
+			const auto* pipeline = materialInstance->material->pipeline;
+			const auto& bindings = pipeline->GetDescriptorSetLayoutBindings((size_t)DescriptorSetIndices::Material);
+			for (const auto& binding : bindings)
+			{
+				descriptorCount[binding.descriptorType] += binding.descriptorCount;
+			}
+		}
 
-		// Dynamic uniform data (updated each frame) gets one set per swapchain image
-		uint32_t totalSets = nbViews * (1 + m_lights.size()) + nbModels + nbMaterials + m_samplers.size();
-		
-		// Create descriptor pool
+		uint32_t maxNbSets = 0;
 		std::vector<vk::DescriptorPoolSize> poolSizes;
-
-		// 1 sampler per texture
-		poolSizes.push_back(vk::DescriptorPoolSize(
-			vk::DescriptorType::eCombinedImageSampler,
-			static_cast<uint32_t>(m_samplers.size()) * 2 // diffuse + specular
-		));
-
-		poolSizes.push_back(vk::DescriptorPoolSize(
-			vk::DescriptorType::eUniformBuffer,
-			nbViews * (1 + m_lights.size()) + m_lights.size() + nbModels + nbMaterials
-		));
+		poolSizes.reserve(descriptorCount.size());
+		for (const auto& descriptor : descriptorCount)
+		{
+			poolSizes.emplace_back(descriptor.first, descriptor.second);
+			maxNbSets += descriptor.second;
+		}
 
 		// If the number of required descriptors were to change at run-time
 		// we could have a descriptorPool per concurrent frame and reset the pool
 		// to increase its size while it's not in use.
 		m_descriptorPool = g_device->Get().createDescriptorPoolUnique(vk::DescriptorPoolCreateInfo(
 			vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-			totalSets,
+			maxNbSets,
 			static_cast<uint32_t>(poolSizes.size()), poolSizes.data()
 		));
+	}
 
+	// todo: There must be a better way to keep track of the number of sets to allocate.
+	// we can probably get descriptor sets requirements for each material from reflection
+	// and multiply that by the number of instances of this material.
+	void CreateDescriptorSets()
+	{
+		CreateDescriptorPool();
+		CreateDescriptorLayouts();
+		UpdateMaterialDescriptors();
+	}
+
+	void CreateDescriptorLayouts()
+	{
+		// View layout and descriptor sets
+		for (size_t materialType = 0; materialType < (size_t)MaterialType::Count; ++materialType)
+		{
+			auto& layout = m_layouts[materialType];
+
+			layout.m_viewSetLayout = m_graphicsPipelines[materialType]->GetDescriptorSetLayout((size_t)DescriptorSetIndices::View);
+
+			std::vector<vk::DescriptorSetLayout> layouts(m_commandBufferPool.GetNbConcurrentSubmits(), layout.m_viewSetLayout);
+			layout.m_viewDescriptorSets = g_device->Get().allocateDescriptorSetsUnique(vk::DescriptorSetAllocateInfo(
+				m_descriptorPool.get(), static_cast<uint32_t>(layouts.size()), layouts.data()
+			));
+
+			layout.m_viewPipelineLayout = g_device->Get().createPipelineLayoutUnique(vk::PipelineLayoutCreateInfo(
+				{}, 1, &layout.m_viewSetLayout
+			));
+		}
+
+		// Model layout
+		if (m_graphicsPipelines.empty() == false)
+		{
+			// All materials share the same descriptor set for model
+			m_modelSetLayout = m_graphicsPipelines[0]->GetDescriptorSetLayout((size_t)DescriptorSetIndices::Model);
+		}
+
+		for (size_t materialType = 0; materialType < (size_t)MaterialType::Count; ++materialType)
+		{
+			auto& layout = m_layouts[materialType];
+
+			std::vector<vk::DescriptorSetLayout> layouts = {
+				layout.m_viewSetLayout, m_modelSetLayout // sets 0, 1
+			};
+
+			layout.m_modelPipelineLayout = g_device->Get().createPipelineLayoutUnique(vk::PipelineLayoutCreateInfo(
+				{}, static_cast<uint32_t>(layouts.size()), layouts.data()
+			));
+		}
+	}
+
+	void UpdateMaterialDescriptors()
+	{
 		// Create view descriptor set.
 		// Ask any graphics pipeline to provide the view layout
 		// since all surface materials should share this layout
+		for (size_t materialType = 0; materialType < (size_t)MaterialType::Count; ++materialType)
 		{
-			// todo: regroup these fields into some kind of structure, they seem to go together
-			m_viewSetLayout = m_graphicsPipelines[0]->GetDescriptorSetLayout((size_t)DescriptorSetIndices::View);
-			std::vector<vk::DescriptorSetLayout> layouts(nbViews, m_viewSetLayout);
-			m_viewDescriptorSets = g_device->Get().allocateDescriptorSetsUnique(vk::DescriptorSetAllocateInfo(
-				m_descriptorPool.get(), static_cast<uint32_t>(layouts.size()), layouts.data()
-			));
-			m_viewPipelineLayout = g_device->Get().createPipelineLayoutUnique(vk::PipelineLayoutCreateInfo(
-				{}, 1, &m_viewSetLayout
-			));
+			auto& viewDescriptorSets = m_layouts[materialType].m_viewDescriptorSets;
 
 			// Update view descriptor sets
-			for (size_t i = 0; i < m_viewDescriptorSets.size(); ++i)
+			for (size_t i = 0; i < viewDescriptorSets.size(); ++i)
 			{
 				uint32_t binding = 0;
 				vk::DescriptorBufferInfo descriptorBufferInfoView(m_viewUniformBuffers[i].Get(), 0, sizeof(ViewUniforms));
 				std::vector<vk::WriteDescriptorSet> writeDescriptorSets = {
 					vk::WriteDescriptorSet(
-						m_viewDescriptorSets[i].get(), binding++, {},
+						viewDescriptorSets[i].get(), binding++, {},
 						1, vk::DescriptorType::eUniformBuffer, nullptr, &descriptorBufferInfoView
 					) // binding = 0
 				};
 
-				if (m_lights.empty() == false)
+				if ((MaterialType)materialType == MaterialType::Lit)
 				{
 					vk::DescriptorBufferInfo descriptorBufferInfoLights(m_lightsUniformBuffer->Get(), 0, sizeof(Light) * m_lights.size());
 					writeDescriptorSets.push_back(
 						vk::WriteDescriptorSet(
-							m_viewDescriptorSets[i].get(), binding++, {},
+							viewDescriptorSets[i].get(), binding++, {},
 							1, vk::DescriptorType::eUniformBuffer, nullptr, &descriptorBufferInfoLights
 						) // binding = 1
 					);
@@ -839,17 +940,7 @@ protected:
 
 		// Create model descriptor sets
 		// Ask any graphics pipeline to provide the model layout
-		// since all surface materials should share this layout
-		{
-			// Create layouts first
-			m_modelSetLayout = m_graphicsPipelines[0]->GetDescriptorSetLayout((size_t)DescriptorSetIndices::Model);
-			std::vector<vk::DescriptorSetLayout> layouts = {
-				m_viewSetLayout, m_modelSetLayout // sets 0, 1
-			};
-			m_modelPipelineLayout = g_device->Get().createPipelineLayoutUnique(vk::PipelineLayoutCreateInfo(
-				{}, static_cast<uint32_t>(layouts.size()), layouts.data()
-			));
-		}
+		// since all material of this type should share this layout
 		{
 			// Then allocate one descriptor set per model
 			std::vector<vk::DescriptorSetLayout> layouts(m_models.size(), m_modelSetLayout);
@@ -875,40 +966,38 @@ protected:
 		}
 
 		// Create material instance descriptor sets.
+		for (auto& materialInstance : m_materialInstances)
 		{
-			for (auto& materialInstance : m_materialInstances)
+			auto descriptorSets = g_device->Get().allocateDescriptorSetsUnique(vk::DescriptorSetAllocateInfo(
+				m_descriptorPool.get(), 1, &materialInstance->material->GetDescriptorSetLayout()
+			));
+			materialInstance->descriptorSet = std::move(descriptorSets[0]);
+
+			// Material properties in uniform buffer
+			vk::DescriptorBufferInfo descriptorBufferInfo(materialInstance->uniformBuffer->Get(), 0, materialInstance->uniformBuffer->Size());
+
+			// Use the material's samplers and textures
+			std::vector<vk::DescriptorImageInfo> imageInfos;
+			for (const auto& materialTexture : materialInstance->textures)
 			{
-				auto descriptorSets = g_device->Get().allocateDescriptorSetsUnique(vk::DescriptorSetAllocateInfo(
-					m_descriptorPool.get(), 1, &materialInstance->material->GetDescriptorSetLayout()
-				));
-				materialInstance->descriptorSet = std::move(descriptorSets[0]);
-
-				// Material properties in uniform buffer
-				vk::DescriptorBufferInfo descriptorBufferInfo(materialInstance->uniformBuffer->Get(), 0, sizeof(MaterialProperties));
-
-				// Use the material's samplers and textures
-				std::vector<vk::DescriptorImageInfo> imageInfos;
-				for (const auto& materialTexture : materialInstance->textures)
-				{
-					imageInfos.emplace_back(
-						materialTexture.sampler,
-						materialTexture.texture->GetImageView(),
-						vk::ImageLayout::eShaderReadOnlyOptimal
-					);
-				}
-				uint32_t binding = 0;
-				std::array<vk::WriteDescriptorSet, 2> writeDescriptorSets = {
-					vk::WriteDescriptorSet(
-						materialInstance->descriptorSet.get(), binding++, {},
-						1, vk::DescriptorType::eUniformBuffer, nullptr, &descriptorBufferInfo
-					), // binding = 0
-					vk::WriteDescriptorSet(
-						materialInstance->descriptorSet.get(), binding++, {},
-						static_cast<uint32_t>(imageInfos.size()), vk::DescriptorType::eCombinedImageSampler, imageInfos.data(), nullptr
-					) // binding = 1
-				};
-				g_device->Get().updateDescriptorSets(static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
+				imageInfos.emplace_back(
+					materialTexture.sampler,
+					materialTexture.texture->GetImageView(),
+					vk::ImageLayout::eShaderReadOnlyOptimal
+				);
 			}
+			uint32_t binding = 0;
+			std::array<vk::WriteDescriptorSet, 2> writeDescriptorSets = {
+				vk::WriteDescriptorSet(
+					materialInstance->descriptorSet.get(), binding++, {},
+					1, vk::DescriptorType::eUniformBuffer, nullptr, &descriptorBufferInfo
+				), // binding = 0
+				vk::WriteDescriptorSet(
+					materialInstance->descriptorSet.get(), binding++, {},
+					static_cast<uint32_t>(imageInfos.size()), vk::DescriptorType::eCombinedImageSampler, imageInfos.data(), nullptr
+				) // binding = 1
+			};
+			g_device->Get().updateDescriptorSets(static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
 		}
 	}
 
@@ -1172,22 +1261,31 @@ private:
 
 	vk::UniqueDescriptorPool m_descriptorPool;
 
+	// --- Layouts --- //
+
+	// Each material type may need different scene
+	// uniforms (e.g. unlit shading does not need lights).
+	struct DescriptorLayouts
+	{
+		// set 0
+		vk::DescriptorSetLayout m_viewSetLayout;
+		vk::UniquePipelineLayout m_viewPipelineLayout;
+		std::vector<vk::UniqueDescriptorSet> m_viewDescriptorSets;
+
+		// set 1
+		vk::UniquePipelineLayout m_modelPipelineLayout;
+	};
+	std::array<DescriptorLayouts, (size_t)MaterialType::Count> m_layouts;
+
 	// --- View --- //
 
-	// For uniforms that change every frame
 	std::vector<UniqueBuffer> m_viewUniformBuffers; // one per in flight frame since these change every frame
 	std::unique_ptr<UniqueBufferWithStaging> m_lightsUniformBuffer;
-	
-	// View descriptor sets
-	vk::DescriptorSetLayout m_viewSetLayout;
-	vk::UniquePipelineLayout m_viewPipelineLayout;
-	std::vector<vk::UniqueDescriptorSet> m_viewDescriptorSets;
 
 	// --- Model --- //
 
-	// Model descriptor sets
+	// All material types use the same descriptor set layout for models
 	vk::DescriptorSetLayout m_modelSetLayout;
-	vk::UniquePipelineLayout m_modelPipelineLayout;
 	std::vector<Model> m_models;
 
 	// --- Material --- //
