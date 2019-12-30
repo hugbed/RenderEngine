@@ -48,6 +48,8 @@ public:
 
 	void CopyStagingToGPU(vk::CommandBuffer& commandBuffer);
 
+	vk::DeviceSize Size() const { return m_buffer.Size(); }
+
 	value_type Get() const { return m_buffer.Get(); }
 
 private:

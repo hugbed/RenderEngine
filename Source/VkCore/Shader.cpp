@@ -11,13 +11,11 @@ Shader::Shader(const std::string& filename, std::string entryPoint)
 	auto code = file_utils::ReadFile(filename);
 	m_shaderModule = CreateShaderModule(code);
 
-	// --- Find shader resources using SPIRV reflection --- //
-
+	// Find shader resources using SPIRV reflection
 	spirv_cross::CompilerReflection comp((uint32_t*)code.data(), code.size() / sizeof(uint32_t));
-
 	spirv_cross::ShaderResources shaderResources = comp.get_shader_resources();
 
-	/* Vertex Input Attribute Description */
+	// --- Vertex Input Attribute Description --- //
 
 	m_attributeDescriptions.reserve(shaderResources.stage_inputs.size());
 	for (const auto& stageInput : shaderResources.stage_inputs)
@@ -26,12 +24,12 @@ Shader::Shader(const std::string& filename, std::string entryPoint)
 		auto binding = comp.get_decoration(stageInput.id, spv::Decoration::DecorationBinding);
 		auto format = spirv_vk::get_vk_format_from_variable(comp, stageInput.id);
 
-		m_attributeDescriptions.push_back(vk::VertexInputAttributeDescription(
+		m_attributeDescriptions.emplace_back(
 			location, // location
 			binding,
 			format,
 			0
-		));
+		);
 	}
 
 	// Sort by location
@@ -49,7 +47,7 @@ Shader::Shader(const std::string& filename, std::string entryPoint)
 
 	m_bindingDescription = { 0, offset, vk::VertexInputRate::eVertex }; // todo: support multiple bindings
 
-	/* Descriptor Set Layouts */
+	// --- Descriptor Set Layouts  --- //
 
 	m_shaderStage = spirv_vk::execution_model_to_shader_stage(comp.get_execution_model());
 
@@ -68,12 +66,12 @@ Shader::Shader(const std::string& filename, std::string entryPoint)
 
 		const auto& type = comp.get_type(ubo.type_id);
 
-		descriptorSetLayout.push_back(vk::DescriptorSetLayoutBinding(
+		descriptorSetLayout.emplace_back(
 			binding, // binding
 			vk::DescriptorType::eUniformBuffer,
-			type.array.empty() ? 1ULL : type.array[0], // descriptorCount
+			type.array.empty() ? 1UL : type.array[0], // descriptorCount
 			m_shaderStage
-		));
+		);
 
 		// We only support 1D arrays for now
 		ASSERT(type.array.empty() || type.array.size() == 1);
@@ -93,12 +91,12 @@ Shader::Shader(const std::string& filename, std::string entryPoint)
 		// to check if it's an array, e.g.: uniform sampler2D uSampler[10];
 		const auto& type = comp.get_type(sampler.type_id);
 
-		descriptorSetLayout.push_back(vk::DescriptorSetLayoutBinding(
+		descriptorSetLayout.emplace_back(
 			binding, // binding
 			vk::DescriptorType::eCombinedImageSampler,
-			type.array.empty() ? 1ULL : type.array[0],
+			type.array.empty() ? 1UL : type.array[0],
 			m_shaderStage
-		));
+		);
 
 		// We only support 1D arrays for now
 		ASSERT(type.array.empty() || type.array.size() == 1);
@@ -112,7 +110,7 @@ Shader::Shader(const std::string& filename, std::string entryPoint)
 		});
 	}
 
-	//  ---- Specialization constants --- //
+	// ---- Specialization constants --- //
 
 	auto constants = comp.get_specialization_constants();
 	m_specializationMapEntries.reserve(constants.size());
@@ -120,11 +118,11 @@ Shader::Shader(const std::string& filename, std::string entryPoint)
 	{
 		const auto& constant = comp.get_constant(c.id);
 
-		m_specializationMapEntries.push_back(vk::SpecializationMapEntry(
+		m_specializationMapEntries.emplace_back(
 			c.constant_id,
 			0,
 			spirv_vk::sizeof_constant(comp, constant.constant_type)
-		));
+		);
 	}
 
 	// Sort by constant_id
@@ -142,8 +140,8 @@ Shader::Shader(const std::string& filename, std::string entryPoint)
 
 	// ---- Push Constants ---- //
 
-	size_t rangeSize = 0;
-	size_t rangeOffset = (std::numeric_limits<size_t>::max)();
+	uint32_t rangeSize = 0;
+	uint32_t rangeOffset = (std::numeric_limits<uint32_t>::max)();
 	for (int i = 0; i < shaderResources.push_constant_buffers.size(); ++i)
 	{
 		auto& buffer = shaderResources.push_constant_buffers[i];
@@ -151,19 +149,19 @@ Shader::Shader(const std::string& filename, std::string entryPoint)
 
 		for (uint32_t i = 0; i < type.member_types.size(); ++i)
 		{
-			size_t memberSize = comp.get_declared_struct_member_size(type, i);
-			size_t memberOffset = comp.type_struct_member_offset(type, i);
+			auto memberSize = (uint32_t)comp.get_declared_struct_member_size(type, i);
+			auto memberOffset = (uint32_t)comp.type_struct_member_offset(type, i);
 			rangeOffset = (std::min)(rangeOffset, memberOffset);
 			rangeSize += memberSize;
 		}
 	}
 	if (rangeSize > 0)
 	{
-		m_pushConstantRanges.push_back(vk::PushConstantRange(
+		m_pushConstantRanges.emplace_back(
 			m_shaderStage,
 			rangeOffset,
 			rangeSize
-		));
+		);
 	}
 
 	if (shaderResources.separate_images.empty() == false ||

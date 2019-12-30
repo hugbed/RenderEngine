@@ -6,6 +6,7 @@
 #include "vk_utils.h"
 
 #include <array>
+#include <map>
 
 GraphicsPipeline::GraphicsPipeline(vk::RenderPass renderPass, vk::Extent2D viewportExtent, const Shader& vertexShader, const Shader& fragmentShader)
 {
