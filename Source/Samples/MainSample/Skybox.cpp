@@ -58,8 +58,8 @@ Skybox::Skybox(const RenderPass& renderPass, vk::Extent2D swapchainExtent)
 	LoadCubeMap();
 
 	// Create graphics pipeline
-	fragmentShader = std::make_unique<Shader>("skybox_vert.spv", "main");
-	vertexShader = std::make_unique<Shader>("skybox_frag.spv", "main");
+	vertexShader = std::make_unique<Shader>("skybox_vert.spv", "main");
+	fragmentShader = std::make_unique<Shader>("skybox_frag.spv", "main");
 	pipeline = std::make_unique<GraphicsPipeline>(
 		renderPass.Get(),
 		swapchainExtent,

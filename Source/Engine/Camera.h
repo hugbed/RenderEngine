@@ -12,11 +12,13 @@ class Camera
 public:
 	Camera() = default;
 
-	Camera(glm::vec3 eye, glm::vec3 lookat, glm::vec3 upVector, float fieldOfView)
+	Camera(glm::vec3 eye, glm::vec3 lookat, glm::vec3 upVector, float fieldOfView, float nearPlane, float farPlane)
 		: m_eye(std::move(eye))
 		, m_lookAt(std::move(lookat))
 		, m_upVector(std::move(upVector))
 		, m_fieldOfView(fieldOfView)
+		, m_nearPlane(nearPlane)
+		, m_farPlane(farPlane)
 	{
 		UpdateViewMatrix();
 	}
@@ -50,6 +52,10 @@ public:
 
 	float GetFieldOfView() const { return m_fieldOfView; }
 
+	float GetNearPlane() const { return m_nearPlane; }
+
+	float GetFarPlane() const { return m_farPlane; }
+
 	void SetFieldOfView(float fov) { m_fieldOfView = fov; }
 
 	void SetCameraView(glm::vec3 eye, glm::vec3 lookat, glm::vec3 up)
@@ -78,5 +84,7 @@ private:
 	glm::vec3 m_eye;
 	glm::vec3 m_lookAt;
 	glm::vec3 m_upVector;
+	float m_nearPlane;
+	float m_farPlane;
 	float m_fieldOfView;
 };

@@ -16,40 +16,43 @@ Shader::Shader(const std::string& filename, std::string entryPoint)
 	spirv_cross::ShaderResources shaderResources = comp.get_shader_resources();
 
 	// --- Vertex Input Attribute Description --- //
+	
+	m_shaderStage = spirv_vk::execution_model_to_shader_stage(comp.get_execution_model());
 
-	m_attributeDescriptions.reserve(shaderResources.stage_inputs.size());
-	for (const auto& stageInput : shaderResources.stage_inputs)
+	if (m_shaderStage == vk::ShaderStageFlagBits::eVertex)
 	{
-		auto location = comp.get_decoration(stageInput.id, spv::Decoration::DecorationLocation);
-		auto binding = comp.get_decoration(stageInput.id, spv::Decoration::DecorationBinding);
-		auto format = spirv_vk::get_vk_format_from_variable(comp, stageInput.id);
+		m_attributeDescriptions.reserve(shaderResources.stage_inputs.size());
+		for (const auto& stageInput : shaderResources.stage_inputs)
+		{
+			auto location = comp.get_decoration(stageInput.id, spv::Decoration::DecorationLocation);
+			auto binding = comp.get_decoration(stageInput.id, spv::Decoration::DecorationBinding);
+			auto format = spirv_vk::get_vk_format_from_variable(comp, stageInput.id);
 
-		m_attributeDescriptions.emplace_back(
-			location, // location
-			binding,
-			format,
-			0
-		);
+			m_attributeDescriptions.push_back(vk::VertexInputAttributeDescription(
+				location, // location
+				binding,
+				format,
+				0
+			));
+		}
+
+		// Sort by location
+		std::sort(m_attributeDescriptions.begin(), m_attributeDescriptions.end(), [](const auto& a, const auto& b) {
+			return a.location < b.location;
+		});
+
+		// Compute offsets
+		uint32_t offset = 0;
+		for (auto& attribute : m_attributeDescriptions)
+		{
+			attribute.offset = offset;
+			offset += spirv_vk::sizeof_vkformat(attribute.format);
+		}
+
+		m_bindingDescription = { 0, offset, vk::VertexInputRate::eVertex }; // todo: support multiple bindings
 	}
-
-	// Sort by location
-	std::sort(m_attributeDescriptions.begin(), m_attributeDescriptions.end(), [](const auto& a, const auto& b) {
-		return a.location < b.location;
-	});
-
-	// Compute offsets
-	uint32_t offset = 0;
-	for (auto& attribute : m_attributeDescriptions)
-	{
-		attribute.offset = offset;
-		offset += spirv_vk::sizeof_vkformat(attribute.format);
-	}
-
-	m_bindingDescription = { 0, offset, vk::VertexInputRate::eVertex }; // todo: support multiple bindings
 
 	// --- Descriptor Set Layouts  --- //
-
-	m_shaderStage = spirv_vk::execution_model_to_shader_stage(comp.get_execution_model());
 
 	// Keep track of descriptor layout for each set (0, 1, 2, ...)
 
@@ -131,7 +134,7 @@ Shader::Shader(const std::string& filename, std::string entryPoint)
 	});
 
 	// Compute offsets
-	offset = 0;
+	uint32_t offset = 0;
 	for (auto& entry : m_specializationMapEntries)
 	{
 		entry.offset = offset;
@@ -197,12 +200,20 @@ vk::PipelineShaderStageCreateInfo Shader::GetShaderStageInfo() const
 
 vk::PipelineVertexInputStateCreateInfo Shader::GetVertexInputStateInfo() const
 {
-	vk::PipelineVertexInputStateCreateInfo vertexInputInfo(
-		{},
-		1, & m_bindingDescription,
-		static_cast<uint32_t>(m_attributeDescriptions.size()), m_attributeDescriptions.data()
-	);
-	return vertexInputInfo;
+	if (m_attributeDescriptions.size() == 0)
+	{
+		return vk::PipelineVertexInputStateCreateInfo(
+			{}, 0, nullptr,	0, nullptr
+		);
+	}
+	else
+	{
+		return vk::PipelineVertexInputStateCreateInfo(
+			{},
+			1, &m_bindingDescription,
+			static_cast<uint32_t>(m_attributeDescriptions.size()), m_attributeDescriptions.data()
+		);
+	}
 }
 
 void Shader::SetSpecializationConstants(const void* data, size_t size)
