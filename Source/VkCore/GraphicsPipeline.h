@@ -11,12 +11,28 @@
 
 struct ImageDescription;
 
+struct GraphicsPipelineInfo
+{
+	bool blendEnable = false;
+};
+
 class GraphicsPipeline
 {
 public:
 	using value_type = vk::Pipeline;
 
-	GraphicsPipeline(vk::RenderPass renderPass, vk::Extent2D viewportExtent, const Shader& vertexShader, const Shader& fragmentShader);
+	GraphicsPipeline(
+		vk::RenderPass renderPass,
+		vk::Extent2D viewportExtent,
+		const Shader& vertexShader, const Shader& fragmentShader
+	);
+
+	GraphicsPipeline(
+		vk::RenderPass renderPass,
+		vk::Extent2D viewportExtent,
+		const Shader& vertexShader, const Shader& fragmentShader,
+		const GraphicsPipelineInfo& info
+	);
 
 	vk::PipelineLayout GetLayout() const { return m_pipelineLayout.get(); }
 
@@ -43,6 +59,13 @@ public:
 	const value_type& Get() const { return m_graphicsPipeline.get(); }
 
 private:
+	void Init(
+		vk::RenderPass renderPass,
+		vk::Extent2D viewportExtent,
+		const Shader& vertexShader, const Shader& fragmentShader,
+		const GraphicsPipelineInfo& info
+	);
+
 	vk::UniquePipelineLayout m_pipelineLayout;
 	vk::UniquePipeline m_graphicsPipeline;
 
