@@ -96,7 +96,7 @@ namespace std {
 	};
 }
 
-struct LitShaderConstants
+struct LitShadingConstants
 {
 	uint32_t nbPointLights = 1;
 };
@@ -108,10 +108,11 @@ struct LitMaterialProperties
 	glm::aligned_float32 shininess;
 };
 
-enum class MaterialType
+// Each shading model can have different view descriptors
+enum class ShadingModel
 {
 	Unlit = 0,
-	Lit,
+	Lit = 1,
 	Count
 };
 
@@ -119,6 +120,15 @@ enum class MaterialIndex
 {
 	TexturedUnlit = 0,
 	Phong = 1,
+	PhongTransparent = 2,
+	Count
+};
+
+enum class FragmentShaders
+{
+	TexturedUnlit = 0,
+	Phong = 1,
+	PhongTransparent = 1, // share the same fragment shader
 	Count
 };
 
@@ -134,7 +144,8 @@ struct Material
 		commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline->Get());
 	}
 
-	MaterialType type;
+	ShadingModel shadingModel;
+	bool isTransparent = false;
 	const GraphicsPipeline* pipeline = nullptr;
 };
 
@@ -214,6 +225,12 @@ private:
 	glm::mat4 transform = glm::mat4(1.0f);
 };
 
+struct MeshDrawInfo
+{
+	Model* model;
+	Mesh* mesh;
+};
+
 enum class CameraMode { OrbitCamera, FreeCamera };
 
 class App : public RenderLoop
@@ -227,9 +244,9 @@ public:
 		, m_camera(1.0f * glm::vec3(1.0f, 1.0f, 1.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f), 45.0f, 0.01f, 1000.0f)
 	{
 		// todo: support multiple fragment shaders for each material type
-		m_fragmentShaders.resize((size_t)MaterialIndex::Count);
-		m_fragmentShaders[(size_t)MaterialIndex::TexturedUnlit] = std::make_unique<Shader>("surface_unlit_frag.spv", "main");
-		m_fragmentShaders[(size_t)MaterialIndex::Phong] = std::make_unique<Shader>("surface_frag.spv", "main");
+		m_fragmentShaders.resize((size_t)FragmentShaders::Count);
+		m_fragmentShaders[(size_t)FragmentShaders::TexturedUnlit] = std::make_unique<Shader>("surface_unlit_frag.spv", "main");
+		m_fragmentShaders[(size_t)FragmentShaders::Phong] = std::make_unique<Shader>("surface_frag.spv", "main");
 
 		window.SetMouseButtonCallback(reinterpret_cast<void*>(this), OnMouseButton);
 		window.SetMouseScrollCallback(reinterpret_cast<void*>(this), OnMouseScroll);
@@ -316,6 +333,16 @@ protected:
 		}
 	}
 
+	// To bind only when necessary
+	struct RenderState
+	{
+		ShadingModel materialType = ShadingModel::Count;
+		vk::PipelineLayout modelPipelineLayout;
+		const Model* model = nullptr;
+		const MaterialInstance* materialInstance = nullptr;
+		const Material* material = nullptr;
+	};
+
 	void RecordFrameRenderPassCommands(uint32_t frameIndex)
 	{
 		auto& commandBuffer = m_renderPassCommandBuffers[frameIndex];
@@ -325,69 +352,16 @@ protected:
 		commandBuffer->begin({ vk::CommandBufferUsageFlagBits::eRenderPassContinue, &info });
 		{
 			// --- Draw all scene opaque objects --- //
+			RenderState state;
 
-			// Bind the one big vertex + index buffers
-			vk::DeviceSize offsets[] = { 0 };
-			vk::Buffer vertexBuffers[] = { m_vertexBuffer->Get() };
-			commandBuffer.get().bindVertexBuffers(0, 1, vertexBuffers, offsets);
-			commandBuffer.get().bindIndexBuffer(m_indexBuffer->Get(), 0, vk::IndexType::eUint32);
+			// Draw opaque materials first
+			DrawSceneObjects(commandBuffer.get(), frameIndex, m_opaqueDrawCache, state);
 
-			MaterialType materialType = MaterialType::Count;
-			vk::PipelineLayout modelPipelineLayout;
-			const Model* model = nullptr;
-			const MaterialInstance* materialInstance = nullptr;
-			const Material* material = nullptr;
-
-			// Draw all meshes using available materials
-			for (const auto& drawItem : m_drawCache)
+			//// With Skybox last (to prevent processing fragments for nothing)
+			if (state.materialType != ShadingModel::Unlit)
 			{
-				// Bind descriptors using material type's { view + model } layouts
-				if (materialType != drawItem.mesh->materialInstance->material->type)
-				{
-					materialType = drawItem.mesh->materialInstance->material->type;
-
-					const auto& layouts = m_layouts[(size_t)materialType];
-					const auto& viewPipelineLayout = layouts.m_viewPipelineLayout.get();
-					modelPipelineLayout = layouts.m_modelPipelineLayout.get();
-					auto& viewDescriptorSet = layouts.m_viewDescriptorSets[frameIndex % m_commandBufferPool.GetNbConcurrentSubmits()].get();
-
-					commandBuffer.get().bindDescriptorSets(
-						vk::PipelineBindPoint::eGraphics, viewPipelineLayout,
-						(uint32_t)DescriptorSetIndices::View,
-						1, &viewDescriptorSet, 0, nullptr
-					);
-				}
-
-				// Bind model uniforms
-				if (model != drawItem.model)
-				{
-					model = drawItem.model;
-					model->Bind(commandBuffer.get(), modelPipelineLayout);
-				}
-
-				// Bind Graphics Pipeline
-				if (drawItem.mesh->materialInstance->material != material)
-				{
-					material = drawItem.mesh->materialInstance->material;
-					material->Bind(commandBuffer.get());
-				}
-
-				// Bind material uniforms
-				if (drawItem.mesh->materialInstance != materialInstance)
-				{
-					materialInstance = drawItem.mesh->materialInstance;
-					materialInstance->Bind(commandBuffer.get());
-				}
-
-				// Draw
-				commandBuffer.get().drawIndexed(drawItem.mesh->nbIndices, 1, drawItem.mesh->indexOffset, 0, 0);
-			}
-
-			// --- Draw skybox last to draw only visible pixels (also opaque) --- //
-
-			if (materialType != MaterialType::Unlit)
-			{
-				const auto& layouts = m_layouts[(size_t)MaterialType::Unlit];
+				state.materialType = ShadingModel::Unlit;
+				const auto& layouts = m_layouts[(size_t)ShadingModel::Unlit];
 				auto& viewDescriptorSet = layouts.m_viewDescriptorSets[frameIndex % m_commandBufferPool.GetNbConcurrentSubmits()].get();
 				commandBuffer.get().bindDescriptorSets(
 					vk::PipelineBindPoint::eGraphics, layouts.m_viewPipelineLayout.get(),
@@ -395,16 +369,77 @@ protected:
 					1, &viewDescriptorSet, 0, nullptr
 				);
 			}
+			
+			m_skybox->Draw(commandBuffer.get(), frameIndex);
 
-			//m_skybox->Draw(commandBuffer.get(), frameIndex);
-
+			// Then the grid
 			if (m_showGrid)
 				m_grid->Draw(commandBuffer.get());
+
+			// Draw transparent objects last (sorted by distance to camera)
+			DrawSceneObjects(commandBuffer.get(), frameIndex, m_transparentDrawCache, state);
 		}
 		commandBuffer->end();
 	}
 
-	uint8_t m_frameDirty = 0xFF;
+	void DrawSceneObjects(vk::CommandBuffer commandBuffer, uint32_t frameIndex, const std::vector<MeshDrawInfo>& drawCalls, RenderState& state)
+	{
+		// Bind the one big vertex + index buffers
+		if (drawCalls.empty() == false)
+		{
+			vk::DeviceSize offsets[] = { 0 };
+			vk::Buffer vertexBuffers[] = { m_vertexBuffer->Get() };
+			commandBuffer.bindVertexBuffers(0, 1, vertexBuffers, offsets);
+			commandBuffer.bindIndexBuffer(m_indexBuffer->Get(), 0, vk::IndexType::eUint32);
+		}
+
+		for (const auto& drawItem : drawCalls)
+		{
+			// Bind descriptors using material type's { view + model } layouts
+			if (state.materialType != drawItem.mesh->materialInstance->material->shadingModel)
+			{
+				state.materialType = drawItem.mesh->materialInstance->material->shadingModel;
+
+				const auto& layouts = m_layouts[(size_t)state.materialType];
+				const auto& viewPipelineLayout = layouts.m_viewPipelineLayout.get();
+				state.modelPipelineLayout = layouts.m_modelPipelineLayout.get();
+				auto& viewDescriptorSet = layouts.m_viewDescriptorSets[frameIndex % m_commandBufferPool.GetNbConcurrentSubmits()].get();
+
+				commandBuffer.bindDescriptorSets(
+					vk::PipelineBindPoint::eGraphics, viewPipelineLayout,
+					(uint32_t)DescriptorSetIndices::View,
+					1, &viewDescriptorSet, 0, nullptr
+				);
+			}
+
+			// Bind model uniforms
+			if (state.model != drawItem.model)
+			{
+				state.model = drawItem.model;
+				state.model->Bind(commandBuffer, state.modelPipelineLayout);
+			}
+
+			// Bind Graphics Pipeline
+			if (drawItem.mesh->materialInstance->material != state.material)
+			{
+				state.material = drawItem.mesh->materialInstance->material;
+				state.material->Bind(commandBuffer);
+			}
+
+			// Bind material uniforms
+			if (drawItem.mesh->materialInstance != state.materialInstance)
+			{
+				state.materialInstance = drawItem.mesh->materialInstance;
+				state.materialInstance->Bind(commandBuffer);
+			}
+
+			// Draw
+			commandBuffer.drawIndexed(drawItem.mesh->nbIndices, 1, drawItem.mesh->indexOffset, 0, 0);
+		}
+	}
+
+	static constexpr uint8_t kAllFrameDirty = std::numeric_limits<uint8_t>::max();
+	uint8_t m_frameDirty = kAllFrameDirty;
 
 	void RenderFrame(uint32_t imageIndex, vk::CommandBuffer commandBuffer) override
 	{
@@ -457,30 +492,53 @@ protected:
 	{
 		m_graphicsPipelines.clear();
 		m_graphicsPipelines.resize((size_t)MaterialIndex::Count);
+		m_materials.resize((size_t)MaterialIndex::Count);
+		for (auto& material : m_materials)
+			if (material == nullptr)
+				material = std::make_unique<Material>();
 
 		// Create materials for opaque shading
 		{
-			// Create a material for each material fragment shader
-			for (size_t materialIndex = 0; materialIndex < (size_t)MaterialIndex::Count; ++materialIndex)
+			// Textured Unlit
 			{
-				Shader* fragmentShader = m_fragmentShaders[materialIndex].get();
+				size_t materialIndex = (size_t)MaterialIndex::TexturedUnlit;
+				Shader* fragmentShader = m_fragmentShaders[(size_t)FragmentShaders::TexturedUnlit].get();
 				m_graphicsPipelines[materialIndex] = std::make_unique<GraphicsPipeline>(
 					m_renderPass->Get(),
 					m_swapchain->GetImageDescription().extent,
-					*m_vertexShader,
-					*m_fragmentShaders[materialIndex]
+					*m_vertexShader, *fragmentShader
 				);
-				m_materials.push_back(std::make_unique<Material>());
+				m_materials[materialIndex]->shadingModel = ShadingModel::Unlit;
+				m_materials[materialIndex]->pipeline = m_graphicsPipelines[materialIndex].get();
 			}
-			{
-				size_t materialIndex = (size_t)MaterialIndex::TexturedUnlit;
-				m_materials[materialIndex]->type = MaterialType::Unlit;
-				m_materials[materialIndex]->pipeline = m_graphicsPipelines[(size_t)MaterialType::Unlit].get();
-			}
+
+			// Phong
 			{
 				size_t materialIndex = (size_t)MaterialIndex::Phong;
-				m_materials[materialIndex]->type = MaterialType::Lit;
-				m_materials[materialIndex]->pipeline = m_graphicsPipelines[(size_t)MaterialType::Lit].get();
+				Shader* fragmentShader = m_fragmentShaders[(size_t)FragmentShaders::Phong].get();
+				m_graphicsPipelines[materialIndex] = std::make_unique<GraphicsPipeline>(
+					m_renderPass->Get(),
+					m_swapchain->GetImageDescription().extent,
+					*m_vertexShader, *fragmentShader
+				);
+				m_materials[materialIndex]->shadingModel = ShadingModel::Lit;
+				m_materials[materialIndex]->pipeline = m_graphicsPipelines[materialIndex].get();
+			}
+
+			// Phong Transparent
+			{
+				size_t materialIndex = (size_t)MaterialIndex::PhongTransparent;
+				Shader* fragmentShader = m_fragmentShaders[(size_t)FragmentShaders::PhongTransparent].get();
+				GraphicsPipelineInfo info;
+				info.blendEnable = true;
+				m_graphicsPipelines[materialIndex] = std::make_unique<GraphicsPipeline>(
+					m_renderPass->Get(),
+					m_swapchain->GetImageDescription().extent,
+					*m_vertexShader, *fragmentShader, info
+				);
+				m_materials[materialIndex]->isTransparent = true;
+				m_materials[materialIndex]->shadingModel = ShadingModel::Lit;
+				m_materials[materialIndex]->pipeline = m_graphicsPipelines[materialIndex].get();
 			}
 		}
 	}
@@ -518,9 +576,9 @@ protected:
 		glm::aligned_int32 type;
 		glm::aligned_vec3 pos;
 		glm::aligned_vec3 direction;
-		glm::aligned_vec3 ambient;
-		glm::aligned_vec3 diffuse;
-		glm::aligned_vec3 specular;
+		glm::aligned_vec4 ambient;
+		glm::aligned_vec4 diffuse;
+		glm::aligned_vec4 specular;
 		glm::aligned_float32 innerCutoff; // (cos of the inner angle)
 		glm::aligned_float32 outerCutoff; // (cos of the outer angle)
 		glm::aligned_vec3 attenuation; // const, linear, quadratic
@@ -566,7 +624,7 @@ protected:
 		}
 	}
 
-	glm::vec3 ClampColor(glm::vec3 color)
+	glm::vec4 ClampColor(glm::vec4 color)
 	{
 		float maxComponent = std::max(color.x, std::max(color.y, color.z));
 
@@ -587,9 +645,9 @@ protected:
 
 			Light light;
 			light.type = (int)aLight->mType;
-			light.ambient = glm::vec3(0.0f); // glm::vec3(0.2f, 0.2f, 0.2f);
-			light.diffuse = ClampColor(glm::make_vec3(&aLight->mColorDiffuse.r));
-			light.specular = ClampColor(glm::make_vec3(&aLight->mColorSpecular.r));
+			light.ambient = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
+			light.diffuse = ClampColor(glm::make_vec4(&aLight->mColorDiffuse.r));
+			light.specular = ClampColor(glm::make_vec4(&aLight->mColorSpecular.r));
 			light.pos = transform[3];
 
 			if (aLight->mType != aiLightSource_POINT)
@@ -623,10 +681,17 @@ protected:
 		LoadNodeAndChildren(m_assimp.scene->mRootNode, glm::mat4(1.0f));
 
 		for (auto& model : m_models)
+		{
 			for (auto& mesh : model.meshes)
-				m_drawCache.push_back(MeshDrawInfo{ &model, &mesh });
+			{
+				if (mesh.materialInstance->material->isTransparent == false)
+					m_opaqueDrawCache.push_back(MeshDrawInfo{ &model, &mesh });
+				else
+					m_transparentDrawCache.push_back(MeshDrawInfo{ &model, &mesh });
+			}
+		}
 
-		// Sort draw calls by material, then materialInstance, then mesh.
+		// Sort opaqe draw calls by material, then materialInstance, then mesh.
 		// This minimizes the number of pipeline bindings (costly),
 		// then descriptor set bindings (a bit less costly).
 		//
@@ -634,11 +699,46 @@ protected:
 		//
 		// | m0, i0, o0 | m0, i0, o1 | m0, i1, o2 | m1, i2, o3 |
 		//
-		std::sort(m_drawCache.begin(), m_drawCache.end(),
+		std::sort(m_opaqueDrawCache.begin(), m_opaqueDrawCache.end(),
 			[](const MeshDrawInfo& a, const MeshDrawInfo& b) {
 				// Sort by material type
-				if (a.mesh->materialInstance->material->type != b.mesh->materialInstance->material->type)
-					return a.mesh->materialInstance->material->type < b.mesh->materialInstance->material->type;
+				if (a.mesh->materialInstance->material->shadingModel != b.mesh->materialInstance->material->shadingModel)
+					return a.mesh->materialInstance->material->shadingModel < b.mesh->materialInstance->material->shadingModel;
+				// Then by material
+				else if (a.mesh->materialInstance->material != b.mesh->materialInstance->material)
+					return a.mesh->materialInstance->material < b.mesh->materialInstance->material;
+				// Then material instance
+				else if (a.mesh->materialInstance != b.mesh->materialInstance)
+					return a.mesh->materialInstance < b.mesh->materialInstance;
+				// Then model
+				else
+					return a.model < b.model;
+			});
+
+		// Transparent materials need to be sorted by distance every time the camera moves
+	}
+
+	void SortTransparentObjects()
+	{
+		glm::mat4 viewInverse = glm::inverse(m_camera.GetViewMatrix());
+		glm::vec3 cameraPosition = viewInverse[3]; // m_camera.GetPosition();
+		glm::vec3 front = viewInverse[2]; // todo: m_camera.GetForwardVector();
+
+		// todo: assign 64 bit number to each MeshDrawInfo for sorting and
+		// use this here also instead of copy pasting the sorting logic here.
+		std::sort(m_transparentDrawCache.begin(), m_transparentDrawCache.end(),
+			[&cameraPosition, &front](const MeshDrawInfo& a, const MeshDrawInfo& b) {
+				glm::vec3 dx_a = cameraPosition - glm::vec3(a.model->GetTransform()[3]);
+				glm::vec3 dx_b = cameraPosition - glm::vec3(b.model->GetTransform()[3]);
+				float distA = glm::dot(front, dx_a);
+				float distB = glm::dot(front, dx_b);
+
+				// Sort by distance first
+				if (distA != distB)
+					return distA > distB; // back to front
+				// Then by material type
+				if (a.mesh->materialInstance->material->shadingModel != b.mesh->materialInstance->material->shadingModel)
+					return a.mesh->materialInstance->material->shadingModel < b.mesh->materialInstance->material->shadingModel;
 				// Then by material
 				else if (a.mesh->materialInstance->material != b.mesh->materialInstance->material)
 					return a.mesh->materialInstance->material < b.mesh->materialInstance->material;
@@ -730,30 +830,8 @@ protected:
 			m_materialInstances[i] = std::make_unique<MaterialInstance>();
 			auto& material = m_materialInstances[i];
 
-			// Use Phong shading for all surface materials
-			const auto* baseMaterial = m_materials[(size_t)MaterialIndex::Phong].get();
-			material->material = baseMaterial;
-
-			// Create default textures
-			const auto& bindings = baseMaterial->pipeline->GetDescriptorSetLayoutBindings((size_t)DescriptorSetIndices::Material);
-			for (const auto& binding : bindings)
-			{
-				if (binding.descriptorType == vk::DescriptorType::eCombinedImageSampler)
-				{
-					for (int i = 0; i < binding.descriptorCount; ++i)
-					{
-						CombinedImageSampler texture = LoadMaterialTexture(commandBuffer, "dummy_texture.png");
-						material->textures.push_back(std::move(texture));
-					}
-				}
-			}
-
 			auto& assimpMaterial = m_assimp.scene->mMaterials[i];
 
-			aiString name;
-			assimpMaterial->Get(AI_MATKEY_NAME, name);
-			material->name = std::string(name.C_Str());
-			
 			// Properties
 			LitMaterialProperties properties;
 
@@ -766,6 +844,32 @@ protected:
 
 			assimpMaterial->Get(AI_MATKEY_SHININESS, properties.shininess);
 
+			float opacity = 1.0f;
+			assimpMaterial->Get(AI_MATKEY_OPACITY, opacity);
+
+			// If a material is transparent, opacity will be fetched
+			// from the diffuse alpha channel (material property * diffuse texture)
+			auto materialIndex = (opacity != 1.0f) ? MaterialIndex::PhongTransparent: MaterialIndex::Phong;
+			material->material = m_materials[(size_t)materialIndex].get();
+
+			// Create default textures
+			const auto& bindings = material->material->pipeline->GetDescriptorSetLayoutBindings((size_t)DescriptorSetIndices::Material);
+			for (const auto& binding : bindings)
+			{
+				if (binding.descriptorType == vk::DescriptorType::eCombinedImageSampler)
+				{
+					for (int i = 0; i < binding.descriptorCount; ++i)
+					{
+						CombinedImageSampler texture = LoadMaterialTexture(commandBuffer, "dummy_texture.png");
+						material->textures.push_back(std::move(texture));
+					}
+				}
+			}
+
+			aiString name;
+			assimpMaterial->Get(AI_MATKEY_NAME, name);
+			material->name = std::string(name.C_Str());
+			
 			// Upload properties to uniform buffer
 			material->uniformBuffer = std::make_unique<UniqueBufferWithStaging>(sizeof(LitMaterialProperties), vk::BufferUsageFlagBits::eUniformBuffer);
 			memcpy(material->uniformBuffer->GetStagingMappedData(), reinterpret_cast<const void*>(&properties), sizeof(LitMaterialProperties));
@@ -910,7 +1014,7 @@ protected:
 	void CreateDescriptorLayouts()
 	{
 		// View layout and descriptor sets
-		for (size_t materialType = 0; materialType < (size_t)MaterialType::Count; ++materialType)
+		for (size_t materialType = 0; materialType < (size_t)ShadingModel::Count; ++materialType)
 		{
 			auto& layout = m_layouts[materialType];
 
@@ -933,7 +1037,7 @@ protected:
 			m_modelSetLayout = m_graphicsPipelines[0]->GetDescriptorSetLayout((size_t)DescriptorSetIndices::Model);
 		}
 
-		for (size_t materialType = 0; materialType < (size_t)MaterialType::Count; ++materialType)
+		for (size_t materialType = 0; materialType < (size_t)ShadingModel::Count; ++materialType)
 		{
 			auto& layout = m_layouts[materialType];
 
@@ -952,7 +1056,7 @@ protected:
 		// Create view descriptor set.
 		// Ask any graphics pipeline to provide the view layout
 		// since all surface materials should share this layout
-		for (size_t materialType = 0; materialType < (size_t)MaterialType::Count; ++materialType)
+		for (size_t materialType = 0; materialType < (size_t)ShadingModel::Count; ++materialType)
 		{
 			auto& viewDescriptorSets = m_layouts[materialType].m_viewDescriptorSets;
 
@@ -968,7 +1072,7 @@ protected:
 					) // binding = 0
 				};
 
-				if ((MaterialType)materialType == MaterialType::Lit)
+				if ((ShadingModel)materialType == ShadingModel::Lit)
 				{
 					vk::DescriptorBufferInfo descriptorBufferInfoLights(m_lightsUniformBuffer->Get(), 0, sizeof(Light) * m_lights.size());
 					writeDescriptorSets.push_back(
@@ -1065,7 +1169,7 @@ protected:
 		// Texture image
 		auto [pair, res] = m_textures.emplace(filename, std::make_unique<Texture>(
 			texWidth, texHeight, 4UL, // R8G8B8A8, depth = 4
-			vk::Format::eR8G8B8A8Unorm,
+			vk::Format::eR8G8B8A8Unorm, // figure out gamma correction if we need to do sRGB or something
 			vk::ImageTiling::eOptimal,
 			vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst | // src and dst for mipmaps blit
 				vk::ImageUsageFlagBits::eSampled,
@@ -1260,6 +1364,13 @@ protected:
 			glm::vec3 finalPositionV3 = (rotationMatrixY * (position - target)) + target;
 
 			app->m_camera.SetCameraView(finalPositionV3, app->m_camera.GetLookAt(), app->m_upVector);
+
+			// We need to recompute transparent object order if camera changes
+			if (app->m_transparentDrawCache.size() > 0)
+			{
+				app->SortTransparentObjects();
+				app->m_frameDirty = kAllFrameDirty;
+			}
 		}
 		else if (app->m_isMouseDown && app->m_cameraMode == CameraMode::FreeCamera) 
 		{
@@ -1302,7 +1413,7 @@ protected:
 		if (key == GLFW_KEY_G && action == GLFW_PRESS)
 		{
 			app->m_showGrid = !app->m_showGrid;
-			app->m_frameDirty = 0xFF;
+			app->m_frameDirty = kAllFrameDirty;
 		}
 	}
 
@@ -1340,7 +1451,7 @@ private:
 		// set 1
 		vk::UniquePipelineLayout m_modelPipelineLayout;
 	};
-	std::array<DescriptorLayouts, (size_t)MaterialType::Count> m_layouts;
+	std::array<DescriptorLayouts, (size_t)ShadingModel::Count> m_layouts;
 
 	// --- View --- //
 
@@ -1365,12 +1476,8 @@ private:
 
 	// Sort items to draw to minimize the number of bindings
 	// Less pipeline bindings, then descriptor set bindings.
-	struct MeshDrawInfo
-	{
-		Model* model;
-		Mesh* mesh;
-	};
-	std::vector<MeshDrawInfo> m_drawCache;
+	std::vector<MeshDrawInfo> m_opaqueDrawCache;
+	std::vector<MeshDrawInfo> m_transparentDrawCache;
 };
 
 int main(int argc, char* argv[])

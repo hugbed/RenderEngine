@@ -1,7 +1,7 @@
 // Phong material
 struct PhongMaterial {
-    vec3 diffuse;
-    vec3 specular;
+    vec4 diffuse;
+    vec4 specular;
     float shininess;
 };
 
@@ -21,15 +21,15 @@ struct Light {
     int type;
     vec3 pos; // point
     vec3 direction; // directional
-    vec3 ambient;
-    vec3 diffuse;
-    vec3 specular;
+    vec4 ambient;
+    vec4 diffuse;
+    vec4 specular;
     float innerCutoff; // spot (cos of the inner angle)
     float outerCutoff; // spot (cos of the outer angle)
     Attenuation attenuation;
 };
 
-vec3 PhongLighting(
+vec4 PhongLighting(
     Light light,
     PhongMaterial material,
     vec3 normal, vec3 fragPos, vec3 viewDir
@@ -39,14 +39,14 @@ vec3 PhongLighting(
         normalize(light.pos - fragPos);
 
     // ambient
-    vec3 ambient = light.ambient * material.diffuse;
+    vec4 ambient = light.ambient * material.diffuse;
 
     // diffuse
     float k = max(dot(lightDir, normal), 0.0);
-    vec3 diffuse = k * light.diffuse * material.diffuse;
+    vec4 diffuse = k * light.diffuse * material.diffuse;
 
     // specular (apply proportional to diffuse intensity k)
-    vec3 specular = vec3(0.0);
+    vec4 specular = vec4(0.0, 0.0, 0.0, 1.0);
     vec3 lightDirReflect = reflect(-lightDir, normal);
     k *= pow(max(dot(viewDir, lightDirReflect), 0.0), material.shininess);
     specular = k * light.specular * material.specular;
