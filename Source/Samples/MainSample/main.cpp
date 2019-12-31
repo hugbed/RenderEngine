@@ -21,6 +21,7 @@
 
 #include "Camera.h"
 #include "Grid.h"
+#include <math.h> 
 
 #include <GLFW/glfw3.h>
 #define _USE_MATH_DEFINES
@@ -242,7 +243,7 @@ public:
 	using RenderLoop::Init;
 
 protected:
-	glm::vec2 m_mouseDownPos = glm::vec2(0.0f);
+	glm::vec2 m_lastMousePos = glm::vec2(0.0f);
 	bool m_isMouseDown = false;
 	std::map<int, bool> m_keyState;
 
@@ -395,7 +396,7 @@ protected:
 				);
 			}
 
-			m_skybox->Draw(commandBuffer.get(), frameIndex);
+			//m_skybox->Draw(commandBuffer.get(), frameIndex);
 
 			if (m_showGrid)
 				m_grid->Draw(commandBuffer.get());
@@ -1222,6 +1223,12 @@ protected:
 		app->m_camera.SetFieldOfView(fov);
 	}
 
+	template <typename T>
+	static T sgn(T val) 
+	{
+		return (T(0) < val) - (val < T(0));
+	}
+
 	static void OnCursorPosition(void* data, double xPos, double yPos)
 	{
 		App* app = reinterpret_cast<App*>(data);
@@ -1231,27 +1238,25 @@ protected:
 
 		if ((app->m_isMouseDown) && app->m_cameraMode == CameraMode::OrbitCamera) 
 		{
-			glm::vec3 rightVector = app->m_camera.GetRightVector();
 			glm::vec4 position(app->m_camera.GetEye().x, app->m_camera.GetEye().y, app->m_camera.GetEye().z, 1);
 			glm::vec4 target(app->m_camera.GetLookAt().x, app->m_camera.GetLookAt().y, app->m_camera.GetLookAt().z, 1);
 
 			float deltaAngle = (M_PI / 300.0f);
+			float xDeltaAngle = (app->m_lastMousePos.x - xPos) * deltaAngle;
+			float yDeltaAngle = (app->m_lastMousePos.y - yPos) * deltaAngle;
 
-			float xAngle = (app->m_mouseDownPos.x - xPos) * deltaAngle;
-			float yAngle = (app->m_mouseDownPos.y - yPos) * deltaAngle;
-
-			float dist = glm::distance2(app->m_upVector, glm::normalize(app->m_camera.GetEye() - app->m_camera.GetLookAt()));
-			if (dist < 0.01 && yAngle < 0 || 4.0 - dist < 0.01 && yAngle > 0)
-				yAngle = 0;
+			float cosAngle = dot(app->m_camera.GetForwardVector(), app->m_upVector);
+			if (cosAngle * sgn(yDeltaAngle) > 0.99f)
+				yDeltaAngle = 0;
 
 			// Rotate in X
 			glm::mat4x4 rotationMatrixX(1.0f);
-			rotationMatrixX = glm::rotate(rotationMatrixX, xAngle, app->m_upVector);
+			rotationMatrixX = glm::rotate(rotationMatrixX, xDeltaAngle, app->m_upVector);
 			position = (rotationMatrixX * (position - target)) + target;
 
 			// Rotate in Y
 			glm::mat4x4 rotationMatrixY(1.0f);
-			rotationMatrixY = glm::rotate(rotationMatrixY, yAngle, rightVector);
+			rotationMatrixY = glm::rotate(rotationMatrixY, yDeltaAngle, app->m_camera.GetRightVector());
 			glm::vec3 finalPositionV3 = (rotationMatrixY * (position - target)) + target;
 
 			app->m_camera.SetCameraView(finalPositionV3, app->m_camera.GetLookAt(), app->m_upVector);
@@ -1263,8 +1268,8 @@ protected:
 			auto dt_s = app->GetDeltaTime();
 			float dx = speed * dt_s.count();
 
-			float diffX = app->m_mouseDownPos.x - xPos;
-			float diffY = app->m_mouseDownPos.y - yPos;
+			float diffX = app->m_lastMousePos.x - xPos;
+			float diffY = app->m_lastMousePos.y - yPos;
 
 			float m_fovV = app->m_camera.GetFieldOfView() / width * height;
 
@@ -1278,8 +1283,8 @@ protected:
 
 			app->m_camera.LookAt(lookat + rightVector * dx * angleX);
 		}
-		app->m_mouseDownPos.x = xPos; 
-		app->m_mouseDownPos.y = yPos;
+		app->m_lastMousePos.x = xPos; 
+		app->m_lastMousePos.y = yPos;
 	}
 
 	static void OnKey(void* data, int key, int scancode, int action, int mods) {
