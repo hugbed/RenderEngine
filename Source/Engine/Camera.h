@@ -44,11 +44,10 @@ public:
 
 	glm::vec3 GetLookAt() const { return m_lookAt; }
 
-	glm::vec3 GetRightVector() const
-	{ 
-		glm::vec3 directionVector = glm::normalize(m_lookAt - m_eye);
-		return glm::normalize(glm::cross(directionVector, m_upVector));
-	}
+	// Camera forward is -z
+	glm::vec3 GetForwardVector() const { return -glm::transpose(m_viewMatrix)[2]; }
+
+	glm::vec3 GetRightVector() const { return glm::transpose(m_viewMatrix)[0]; }
 
 	float GetFieldOfView() const { return m_fieldOfView; }
 
