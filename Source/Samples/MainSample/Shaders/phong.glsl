@@ -32,31 +32,31 @@ struct Light {
 vec4 PhongLighting(
     Light light,
     PhongMaterial material,
-    vec3 normal, vec3 fragPos, vec3 viewDir
+    vec3 normal, vec3 fragPos, vec3 viewPos
 ) {
+    vec3 viewDir = normalize(viewPos - fragPos);
+
     vec3 lightDir = light.type == LIGHT_TYPE_DIRECTIONAL ?
-        normalize(-light.direction) :
-        normalize(light.pos - fragPos);
+        -light.direction : light.pos - fragPos;
+    float lightDistance = length(lightDir);
+    lightDir /= lightDistance;
 
     // ambient
     vec4 ambient = light.ambient * material.diffuse;
 
     // diffuse
-    float k = max(dot(lightDir, normal), 0.0);
-    vec4 diffuse = k * light.diffuse * material.diffuse;
+    float k_d = max(dot(lightDir, normal), 0.0);
+    vec4 diffuse = k_d * light.diffuse * material.diffuse;
 
-    // specular (apply proportional to diffuse intensity k)
-    vec4 specular = vec4(0.0, 0.0, 0.0, 1.0);
-    vec3 lightDirReflect = reflect(-lightDir, normal);
-    k *= pow(max(dot(viewDir, lightDirReflect), 0.0), material.shininess);
-    specular = k * light.specular * material.specular;
+    // specular
+    vec3 h = normalize(lightDir + viewDir); // blinn-phong specular
+    float k_s = pow(max(dot(normal, h), 0.0), material.shininess);
+    vec4 specular = k_s * light.specular * material.specular;
 
     // distance attenuation
     float attenuation = 1.0;
     if (light.type != LIGHT_TYPE_DIRECTIONAL) {
-        Attenuation att = light.attenuation;
-        float dist = length(light.pos - fragPos);
-        attenuation = 1.0 / (att.constant + att.linear * dist + att.quadratic * dist*dist);
+        attenuation = 1.0 / lightDistance;
     }
 
     // spotlight angle attenuation

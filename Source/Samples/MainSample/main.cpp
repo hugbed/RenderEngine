@@ -60,6 +60,7 @@ struct ViewUniforms
 {
 	glm::aligned_mat4 view;
 	glm::aligned_mat4 proj;
+	glm::aligned_vec3 pos;
 };
 
 // Array of point lights
@@ -514,8 +515,12 @@ protected:
 
 			// Phong
 			{
-				size_t materialIndex = (size_t)MaterialIndex::Phong;
+				LitShadingConstants constants;
+				constants.nbPointLights = m_lights.size();
 				Shader* fragmentShader = m_fragmentShaders[(size_t)FragmentShaders::Phong].get();
+				fragmentShader->SetSpecializationConstants(constants.nbPointLights);
+
+				size_t materialIndex = (size_t)MaterialIndex::Phong;
 				m_graphicsPipelines[materialIndex] = std::make_unique<GraphicsPipeline>(
 					m_renderPass->Get(),
 					m_swapchain->GetImageDescription().extent,
@@ -527,8 +532,12 @@ protected:
 
 			// Phong Transparent
 			{
-				size_t materialIndex = (size_t)MaterialIndex::PhongTransparent;
+				LitShadingConstants constants;
+				constants.nbPointLights = m_lights.size();
 				Shader* fragmentShader = m_fragmentShaders[(size_t)FragmentShaders::PhongTransparent].get();
+				fragmentShader->SetSpecializationConstants(constants.nbPointLights);
+
+				size_t materialIndex = (size_t)MaterialIndex::PhongTransparent;
 				GraphicsPipelineInfo info;
 				info.blendEnable = true;
 				m_graphicsPipelines[materialIndex] = std::make_unique<GraphicsPipeline>(
@@ -645,7 +654,7 @@ protected:
 
 			Light light;
 			light.type = (int)aLight->mType;
-			light.ambient = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
+			light.ambient = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f); // add a little until we have global illumination
 			light.diffuse = ClampColor(glm::make_vec4(&aLight->mColorDiffuse.r));
 			light.specular = ClampColor(glm::make_vec4(&aLight->mColorSpecular.r));
 			light.pos = transform[3];
@@ -889,6 +898,9 @@ protected:
 				}
 			};
 
+			// todo: use sRGB format for color textures if necessary
+			// it looks like gamma correction is OK for now but it might
+			// not be the case for all textures
 			loadTexture(aiTextureType_DIFFUSE, 0);
 			loadTexture(aiTextureType_SPECULAR, 1);
 		}
@@ -1179,7 +1191,7 @@ protected:
 		));
 		auto& texture = pair->second;
 
-		memcpy(texture->GetStagingMappedData(), reinterpret_cast<const void*>(pixels), texWidth * texHeight * 4UL);
+		memcpy(texture->GetStagingMappedData(), reinterpret_cast<const void*>(pixels), (size_t)texWidth * texHeight * 4);
 		texture->UploadStagingToGPU(commandBuffer, vk::ImageLayout::eShaderReadOnlyOptimal);
 
 		// We won't need the staging buffer after the initial upload
@@ -1254,6 +1266,7 @@ protected:
 		ViewUniforms ubo = {};
 		ubo.view = m_camera.GetViewMatrix();
 		ubo.proj = glm::perspective(glm::radians(m_camera.GetFieldOfView()), extent.width / (float)extent.height, m_camera.GetNearPlane(), m_camera.GetFarPlane());
+		ubo.pos = m_camera.GetEye();
 
 		// OpenGL -> Vulkan invert y, half z
 		auto clip = glm::mat4(
