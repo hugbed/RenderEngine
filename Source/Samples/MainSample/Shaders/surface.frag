@@ -6,7 +6,7 @@
 layout(location = 0) in vec2 fragTexCoord;
 layout(location = 1) in vec3 fragNormal;
 layout(location = 2) in vec3 fragPos;
-layout(location = 3) in vec3 viewDir;
+layout(location = 3) in vec3 viewPos;
 
 layout(location = 0) out vec4 outColor;
 
@@ -37,13 +37,12 @@ void main() {
     vec4 shadedColor = vec4(0.0, 0.0, 0.0, 1.0);
 
     // todo: have #define to choose either vec4 or texture instead of using both
-    PhongMaterial phongMaterial = {
-        material.phong.diffuse * texture(texSamplers[PHONG_TEX_DIFFUSE], fragTexCoord),
-        material.phong.specular * texture(texSamplers[PHONG_TEX_SPECULAR], fragTexCoord),
-        material.phong.shininess
-    };
+    vec4 diffuse = material.phong.diffuse * texture(texSamplers[PHONG_TEX_DIFFUSE], fragTexCoord);
+    vec4 specular = material.phong.specular * texture(texSamplers[PHONG_TEX_SPECULAR], fragTexCoord);
+    PhongMaterial phongMaterial = PhongMaterial(diffuse, specular, material.phong.shininess);
+    
     for (int i = 0; i < NB_POINT_LIGHTS; ++i)
-        shadedColor += PhongLighting(lights.light[i], phongMaterial, normalize(fragNormal), fragPos, -normalize(viewDir));
+        shadedColor += PhongLighting(lights.light[i], phongMaterial, normalize(fragNormal), fragPos, viewPos);
 
     outColor = vec4(shadedColor.rgb, diffuse.a);
 }
