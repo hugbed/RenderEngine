@@ -4,11 +4,7 @@ layout(location = 0) in vec3 inPosition;
 layout(location = 0) out vec3 fragTexCoords;
 
 //--- Set 0 (Scene Uniforms) --- //
-layout(set = 0, binding = 0) uniform ViewUniforms {
-    mat4 view;
-    mat4 proj;
-    vec3 pos;
-} view;
+#include "view_set.glsl"
 
 void main()
 {

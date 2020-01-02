@@ -1,5 +1,6 @@
 #if defined(_WIN32)
 #include <Windows.h>
+#define _USE_MATH_DEFINES
 #endif
 
 #include "RenderLoop.h"
@@ -20,13 +21,11 @@
 #include "file_utils.h"
 
 #include "Camera.h"
+#include "TextureManager.h"
+
 #include "Grid.h"
-#include <math.h> 
 
 #include <GLFW/glfw3.h>
-#define _USE_MATH_DEFINES
-#include <cmath>
-#include <algorithm>
 
 // For Uniform Buffer
 #define GLM_FORCE_RADIANS
@@ -34,17 +33,10 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/matrix_transform.hpp>
-
-#define UNIFORM_ALIGNED alignas(16)
-
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/hash.hpp>
 #include <glm/gtx/norm.hpp>
 #include <glm/gtx/type_aligned.hpp>
-
-// For Texture
-#define STB_IMAGE_IMPLEMENTATION
-#include <stb_image.h>
 
 // Scene loading
 #include <assimp/Importer.hpp> 
@@ -52,9 +44,11 @@
 #include <assimp/postprocess.h>
 #include <assimp/cimport.h>
 
+#include <algorithm>
 #include <chrono>
 #include <unordered_map>
 #include <iostream>
+#include <cmath>
 
 struct ViewUniforms
 {
@@ -109,6 +103,12 @@ struct LitMaterialProperties
 	glm::aligned_float32 shininess;
 };
 
+struct EnvironmentMaterialProperties
+{
+	glm::aligned_float32 ior; // index of refraction
+	glm::aligned_float32 reflectRatio; // ratio of reflection vs refraction [0..1]
+};
+
 // Each shading model can have different view descriptors
 enum class ShadingModel
 {
@@ -122,14 +122,16 @@ enum class MaterialIndex
 	TexturedUnlit = 0,
 	Phong = 1,
 	PhongTransparent = 2,
+	Environment = 3, // reflection/refraction using environment map
 	Count
 };
 
 enum class FragmentShaders
 {
-	TexturedUnlit = 0,
-	Phong = 1,
-	PhongTransparent = 1, // share the same fragment shader
+	TexturedUnlit = (int)MaterialIndex::TexturedUnlit,
+	Phong = (int)MaterialIndex::Phong,
+	PhongTransparent = (int)MaterialIndex::Phong,
+	Environment = (int)MaterialIndex::Environment,
 	Count
 };
 
@@ -148,12 +150,6 @@ struct Material
 	ShadingModel shadingModel;
 	bool isTransparent = false;
 	const GraphicsPipeline* pipeline = nullptr;
-};
-
-struct CombinedImageSampler
-{
-	Texture* texture = nullptr;
-	vk::Sampler sampler = nullptr;
 };
 
 struct MaterialInstance
@@ -237,17 +233,20 @@ enum class CameraMode { OrbitCamera, FreeCamera };
 class App : public RenderLoop
 {
 public:
-	App(vk::SurfaceKHR surface, vk::Extent2D extent, Window& window)
+	App(vk::SurfaceKHR surface, vk::Extent2D extent, Window& window, std::string basePath, std::string sceneFile)
 		: RenderLoop(surface, extent, window)
+		, m_basePath(std::move(basePath))
+		, m_sceneFilename(std::move(sceneFile))
 		, m_renderPass(std::make_unique<RenderPass>(m_swapchain->GetImageDescription().format))
 		, m_framebuffers(Framebuffer::FromSwapchain(*m_swapchain, m_renderPass->Get()))
-		, m_vertexShader(std::make_unique<Shader>("mvp_vert.spv", "main"))
+		, m_vertexShader(std::make_unique<Shader>("primitive_vert.spv", "main"))
 		, m_camera(1.0f * glm::vec3(1.0f, 1.0f, 1.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f), 45.0f, 0.01f, 1000.0f)
+		, m_textureManager(std::make_unique<TextureManager>(m_basePath, &m_commandBufferPool))
 	{
-		// todo: support multiple fragment shaders for each material type
 		m_fragmentShaders.resize((size_t)FragmentShaders::Count);
 		m_fragmentShaders[(size_t)FragmentShaders::TexturedUnlit] = std::make_unique<Shader>("surface_unlit_frag.spv", "main");
 		m_fragmentShaders[(size_t)FragmentShaders::Phong] = std::make_unique<Shader>("surface_frag.spv", "main");
+		m_fragmentShaders[(size_t)FragmentShaders::Environment] = std::make_unique<Shader>("environment_frag.spv", "main");
 
 		window.SetMouseButtonCallback(reinterpret_cast<void*>(this), OnMouseButton);
 		window.SetMouseScrollCallback(reinterpret_cast<void*>(this), OnMouseScroll);
@@ -362,7 +361,8 @@ protected:
 			if (state.materialType != ShadingModel::Unlit)
 			{
 				state.materialType = ShadingModel::Unlit;
-				const auto& layouts = m_layouts[(size_t)ShadingModel::Unlit];
+				const auto& layouts = m_layouts[(size_t)state.materialType];
+				state.modelPipelineLayout = layouts.m_modelPipelineLayout.get();
 				auto& viewDescriptorSet = layouts.m_viewDescriptorSets[frameIndex % m_commandBufferPool.GetNbConcurrentSubmits()].get();
 				commandBuffer.get().bindDescriptorSets(
 					vk::PipelineBindPoint::eGraphics, layouts.m_viewPipelineLayout.get(),
@@ -549,6 +549,20 @@ protected:
 				m_materials[materialIndex]->shadingModel = ShadingModel::Lit;
 				m_materials[materialIndex]->pipeline = m_graphicsPipelines[materialIndex].get();
 			}
+
+			// Enviromnent mapping (reflection + refraction)
+			{
+				Shader* fragmentShader = m_fragmentShaders[(size_t)FragmentShaders::Environment].get();
+				size_t materialIndex = (size_t)MaterialIndex::Environment;
+				m_graphicsPipelines[materialIndex] = std::make_unique<GraphicsPipeline>(
+					m_renderPass->Get(),
+					m_swapchain->GetImageDescription().extent,
+					*m_vertexShader, *fragmentShader
+				);
+				m_materials[materialIndex]->isTransparent = true;
+				m_materials[materialIndex]->shadingModel = ShadingModel::Unlit;
+				m_materials[materialIndex]->pipeline = m_graphicsPipelines[materialIndex].get();
+			}
 		}
 	}
 
@@ -590,7 +604,6 @@ protected:
 		glm::aligned_vec4 specular;
 		glm::aligned_float32 innerCutoff; // (cos of the inner angle)
 		glm::aligned_float32 outerCutoff; // (cos of the outer angle)
-		glm::aligned_vec3 attenuation; // const, linear, quadratic
 	};
 	std::vector<Light> m_lights;
 
@@ -672,8 +685,6 @@ protected:
 				light.innerCutoff = std::cos(aLight->mAngleInnerCone);
 				light.outerCutoff = std::cos(aLight->mAngleInnerCone * 1.20f);
 			}
-
-			light.attenuation = glm::vec3(1.0f, 0.0f, 0.0001f); // todo: use gltf2 range
 
 			m_lights.push_back(std::move(light));
 		}
@@ -856,61 +867,93 @@ protected:
 			float opacity = 1.0f;
 			assimpMaterial->Get(AI_MATKEY_OPACITY, opacity);
 
+			// set to true to test reflection and refraction, since there's not really
+			// a property we can fetch through assimp to determine that
+			constexpr bool kUseEnvironmentMapping = false;
+
 			// If a material is transparent, opacity will be fetched
 			// from the diffuse alpha channel (material property * diffuse texture)
-			auto materialIndex = (opacity != 1.0f) ? MaterialIndex::PhongTransparent: MaterialIndex::Phong;
+			auto materialIndex = MaterialIndex::Phong;
+
+			if (kUseEnvironmentMapping)
+				materialIndex = MaterialIndex::Environment;
+			else if (opacity != 1.0f)
+				materialIndex = MaterialIndex::PhongTransparent;
+
 			material->material = m_materials[(size_t)materialIndex].get();
 
-			// Create default textures
-			const auto& bindings = material->material->pipeline->GetDescriptorSetLayoutBindings((size_t)DescriptorSetIndices::Material);
-			for (const auto& binding : bindings)
+			if (materialIndex == MaterialIndex::Phong || materialIndex == MaterialIndex::PhongTransparent)
 			{
-				if (binding.descriptorType == vk::DescriptorType::eCombinedImageSampler)
+				// Create default textures
+				const auto& bindings = material->material->pipeline->GetDescriptorSetLayoutBindings((size_t)DescriptorSetIndices::Material);
+				for (const auto& binding : bindings)
 				{
-					for (int i = 0; i < binding.descriptorCount; ++i)
+					if (binding.descriptorType == vk::DescriptorType::eCombinedImageSampler)
 					{
-						CombinedImageSampler texture = LoadMaterialTexture(commandBuffer, "dummy_texture.png");
-						material->textures.push_back(std::move(texture));
+						for (int i = 0; i < binding.descriptorCount; ++i)
+						{
+							CombinedImageSampler texture = m_textureManager->LoadTexture(commandBuffer, "dummy_texture.png");
+							material->textures.push_back(std::move(texture));
+						}
 					}
 				}
+
+				aiString name;
+				assimpMaterial->Get(AI_MATKEY_NAME, name);
+				material->name = std::string(name.C_Str());
+
+				// Upload properties to uniform buffer
+				material->uniformBuffer = std::make_unique<UniqueBufferWithStaging>(sizeof(LitMaterialProperties), vk::BufferUsageFlagBits::eUniformBuffer);
+				memcpy(material->uniformBuffer->GetStagingMappedData(), reinterpret_cast<const void*>(&properties), sizeof(LitMaterialProperties));
+				material->uniformBuffer->CopyStagingToGPU(commandBuffer);
+				m_commandBufferPool.DestroyAfterSubmit(material->uniformBuffer->ReleaseStagingBuffer());
+
+				// Textures
+
+				auto loadTexture = [this, &assimpMaterial, &material, &commandBuffer](aiTextureType type, uint32_t binding) { // todo: move this to a function
+					int textureCount = assimpMaterial->GetTextureCount(type);
+					if (textureCount > 0 && binding < material->textures.size())
+					{
+						aiString textureFile;
+						assimpMaterial->GetTexture(type, 0, &textureFile);
+						auto texture = m_textureManager->LoadTexture(commandBuffer, textureFile.C_Str());
+						material->textures[binding] = std::move(texture); // replace dummy with real texture
+					}
+				};
+
+				// todo: use sRGB format for color textures if necessary
+				// it looks like gamma correction is OK for now but it might
+				// not be the case for all textures
+				loadTexture(aiTextureType_DIFFUSE, 0);
+				loadTexture(aiTextureType_SPECULAR, 1);
 			}
+			else if (materialIndex == MaterialIndex::Environment)
+			{
+				material->name = std::string("Environment");
 
-			aiString name;
-			assimpMaterial->Get(AI_MATKEY_NAME, name);
-			material->name = std::string(name.C_Str());
-			
-			// Upload properties to uniform buffer
-			material->uniformBuffer = std::make_unique<UniqueBufferWithStaging>(sizeof(LitMaterialProperties), vk::BufferUsageFlagBits::eUniformBuffer);
-			memcpy(material->uniformBuffer->GetStagingMappedData(), reinterpret_cast<const void*>(&properties), sizeof(LitMaterialProperties));
-			material->uniformBuffer->CopyStagingToGPU(commandBuffer);
-			m_commandBufferPool.DestroyAfterSubmit(material->uniformBuffer->ReleaseStagingBuffer());
+				// Uniforms
+				EnvironmentMaterialProperties properties;
+				properties.ior = 1.52; // glass
+				properties.reflectRatio = 1.0; // pure refraction
 
-			// Textures
+				material->uniformBuffer = std::make_unique<UniqueBufferWithStaging>(sizeof(EnvironmentMaterialProperties), vk::BufferUsageFlagBits::eUniformBuffer);
+				memcpy(material->uniformBuffer->GetStagingMappedData(), reinterpret_cast<const void*>(&properties), sizeof(EnvironmentMaterialProperties));
+				material->uniformBuffer->CopyStagingToGPU(commandBuffer);
+				m_commandBufferPool.DestroyAfterSubmit(material->uniformBuffer->ReleaseStagingBuffer());
 
-			auto loadTexture = [this, &assimpMaterial, &material, &commandBuffer](aiTextureType type, uint32_t binding) { // todo: move this to a function
-				int textureCount = assimpMaterial->GetTextureCount(type);
-				if (textureCount > 0 && binding < material->textures.size())
-				{
-					aiString textureFile;
-					assimpMaterial->GetTexture(type, 0, &textureFile);
-					auto texture = LoadMaterialTexture(commandBuffer, textureFile.C_Str());
-					material->textures[binding] = std::move(texture); // replace dummy with real texture
-				}
-			};
-
-			// todo: use sRGB format for color textures if necessary
-			// it looks like gamma correction is OK for now but it might
-			// not be the case for all textures
-			loadTexture(aiTextureType_DIFFUSE, 0);
-			loadTexture(aiTextureType_SPECULAR, 1);
+				// Environment map
+				std::vector<std::string> filenames = {
+					"skybox/right.jpg",
+					"skybox/left.jpg",
+					"skybox/top.jpg",
+					"skybox/bottom.jpg",
+					"skybox/front.jpg",
+					"skybox/back.jpg"
+				};
+				auto texture = m_textureManager->LoadCubeMapFaces(commandBuffer, filenames);
+				material->textures.push_back(std::move(texture));
+			}
 		}
-	}
-
-	CombinedImageSampler LoadMaterialTexture(vk::CommandBuffer& commandBuffer, const std::string filename)
-	{
-		Texture* texture = CreateAndUploadTextureImage(commandBuffer, filename);
-		vk::Sampler sampler = CreateSampler(texture->GetMipLevels());
-		return CombinedImageSampler{ texture, sampler };
 	}
 
 	void CreateViewUniformBuffers()
@@ -1162,77 +1205,6 @@ protected:
 		}
 	}
 
-	Texture* CreateAndUploadTextureImage(vk::CommandBuffer& commandBuffer, const std::string& filename)
-	{
-		// Check if we already loaded this texture
-		auto& cachedTexture = m_textures.find(filename);
-		if (cachedTexture != m_textures.end())
-			return cachedTexture->second.get();
-
-		// Read image from file
-		int texWidth = 0, texHeight = 0, texChannels = 0;
-		stbi_uc* pixels = stbi_load((m_basePath + "/" + filename).c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
-		if (pixels == nullptr || texWidth == 0 || texHeight == 0 || texChannels == 0) {
-			throw std::runtime_error("failed to load texture image!");
-		}
-
-		uint32_t mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(texWidth, texHeight)))) + 1;
-
-		// Texture image
-		auto [pair, res] = m_textures.emplace(filename, std::make_unique<Texture>(
-			texWidth, texHeight, 4UL, // R8G8B8A8, depth = 4
-			vk::Format::eR8G8B8A8Unorm, // figure out gamma correction if we need to do sRGB or something
-			vk::ImageTiling::eOptimal,
-			vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst | // src and dst for mipmaps blit
-				vk::ImageUsageFlagBits::eSampled,
-			vk::ImageAspectFlagBits::eColor,
-			vk::ImageViewType::e2D,
-			mipLevels
-		));
-		auto& texture = pair->second;
-
-		memcpy(texture->GetStagingMappedData(), reinterpret_cast<const void*>(pixels), (size_t)texWidth * texHeight * 4);
-		texture->UploadStagingToGPU(commandBuffer, vk::ImageLayout::eShaderReadOnlyOptimal);
-
-		// We won't need the staging buffer after the initial upload
-		auto* stagingBuffer = texture->ReleaseStagingBuffer();
-		m_commandBufferPool.DestroyAfterSubmit(stagingBuffer);
-
-		stbi_image_free(pixels);
-
-		return texture.get();
-	}
-
-	vk::Sampler CreateSampler(uint32_t nbMipLevels)
-	{
-		// Check if we already have a sampler
-		auto samplerIt = m_samplers.find(nbMipLevels);
-		if (samplerIt != m_samplers.end())
-			return samplerIt->second.get();
-
-		auto [pair, wasInserted] = m_samplers.emplace(nbMipLevels,
-			g_device->Get().createSamplerUnique(vk::SamplerCreateInfo(
-				{}, // flags
-				vk::Filter::eLinear, // magFilter
-				vk::Filter::eLinear, // minFilter
-				vk::SamplerMipmapMode::eLinear,
-				vk::SamplerAddressMode::eRepeat, // addressModeU
-				vk::SamplerAddressMode::eRepeat, // addressModeV
-				vk::SamplerAddressMode::eRepeat, // addressModeW
-				{}, // mipLodBias
-				true, // anisotropyEnable
-				16, // maxAnisotropy
-				false, // compareEnable
-				vk::CompareOp::eAlways, // compareOp
-				0.0f, // minLod
-				static_cast<float>(nbMipLevels), // maxLod
-				vk::BorderColor::eIntOpaqueBlack, // borderColor
-				false // unnormalizedCoordinates
-			)
-		));
-		return pair->second.get();
-	}
-
 	void UploadGeometry(vk::CommandBuffer& commandBuffer)
 	{
 		{
@@ -1286,7 +1258,7 @@ protected:
 	{
 		m_skybox.reset();
 		m_skybox = std::make_unique<Skybox>(*m_renderPass, m_swapchain->GetImageDescription().extent);
-		m_skybox->UploadToGPU(m_commandBufferPool, commandBuffer);
+		m_skybox->UploadToGPU(m_textureManager.get(), commandBuffer);
 	}
 
 	void Update() override 
@@ -1479,8 +1451,6 @@ private:
 
 	// --- Material --- //
 
-	std::map<std::string, std::unique_ptr<Texture>> m_textures;
-	std::map<uint32_t, vk::UniqueSampler> m_samplers; // per mip level
 	std::vector<std::unique_ptr<Material>> m_materials;
 	std::vector<std::unique_ptr<MaterialInstance>> m_materialInstances;
 
@@ -1491,6 +1461,9 @@ private:
 	// Less pipeline bindings, then descriptor set bindings.
 	std::vector<MeshDrawInfo> m_opaqueDrawCache;
 	std::vector<MeshDrawInfo> m_transparentDrawCache;
+
+	// Texture cache and image loading utility
+	std::unique_ptr<TextureManager> m_textureManager;
 };
 
 int main(int argc, char* argv[])
@@ -1514,9 +1487,7 @@ int main(int argc, char* argv[])
 	PhysicalDevice::Init(instance.Get(), surface.get());
 	Device::Init(*g_physicalDevice);
 	{
-		App app(surface.get(), extent, window);
-		app.m_basePath = std::move(basePath);
-		app.m_sceneFilename = std::move(sceneFile);
+		App app(surface.get(), extent, window, std::move(basePath), std::move(sceneFile));
 		app.Init();
 		app.Run();
 	}

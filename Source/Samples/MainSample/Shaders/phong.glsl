@@ -11,12 +11,6 @@ const uint LIGHT_TYPE_DIRECTIONAL = 1;
 const uint LIGHT_TYPE_POINT = 2;
 const uint LIGHT_TYPE_SPOT = 3;
 
-struct Attenuation {
-    float constant;
-    float linear;
-    float quadratic;
-};
-
 struct Light {
     int type;
     vec3 pos; // point
@@ -26,7 +20,6 @@ struct Light {
     vec4 specular;
     float innerCutoff; // spot (cos of the inner angle)
     float outerCutoff; // spot (cos of the outer angle)
-    Attenuation attenuation;
 };
 
 vec4 PhongLighting(

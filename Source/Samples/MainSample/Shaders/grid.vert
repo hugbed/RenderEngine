@@ -2,12 +2,8 @@
 #version 450
 #extension GL_ARB_separate_shader_objects : enable
 
-// Set 0: always bound 
-layout(set = 0, binding = 0) uniform ViewUniforms {
-    mat4 view;
-    mat4 proj;
-    vec3 pos;
-} view;
+//--- Set 0 (Scene Uniforms) --- //
+#include "view_set.glsl"
 
 layout(location = 0) out vec3 fragPos;
 layout(location = 1) out vec3 nearPoint;
