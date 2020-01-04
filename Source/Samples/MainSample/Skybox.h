@@ -25,6 +25,8 @@ public:
 
 	void Draw(vk::CommandBuffer& commandBuffer, uint32_t frameIndex);
 
+	CombinedImageSampler GetCubeMap() const { return cubeMap; }
+
 private:
 	void CreateDescriptors();
 	void UpdateDescriptors();

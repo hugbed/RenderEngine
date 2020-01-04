@@ -96,7 +96,7 @@ struct LitShadingConstants
 	uint32_t nbPointLights = 1;
 };
 
-struct LitMaterialProperties
+struct PhongMaterialProperties
 {
 	glm::aligned_vec4 diffuse;
 	glm::aligned_vec4 specular;
@@ -105,8 +105,15 @@ struct LitMaterialProperties
 
 struct EnvironmentMaterialProperties
 {
-	glm::aligned_float32 ior; // index of refraction
-	glm::aligned_float32 reflectRatio; // ratio of reflection vs refraction [0..1]
+	glm::aligned_float32 ior;
+	glm::aligned_float32 metallic; // reflection {0, 1}
+	glm::aligned_float32 transmission; // refraction [0..1]
+};
+
+struct LitMaterialProperties
+{
+	PhongMaterialProperties phong;
+	EnvironmentMaterialProperties env;
 };
 
 // Each shading model can have different view descriptors
@@ -122,7 +129,6 @@ enum class MaterialIndex
 	TexturedUnlit = 0,
 	Phong = 1,
 	PhongTransparent = 2,
-	Environment = 3, // reflection/refraction using environment map
 	Count
 };
 
@@ -131,7 +137,6 @@ enum class FragmentShaders
 	TexturedUnlit = (int)MaterialIndex::TexturedUnlit,
 	Phong = (int)MaterialIndex::Phong,
 	PhongTransparent = (int)MaterialIndex::Phong,
-	Environment = (int)MaterialIndex::Environment,
 	Count
 };
 
@@ -169,6 +174,7 @@ struct MaterialInstance
 
 	// Per-material descriptors
 	std::vector<CombinedImageSampler> textures;
+	std::vector<CombinedImageSampler> cubeMaps;
 	std::unique_ptr<UniqueBufferWithStaging> uniformBuffer;
 	vk::UniqueDescriptorSet descriptorSet; 
 };
@@ -246,7 +252,6 @@ public:
 		m_fragmentShaders.resize((size_t)FragmentShaders::Count);
 		m_fragmentShaders[(size_t)FragmentShaders::TexturedUnlit] = std::make_unique<Shader>("surface_unlit_frag.spv", "main");
 		m_fragmentShaders[(size_t)FragmentShaders::Phong] = std::make_unique<Shader>("surface_frag.spv", "main");
-		m_fragmentShaders[(size_t)FragmentShaders::Environment] = std::make_unique<Shader>("environment_frag.spv", "main");
 
 		window.SetMouseButtonCallback(reinterpret_cast<void*>(this), OnMouseButton);
 		window.SetMouseScrollCallback(reinterpret_cast<void*>(this), OnMouseScroll);
@@ -273,16 +278,14 @@ protected:
 
 	void Init(vk::CommandBuffer& commandBuffer) override
 	{
+		CreateSkybox(commandBuffer);
+		m_grid = std::make_unique<Grid>(*m_renderPass, m_swapchain->GetImageDescription().extent);
 		LoadScene(commandBuffer, m_basePath + "/" + m_sceneFilename);
 		UploadGeometry(commandBuffer);
 
 		CreateViewUniformBuffers();
 		CreateLightsUniformBuffers(commandBuffer);
 		CreateDescriptorSets();
-		CreateSkybox(commandBuffer);
-
-		m_grid = std::make_unique<Grid>(*m_renderPass, m_swapchain->GetImageDescription().extent);
-
 		CreateSecondaryCommandBuffers();
 		RecordRenderPassCommands();
 	}
@@ -304,12 +307,12 @@ protected:
 		auto commandBuffer = m_commandBufferPool.ResetAndGetCommandBuffer();
 		commandBuffer.begin({ vk::CommandBufferUsageFlagBits::eOneTimeSubmit });
 		{
+			m_skybox->Reset(*m_renderPass, m_swapchain->GetImageDescription().extent);
+			m_grid->Reset(*m_renderPass, m_swapchain->GetImageDescription().extent);
 			CreateBaseMaterials();
 			CreateViewUniformBuffers();
 			CreateDescriptorLayouts();
 			UpdateMaterialDescriptors();
-			m_skybox->Reset(*m_renderPass, m_swapchain->GetImageDescription().extent);
-			m_grid->Reset(*m_renderPass, m_swapchain->GetImageDescription().extent);
 		}
 		commandBuffer.end();
 
@@ -547,20 +550,6 @@ protected:
 				);
 				m_materials[materialIndex]->isTransparent = true;
 				m_materials[materialIndex]->shadingModel = ShadingModel::Lit;
-				m_materials[materialIndex]->pipeline = m_graphicsPipelines[materialIndex].get();
-			}
-
-			// Enviromnent mapping (reflection + refraction)
-			{
-				Shader* fragmentShader = m_fragmentShaders[(size_t)FragmentShaders::Environment].get();
-				size_t materialIndex = (size_t)MaterialIndex::Environment;
-				m_graphicsPipelines[materialIndex] = std::make_unique<GraphicsPipeline>(
-					m_renderPass->Get(),
-					m_swapchain->GetImageDescription().extent,
-					*m_vertexShader, *fragmentShader
-				);
-				m_materials[materialIndex]->isTransparent = true;
-				m_materials[materialIndex]->shadingModel = ShadingModel::Unlit;
 				m_materials[materialIndex]->pipeline = m_graphicsPipelines[materialIndex].get();
 			}
 		}
@@ -852,107 +841,75 @@ protected:
 
 			auto& assimpMaterial = m_assimp.scene->mMaterials[i];
 
+			aiString name;
+			assimpMaterial->Get(AI_MATKEY_NAME, name);
+			material->name = std::string(name.C_Str());
+
 			// Properties
 			LitMaterialProperties properties;
 
 			aiColor4D color;
 			assimpMaterial->Get(AI_MATKEY_COLOR_DIFFUSE, color);
-			properties.diffuse = glm::make_vec4(&color.r);
+			properties.phong.diffuse = glm::make_vec4(&color.r);
 
 			assimpMaterial->Get(AI_MATKEY_COLOR_SPECULAR, color);
-			properties.specular = glm::make_vec4(&color.r);
+			properties.phong.specular = glm::make_vec4(&color.r);
 
-			assimpMaterial->Get(AI_MATKEY_SHININESS, properties.shininess);
-
-			float opacity = 1.0f;
-			assimpMaterial->Get(AI_MATKEY_OPACITY, opacity);
-
-			// set to true to test reflection and refraction, since there's not really
-			// a property we can fetch through assimp to determine that
-			constexpr bool kUseEnvironmentMapping = false;
+			assimpMaterial->Get(AI_MATKEY_SHININESS, properties.phong.shininess);
 
 			// If a material is transparent, opacity will be fetched
 			// from the diffuse alpha channel (material property * diffuse texture)
-			auto materialIndex = MaterialIndex::Phong;
+			float opacity = 1.0f;
+			assimpMaterial->Get(AI_MATKEY_OPACITY, opacity);
 
-			if (kUseEnvironmentMapping)
-				materialIndex = MaterialIndex::Environment;
-			else if (opacity != 1.0f)
-				materialIndex = MaterialIndex::PhongTransparent;
-
+			auto materialIndex = opacity == 1.0f ? MaterialIndex::Phong : MaterialIndex::PhongTransparent;
 			material->material = m_materials[(size_t)materialIndex].get();
 
-			if (materialIndex == MaterialIndex::Phong || materialIndex == MaterialIndex::PhongTransparent)
+			// Create default textures
+			const auto& bindings = material->material->pipeline->GetDescriptorSetLayoutBindings((size_t)DescriptorSetIndices::Material);
+			for (const auto& binding : bindings)
 			{
-				// Create default textures
-				const auto& bindings = material->material->pipeline->GetDescriptorSetLayoutBindings((size_t)DescriptorSetIndices::Material);
-				for (const auto& binding : bindings)
+				if (binding.descriptorType == vk::DescriptorType::eCombinedImageSampler)
 				{
-					if (binding.descriptorType == vk::DescriptorType::eCombinedImageSampler)
+					for (int i = 0; i < binding.descriptorCount; ++i)
 					{
-						for (int i = 0; i < binding.descriptorCount; ++i)
-						{
-							CombinedImageSampler texture = m_textureManager->LoadTexture(commandBuffer, "dummy_texture.png");
-							material->textures.push_back(std::move(texture));
-						}
+						CombinedImageSampler texture = m_textureManager->LoadTexture(commandBuffer, "dummy_texture.png");
+						material->textures.push_back(std::move(texture));
 					}
 				}
-
-				aiString name;
-				assimpMaterial->Get(AI_MATKEY_NAME, name);
-				material->name = std::string(name.C_Str());
-
-				// Upload properties to uniform buffer
-				material->uniformBuffer = std::make_unique<UniqueBufferWithStaging>(sizeof(LitMaterialProperties), vk::BufferUsageFlagBits::eUniformBuffer);
-				memcpy(material->uniformBuffer->GetStagingMappedData(), reinterpret_cast<const void*>(&properties), sizeof(LitMaterialProperties));
-				material->uniformBuffer->CopyStagingToGPU(commandBuffer);
-				m_commandBufferPool.DestroyAfterSubmit(material->uniformBuffer->ReleaseStagingBuffer());
-
-				// Textures
-
-				auto loadTexture = [this, &assimpMaterial, &material, &commandBuffer](aiTextureType type, uint32_t binding) { // todo: move this to a function
-					int textureCount = assimpMaterial->GetTextureCount(type);
-					if (textureCount > 0 && binding < material->textures.size())
-					{
-						aiString textureFile;
-						assimpMaterial->GetTexture(type, 0, &textureFile);
-						auto texture = m_textureManager->LoadTexture(commandBuffer, textureFile.C_Str());
-						material->textures[binding] = std::move(texture); // replace dummy with real texture
-					}
-				};
-
-				// todo: use sRGB format for color textures if necessary
-				// it looks like gamma correction is OK for now but it might
-				// not be the case for all textures
-				loadTexture(aiTextureType_DIFFUSE, 0);
-				loadTexture(aiTextureType_SPECULAR, 1);
 			}
-			else if (materialIndex == MaterialIndex::Environment)
-			{
-				material->name = std::string("Environment");
 
-				// Uniforms
-				EnvironmentMaterialProperties properties;
-				properties.ior = 1.52; // glass
-				properties.reflectRatio = 1.0; // pure refraction
+			// Load textures
+			auto loadTexture = [this, &assimpMaterial, &material, &commandBuffer](aiTextureType type, uint32_t binding) { // todo: move this to a function
+				int textureCount = assimpMaterial->GetTextureCount(type);
+				if (textureCount > 0 && binding < material->textures.size())
+				{
+					aiString textureFile;
+					assimpMaterial->GetTexture(type, 0, &textureFile);
+					auto texture = m_textureManager->LoadTexture(commandBuffer, textureFile.C_Str());
+					material->textures[binding] = std::move(texture); // replace dummy with real texture
+				}
+			};
+			// todo: use sRGB format for color textures if necessary
+			// it looks like gamma correction is OK for now but it might
+			// not be the case for all textures
+			loadTexture(aiTextureType_DIFFUSE, 0);
+			loadTexture(aiTextureType_SPECULAR, 1);
 
-				material->uniformBuffer = std::make_unique<UniqueBufferWithStaging>(sizeof(EnvironmentMaterialProperties), vk::BufferUsageFlagBits::eUniformBuffer);
-				memcpy(material->uniformBuffer->GetStagingMappedData(), reinterpret_cast<const void*>(&properties), sizeof(EnvironmentMaterialProperties));
-				material->uniformBuffer->CopyStagingToGPU(commandBuffer);
-				m_commandBufferPool.DestroyAfterSubmit(material->uniformBuffer->ReleaseStagingBuffer());
+			// Environment mapping
+			assimpMaterial->Get(AI_MATKEY_REFRACTI, properties.env.ior);
+			properties.env.metallic = 1.0f;
+			properties.env.transmission = 0.0f;
 
-				// Environment map
-				std::vector<std::string> filenames = {
-					"skybox/right.jpg",
-					"skybox/left.jpg",
-					"skybox/top.jpg",
-					"skybox/bottom.jpg",
-					"skybox/front.jpg",
-					"skybox/back.jpg"
-				};
-				auto texture = m_textureManager->LoadCubeMapFaces(commandBuffer, filenames);
-				material->textures.push_back(std::move(texture));
-			}
+			CombinedImageSampler skyboxCubeMap = m_skybox->GetCubeMap();
+			if (skyboxCubeMap.texture != nullptr)
+				material->cubeMaps.push_back(std::move(skyboxCubeMap));
+
+			// Upload properties to uniform buffer
+			material->uniformBuffer = std::make_unique<UniqueBufferWithStaging>(sizeof(LitMaterialProperties), vk::BufferUsageFlagBits::eUniformBuffer);
+			memcpy(material->uniformBuffer->GetStagingMappedData(), reinterpret_cast<const void*>(&properties), sizeof(LitMaterialProperties));
+			material->uniformBuffer->CopyStagingToGPU(commandBuffer);
+			m_commandBufferPool.DestroyAfterSubmit(material->uniformBuffer->ReleaseStagingBuffer());
 		}
 	}
 
@@ -1177,30 +1134,58 @@ protected:
 			));
 			materialInstance->descriptorSet = std::move(descriptorSets[0]);
 
+			uint32_t binding = 0;
+			std::vector<vk::WriteDescriptorSet> writeDescriptorSets;
+
 			// Material properties in uniform buffer
 			vk::DescriptorBufferInfo descriptorBufferInfo(materialInstance->uniformBuffer->Get(), 0, materialInstance->uniformBuffer->Size());
-
-			// Use the material's samplers and textures
-			std::vector<vk::DescriptorImageInfo> imageInfos;
-			for (const auto& materialTexture : materialInstance->textures)
-			{
-				imageInfos.emplace_back(
-					materialTexture.sampler,
-					materialTexture.texture->GetImageView(),
-					vk::ImageLayout::eShaderReadOnlyOptimal
-				);
-			}
-			uint32_t binding = 0;
-			std::array<vk::WriteDescriptorSet, 2> writeDescriptorSets = {
+			writeDescriptorSets.push_back(
 				vk::WriteDescriptorSet(
 					materialInstance->descriptorSet.get(), binding++, {},
 					1, vk::DescriptorType::eUniformBuffer, nullptr, &descriptorBufferInfo
-				), // binding = 0
-				vk::WriteDescriptorSet(
-					materialInstance->descriptorSet.get(), binding++, {},
-					static_cast<uint32_t>(imageInfos.size()), vk::DescriptorType::eCombinedImageSampler, imageInfos.data(), nullptr
-				) // binding = 1
-			};
+				) // binding = 0
+			);
+
+			// Material's textures
+			std::vector<vk::DescriptorImageInfo> imageInfos;
+			if (materialInstance->textures.empty() == false)
+			{
+				for (const auto& materialTexture : materialInstance->textures)
+				{
+					imageInfos.emplace_back(
+						materialTexture.sampler,
+						materialTexture.texture->GetImageView(),
+						vk::ImageLayout::eShaderReadOnlyOptimal
+					);
+				}
+				writeDescriptorSets.push_back(
+					vk::WriteDescriptorSet(
+						materialInstance->descriptorSet.get(), binding++, {},
+						static_cast<uint32_t>(imageInfos.size()), vk::DescriptorType::eCombinedImageSampler, imageInfos.data(), nullptr
+					) // binding = 1
+				);
+			}
+
+			// Material's cubemaps on a separate binding
+			std::vector<vk::DescriptorImageInfo> cubemapsInfo;
+			if (materialInstance->cubeMaps.empty() == false)
+			{
+				for (const auto& materialTexture : materialInstance->cubeMaps)
+				{
+					cubemapsInfo.emplace_back(
+						materialTexture.sampler,
+						materialTexture.texture->GetImageView(),
+						vk::ImageLayout::eShaderReadOnlyOptimal
+					);
+				}
+				writeDescriptorSets.push_back(
+					vk::WriteDescriptorSet(
+						materialInstance->descriptorSet.get(), binding++, {},
+						static_cast<uint32_t>(cubemapsInfo.size()), vk::DescriptorType::eCombinedImageSampler, cubemapsInfo.data(), nullptr
+					) // binding = 2
+				);
+			}
+
 			g_device->Get().updateDescriptorSets(static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
 		}
 	}

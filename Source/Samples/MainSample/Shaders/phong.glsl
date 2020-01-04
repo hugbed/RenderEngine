@@ -5,6 +5,10 @@ struct PhongMaterial {
     float shininess;
 };
 
+const uint PHONG_TEX_DIFFUSE = 0;
+const uint PHONG_TEX_SPECULAR = 1;
+const uint PHONG_TEX_COUNT = 2;
+
 // Lights
 
 const uint LIGHT_TYPE_DIRECTIONAL = 1;
