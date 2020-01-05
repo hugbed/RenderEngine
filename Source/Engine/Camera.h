@@ -26,11 +26,16 @@ public:
 	// Create orthonormal camera system
 	void UpdateViewMatrix()
 	{
-		// create new direction vector
-		glm::vec3 directionVector = glm::normalize(m_lookAt - m_eye);
+		// Get direction vector
+		glm::vec3 directionVector = glm::normalize(m_eye - m_lookAt);
 
 		// new right vector (orthogonal to direction, up)
-		glm::vec3 rightVector = glm::normalize(glm::cross(directionVector, m_upVector));
+		glm::vec3 rightVector = glm::normalize(glm::cross(m_upVector, directionVector));
+
+		glm::vec3 upVector = cross(directionVector, rightVector);
+
+		// make sure matrix is orthonormal
+		m_upVector = upVector;
 
 		// generate view matrix
 		m_viewMatrix = glm::lookAt(m_eye, m_lookAt, m_upVector);
@@ -72,9 +77,10 @@ public:
 		UpdateViewMatrix();
 	}
 
-	void LookAt(glm::vec3 lookat)
+	void LookAt(glm::vec3 lookat, glm::vec3 up)
 	{
 		m_lookAt = std::move(lookat);
+		m_upVector = std::move(up);
 		UpdateViewMatrix();
 	}
 

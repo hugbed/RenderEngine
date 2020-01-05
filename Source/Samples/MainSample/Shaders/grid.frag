@@ -51,7 +51,16 @@ vec4 grid(vec3 R, float scale, bool drawAxis) {
 
 float computeDepth(vec3 pos) {
 	vec4 clip_space_pos = fragProj * fragView * vec4(pos.xyz, 1.0);
-	float clip_space_depth = clip_space_pos.z / clip_space_pos.w;
+	float clip_space_depth = (clip_space_pos.z / clip_space_pos.w);
+	return clip_space_depth;
+}
+
+float computeLinearDepth(vec3 pos) {
+    float near = 0.01;
+    float far = 30000;
+	vec4 clip_space_pos = fragProj * fragView * vec4(pos.xyz, 1.0);
+	float clip_space_depth = (clip_space_pos.z / clip_space_pos.w) * 2.0 - 1.0;
+    float linearDepth = (2.0 * near * far) / (far + near - clip_space_depth * (far - near));
 	return clip_space_depth;
 }
 
@@ -59,13 +68,15 @@ void main() {
     float t = -nearPoint.y / (farPoint.y - nearPoint.y);
 	vec3 R = nearPoint + t * (farPoint - nearPoint);
 
-    vec4 c = grid(R, 10, true) + grid(R, 1, true);
+    vec4 c = grid(R, 10, true) + grid(R, 1, true) * float(t > 0) ;
 
-    c = c * float(t > 0);
-	float spotlight = min(1.0, 5.0 - length(R.xyz));
+	float spotLight = min(1.0, 5.0 - length(R.xyz));
 
     float depth = computeDepth(R);
+    float linearDepth = computeLinearDepth(R);
+    spotLight = (1.0 - linearDepth) * 10.0;
 
     gl_FragDepth = depth;
-	outColor = c * spotlight; 
+    outColor = c;
+    outColor.a = outColor.a * spotLight;
 }

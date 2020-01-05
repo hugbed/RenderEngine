@@ -1306,18 +1306,19 @@ protected:
 	static void OnCursorPosition(void* data, double xPos, double yPos)
 	{
 		App* app = reinterpret_cast<App*>(data);
-		int width = 0;
-		int height = 0;
-		app->m_window.GetSize(&width, &height);
+		int viewportWidth = 0;
+		int viewportHeight = 0;
+		app->m_window.GetSize(&viewportWidth, &viewportHeight);
 
 		if ((app->m_isMouseDown) && app->m_cameraMode == CameraMode::OrbitCamera) 
 		{
 			glm::vec4 position(app->m_camera.GetEye().x, app->m_camera.GetEye().y, app->m_camera.GetEye().z, 1);
 			glm::vec4 target(app->m_camera.GetLookAt().x, app->m_camera.GetLookAt().y, app->m_camera.GetLookAt().z, 1);
 
-			float deltaAngle = (M_PI / 300.0f);
-			float xDeltaAngle = (app->m_lastMousePos.x - xPos) * deltaAngle;
-			float yDeltaAngle = (app->m_lastMousePos.y - yPos) * deltaAngle;
+			float deltaAngleX = (2 * M_PI / viewportWidth);
+			float deltaAngleY = (M_PI / viewportHeight);
+			float xDeltaAngle = (app->m_lastMousePos.x - xPos) * deltaAngleX;
+			float yDeltaAngle = (app->m_lastMousePos.y - yPos) * deltaAngleY;
 
 			float cosAngle = dot(app->m_camera.GetForwardVector(), app->m_upVector);
 			if (cosAngle * sgn(yDeltaAngle) > 0.99f)
@@ -1342,27 +1343,29 @@ protected:
 				app->m_frameDirty = kAllFrameDirty;
 			}
 		}
-		else if (app->m_isMouseDown && app->m_cameraMode == CameraMode::FreeCamera) 
+		else if (app->m_isMouseDown && app->m_cameraMode == CameraMode::FreeCamera)
 		{
-			float speed = 0.0000001;
+			float xDelta = app->m_lastMousePos.x - xPos;
+			float yDelta = app->m_lastMousePos.y - yPos;
 
-			auto dt_s = app->GetDeltaTime();
-			float dx = speed * dt_s.count();
+			float m_fovV = app->m_camera.GetFieldOfView() / viewportWidth * viewportHeight;
 
-			float diffX = app->m_lastMousePos.x - xPos;
-			float diffY = app->m_lastMousePos.y - yPos;
+			float xDeltaAngle = glm::radians(xDelta * app->m_camera.GetFieldOfView() / viewportWidth);
+			float yDeltaAngle = glm::radians(yDelta * m_fovV / viewportHeight);
 
-			float m_fovV = app->m_camera.GetFieldOfView() / width * height;
+			//Handle case were dir = up vector
+			float cosAngle = dot(app->m_camera.GetForwardVector(), app->m_upVector);
+			if (cosAngle > 0.99f && yDeltaAngle < 0|| cosAngle < -0.99f && yDeltaAngle > 0)
+				yDeltaAngle = 0;
+			
+			glm::vec3 lookat = app->m_camera.GetLookAt() - app->m_camera.GetUpVector() * yDeltaAngle;
+			float length = glm::distance(app->m_camera.GetLookAt(), app->m_camera.GetEye());
 
-			float angleX = diffX / width * app->m_camera.GetFieldOfView();
-			float angleY = diffY / height * m_fovV;
+			glm::vec3 rightVector = app->m_camera.GetRightVector();
+			glm::vec3 newLookat = lookat + rightVector * xDeltaAngle;
 
-			auto lookat = app->m_camera.GetLookAt() - app->m_camera.GetUpVector() * dx * angleY;
-
-			glm::vec3 forward = glm::normalize(lookat - app->m_camera.GetEye());
-			glm::vec3 rightVector = glm::normalize(glm::cross(forward, app->m_camera.GetUpVector()));
-
-			app->m_camera.LookAt(lookat + rightVector * dx * angleX);
+			auto lookatDist = glm::distance(newLookat, app->m_camera.GetEye());
+			app->m_camera.LookAt(newLookat, app->m_upVector);
 		}
 		app->m_lastMousePos.x = xPos; 
 		app->m_lastMousePos.y = yPos;

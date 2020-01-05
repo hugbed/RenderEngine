@@ -140,7 +140,7 @@ void GraphicsPipeline::Init(
 	vk::PipelineDepthStencilStateCreateInfo depthStencilState(
 		{},
 		true, // depthTestEnable
-		info.blendEnable == false, // depthWriteEnable
+		true, // depthWriteEnable
 		vk::CompareOp::eLessOrEqual, // depthCompareOp
 		false, // depthBoundsTestEnable
 		false, // stencilTestEnable
