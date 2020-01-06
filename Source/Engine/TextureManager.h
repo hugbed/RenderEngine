@@ -1,13 +1,14 @@
 #pragma once
 
-class Texture;
-class CommandBufferPool;
+#include "Texture.h"
 
 #include <vulkan/vulkan.hpp>
 
 #include <map>
 #include <string>
 #include <memory>
+
+class CommandBufferPool;
 
 struct CombinedImageSampler
 {
@@ -17,6 +18,8 @@ struct CombinedImageSampler
 
 // todo: maybe rename to texture cache
 // todo: possibly support fetching textures from different threads
+// todo: maybe keep references to texture that haven't been uploaded to GPU
+//       and expose a function to upload them all at once instead
 class TextureManager
 {
 public:
