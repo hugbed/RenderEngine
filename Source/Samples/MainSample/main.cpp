@@ -898,7 +898,7 @@ protected:
 
 			// Environment mapping
 			assimpMaterial->Get(AI_MATKEY_REFRACTI, properties.env.ior);
-			properties.env.metallic = 1.0f;
+			properties.env.metallic = 0.0f;
 			properties.env.transmission = 0.0f;
 
 			CombinedImageSampler skyboxCubeMap = m_skybox->GetCubeMap();

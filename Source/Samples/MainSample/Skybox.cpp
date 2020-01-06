@@ -156,5 +156,5 @@ void Skybox::Draw(vk::CommandBuffer& commandBuffer, uint32_t frameIndex)
 		1, &cubeDescriptorSets[0].get(), 0, nullptr
 	);
 
-	commandBuffer.draw(vertices.size(), 1, 0, 0);
+	commandBuffer.draw(vertices.size() / 3, 1, 0, 0);
 }

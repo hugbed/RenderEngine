@@ -22,6 +22,7 @@ public:
 		fragmentShader = std::make_unique<Shader>("grid_frag.spv", "main");
 		GraphicsPipelineInfo info;
 		info.blendEnable = true;
+		info.depthWriteEnable = true;
 		pipeline = std::make_unique<GraphicsPipeline>(
 			renderPass.Get(),
 			swapchainExtent,
