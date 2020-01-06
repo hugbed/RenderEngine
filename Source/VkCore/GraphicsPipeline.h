@@ -14,6 +14,7 @@ struct ImageDescription;
 struct GraphicsPipelineInfo
 {
 	bool blendEnable = false;
+	bool depthWriteEnable = true;
 };
 
 class GraphicsPipeline
