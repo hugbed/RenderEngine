@@ -27,6 +27,8 @@ public:
 
 	CombinedImageSampler GetCubeMap() const { return cubeMap; }
 
+	vk::DescriptorSetLayout GetDescriptorSetLayout(size_t set) const { return pipeline->GetDescriptorSetLayout(set); }
+
 private:
 	void CreateDescriptors();
 	void UpdateDescriptors();

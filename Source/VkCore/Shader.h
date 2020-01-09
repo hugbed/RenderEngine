@@ -12,7 +12,7 @@ class Shader
 public:
 	// todo: support loading byte array directly
 
-	Shader(const std::string& filename , std::string entryPoint);
+	Shader(const std::string& filename, std::string entryPoint);
 
 	static vk::UniqueShaderModule CreateShaderModule(const std::vector<char>& code);
 

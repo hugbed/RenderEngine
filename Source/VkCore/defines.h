@@ -15,3 +15,7 @@ class DeferredDestructible
 public:
 	virtual ~DeferredDestructible() {}
 };
+
+#ifdef _DEBUG
+	#define DEBUG_MODE
+#endif
