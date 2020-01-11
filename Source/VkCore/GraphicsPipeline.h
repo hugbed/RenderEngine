@@ -35,8 +35,6 @@ public:
 		const GraphicsPipelineInfo& info
 	);
 
-	vk::PipelineLayout GetLayout() const { return m_pipelineLayout.get(); }
-
 	const vk::DescriptorSetLayout& GetDescriptorSetLayout(size_t set) const
 	{
 		return m_descriptorSetLayouts[set].get();
@@ -52,9 +50,20 @@ public:
 		return m_pushConstantRanges;
 	}
 
-	vk::PipelineLayout GetPipelineLayout() const
+	vk::PipelineLayout GetPipelineLayout(size_t set) const
 	{
-		return m_pipelineLayout.get();
+		if (set >= m_pipelineLayouts.size())
+			return {};
+
+		return m_pipelineLayouts[set].get();
+	}
+
+	bool IsLayoutCompatible(const GraphicsPipeline& other, size_t set) const
+	{
+		if (set >= m_pipelineCompatibility.size() || set >= other.m_pipelineCompatibility.size())
+			return false;
+
+		return m_pipelineCompatibility[set] == other.m_pipelineCompatibility[set];
 	}
 
 	const value_type& Get() const { return m_graphicsPipeline.get(); }
@@ -67,11 +76,12 @@ private:
 		const GraphicsPipelineInfo& info
 	);
 
-	vk::UniquePipelineLayout m_pipelineLayout;
 	vk::UniquePipeline m_graphicsPipeline;
 
 	// A list of DescriptorSetLayoutBinding per descriptor set
+	std::vector<uint64_t> m_pipelineCompatibility; // for each set, hash of 
 	std::vector<std::vector<vk::DescriptorSetLayoutBinding>> m_descriptorSetLayoutBindings;
+	std::vector<vk::UniquePipelineLayout> m_pipelineLayouts; // i is for sets 0..i
 	std::vector<vk::UniqueDescriptorSetLayout> m_descriptorSetLayouts;
 	std::vector<vk::PushConstantRange> m_pushConstantRanges;
 };

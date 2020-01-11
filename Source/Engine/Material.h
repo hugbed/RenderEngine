@@ -20,22 +20,12 @@ struct Material
 {
 	void BindDescriptors(vk::CommandBuffer& commandBuffer) const
 	{
+		uint32_t set = (uint32_t)DescriptorSetIndices::Material;
 		commandBuffer.bindDescriptorSets(
 			vk::PipelineBindPoint::eGraphics,
-			pipeline->GetPipelineLayout(),
-			(uint32_t)DescriptorSetIndices::Material,
+			pipeline->GetPipelineLayout(set), set,
 			1, &descriptorSet.get(), 0, nullptr
 		);
-	}
-
-	const vk::DescriptorSetLayout& GetDescriptorSetLayout() const
-	{
-		return pipeline->GetDescriptorSetLayout((size_t)DescriptorSetIndices::Material);
-	}
-
-	void BindPipeline(vk::CommandBuffer commandBuffer) const
-	{
-		commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline->Get());
 	}
 
 #ifdef DEBUG_MODE

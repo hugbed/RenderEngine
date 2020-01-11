@@ -144,19 +144,18 @@ void Skybox::UploadToGPU(vk::CommandBuffer& commandBuffer, CommandBufferPool& co
 void Skybox::Draw(vk::CommandBuffer& commandBuffer, uint32_t frameIndex)
 {
 	// Expects the unlit view descriptors to be bound
+	// Assumes owner already bound the graphics pipeline
 
 	// Bind vertex buffer
 	vk::DeviceSize offsets[] = { 0 };
 	vk::Buffer vertexBuffers[] = { vertexBuffer->Get() };
 	commandBuffer.bindVertexBuffers(0, 1, vertexBuffers, offsets);
 
-	// Bind Pipeline
-	commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline->Get());
-
 	// Bind cube sampler
+	uint32_t set = 1;
 	commandBuffer.bindDescriptorSets(
-		vk::PipelineBindPoint::eGraphics, pipeline->GetPipelineLayout(),
-		1, // set
+		vk::PipelineBindPoint::eGraphics,
+		pipeline->GetPipelineLayout(set), set,
 		1, &cubeDescriptorSets[0].get(), 0, nullptr
 	);
 

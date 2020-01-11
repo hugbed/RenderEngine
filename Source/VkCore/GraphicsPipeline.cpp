@@ -4,9 +4,36 @@
 #include "Device.h"
 #include "PhysicalDevice.h"
 #include "vk_utils.h"
+#include "hash.h"
 
 #include <array>
 #include <map>
+
+namespace
+{
+	uint64_t HashPipelineLayout(
+		const std::vector<vk::DescriptorSetLayoutBinding>& bindings,
+		const std::vector<vk::PushConstantRange>& pushConstants)
+	{
+		size_t bindingsSize = bindings.size() * sizeof(vk::DescriptorSetLayoutBinding);
+		size_t pushConstantsSize = pushConstants.size() * sizeof(vk::PushConstantRange);
+
+		std::vector<uint8_t> buffer;
+		buffer.resize(bindingsSize + pushConstantsSize, 0);
+		
+		size_t offset = 0;
+
+		memcpy((void*)(buffer.data() + offset), bindings.data(), bindingsSize);
+		offset += bindingsSize;
+
+		memcpy((void*)(buffer.data() + offset), pushConstants.data(), pushConstantsSize);
+		offset += pushConstantsSize;
+
+		ASSERT(offset == buffer.size());
+
+		return fnv_hash(buffer.data(), buffer.size());
+	}
+}
 
 GraphicsPipeline::GraphicsPipeline(
 	vk::RenderPass renderPass,
@@ -130,12 +157,19 @@ void GraphicsPipeline::Init(
 	m_pushConstantRanges.insert(m_pushConstantRanges.end(), vertexPushConstantRanges.begin(), vertexPushConstantRanges.end());
 	m_pushConstantRanges.insert(m_pushConstantRanges.end(), fragmentPushConstantRanges.begin(), fragmentPushConstantRanges.end());
 
-	std::vector<vk::DescriptorSetLayout> descriptorSetLayouts = vk_utils::remove_unique(m_descriptorSetLayouts);
-	m_pipelineLayout = g_device->Get().createPipelineLayoutUnique(vk::PipelineLayoutCreateInfo(
-		{},
-		static_cast<uint32_t>(descriptorSetLayouts.size()), descriptorSetLayouts.data(),
-		static_cast<uint32_t>(m_pushConstantRanges.size()), m_pushConstantRanges.data()
-	));
+	// Build pipeline layouts for each set
+	std::vector<vk::DescriptorSetLayout> descriptorSetLayouts;
+	for (size_t set = 0; set < m_descriptorSetLayouts.size(); ++set)
+	{
+		descriptorSetLayouts.push_back(m_descriptorSetLayouts[set].get());
+		auto pipelineLayoutInfo = vk::PipelineLayoutCreateInfo(
+			{},
+			static_cast<uint32_t>(descriptorSetLayouts.size()), descriptorSetLayouts.data(),
+			static_cast<uint32_t>(m_pushConstantRanges.size()), m_pushConstantRanges.data()
+		);
+		m_pipelineLayouts.push_back(g_device->Get().createPipelineLayoutUnique(pipelineLayoutInfo));
+		m_pipelineCompatibility.push_back(::HashPipelineLayout(m_descriptorSetLayoutBindings[set], m_pushConstantRanges));
+	}
 
 	vk::PipelineDepthStencilStateCreateInfo depthStencilState(
 		{},
@@ -161,7 +195,7 @@ void GraphicsPipeline::Init(
 		&depthStencilState,
 		&colorBlending,
 		nullptr, // dynamicState
-		m_pipelineLayout.get(),
+		m_pipelineLayouts.back().get(), // the last one contains all sets
 		renderPass
 	);
 

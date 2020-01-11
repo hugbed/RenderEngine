@@ -132,12 +132,12 @@ struct Model
 
 	glm::mat4& GetTransform() { return transform; }
 
-	void Bind(vk::CommandBuffer& commandBuffer, vk::PipelineLayout modelPipelineLayout) const
+	void Bind(vk::CommandBuffer& commandBuffer) const
 	{
+		uint32_t set = (uint32_t)DescriptorSetIndices::Model;
 		commandBuffer.bindDescriptorSets(
 			vk::PipelineBindPoint::eGraphics,
-			modelPipelineLayout,
-			(uint32_t)DescriptorSetIndices::Model,
+			meshes[0].material->pipeline->GetPipelineLayout(set), set,
 			1, &descriptorSet.get(), 0, nullptr
 		);
 	}
@@ -263,11 +263,65 @@ protected:
 		}
 	}
 
-	// To bind only when necessary
-	struct RenderState
+	class RenderState
 	{
+	public:
+		void BindPipeline(vk::CommandBuffer& commandBuffer, const GraphicsPipeline* newPipeline)
+		{
+			// Bind Graphics Pipeline
+			if (newPipeline != pipeline)
+			{
+				if (pipeline != nullptr)
+				{
+					for (int i = 0; i < isSetCompatible.size(); ++i)
+						isSetCompatible[i] = newPipeline->IsLayoutCompatible(*pipeline, i);
+				}
+				pipeline = newPipeline;
+				commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline->Get());
+			}
+		}
+
+		void BindView(vk::CommandBuffer& commandBuffer, ShadingModel newShadingModel, vk::DescriptorSet viewDescriptorSet)
+		{
+			uint32_t set = (uint32_t)DescriptorSetIndices::View;
+			if (newShadingModel != shadingModel || isSetCompatible[set] == false)
+			{
+				shadingModel = newShadingModel;
+				commandBuffer.bindDescriptorSets(
+					vk::PipelineBindPoint::eGraphics,
+					pipeline->GetPipelineLayout(set), set,
+					1, &viewDescriptorSet, 0, nullptr
+				);
+				isSetCompatible[set] = true;
+			}
+		}
+
+		void BindModel(vk::CommandBuffer& commandBuffer, const Model* newModel)
+		{
+			uint32_t set = (uint32_t)DescriptorSetIndices::Model;
+			if (newModel != model || isSetCompatible[set] == false)
+			{
+				model = newModel;
+				model->Bind(commandBuffer);
+				isSetCompatible[set] = true;
+			}
+		}
+
+		void BindMaterial(vk::CommandBuffer& commandBuffer, const Material* newMaterial)
+		{
+			uint32_t set = (uint32_t)DescriptorSetIndices::Material;
+			if (newMaterial != material || isSetCompatible[set] == false)
+			{
+				material = newMaterial;
+				material->BindDescriptors(commandBuffer);
+				isSetCompatible[set] = true;
+			}
+		}
+
+	private:
+		std::array<bool, (size_t)DescriptorSetIndices::Count> isSetCompatible = {}; // all false by default
+
 		ShadingModel shadingModel = ShadingModel::Count;
-		vk::PipelineLayout modelPipelineLayout;
 		const Model* model = nullptr;
 		const GraphicsPipeline* pipeline = nullptr;
 		const Material* material = nullptr;
@@ -281,27 +335,21 @@ protected:
 		);
 		commandBuffer->begin({ vk::CommandBufferUsageFlagBits::eRenderPassContinue, &info });
 		{
-			// --- Draw all scene opaque objects --- //
+			uint32_t concurrentFrameIndex = frameIndex % m_commandBufferPool.GetNbConcurrentSubmits();
+
 			RenderState state;
 
 			// Draw opaque materials first
 			DrawSceneObjects(commandBuffer.get(), frameIndex, m_opaqueDrawCache, state);
 
-			//// With Skybox last (to prevent processing fragments for nothing)
-			if (state.shadingModel != ShadingModel::Unlit)
+			// With Skybox last (to prevent processing fragments for nothing)
 			{
-				state.shadingModel = ShadingModel::Unlit;
-				const auto& layouts = m_layouts[(size_t)state.shadingModel];
-				state.modelPipelineLayout = layouts.m_modelPipelineLayout.get();
-				auto& viewDescriptorSet = layouts.m_viewDescriptorSets[frameIndex % m_commandBufferPool.GetNbConcurrentSubmits()].get();
-				commandBuffer.get().bindDescriptorSets(
-					vk::PipelineBindPoint::eGraphics, layouts.m_viewPipelineLayout.get(),
-					(uint32_t)DescriptorSetIndices::View,
-					1, &viewDescriptorSet, 0, nullptr
-				);
+				auto shadingModel = ShadingModel::Unlit;
+				auto& viewDescriptorSet = m_viewDescriptorSets[(size_t)shadingModel][concurrentFrameIndex].get();
+				state.BindPipeline(commandBuffer.get(), &m_skybox->GetGraphicsPipeline());
+				state.BindView(commandBuffer.get(), ShadingModel::Unlit, viewDescriptorSet);
+				m_skybox->Draw(commandBuffer.get(), frameIndex);
 			}
-			
-			m_skybox->Draw(commandBuffer.get(), frameIndex);
 
 			// Then the grid
 			if (m_showGrid)
@@ -315,6 +363,8 @@ protected:
 
 	void DrawSceneObjects(vk::CommandBuffer commandBuffer, uint32_t frameIndex, const std::vector<MeshDrawInfo>& drawCalls, RenderState& state)
 	{
+		uint32_t currentFrameIndex = frameIndex % m_commandBufferPool.GetNbConcurrentSubmits();
+
 		// Bind the one big vertex + index buffers
 		if (drawCalls.empty() == false)
 		{
@@ -326,46 +376,15 @@ protected:
 
 		for (const auto& drawItem : drawCalls)
 		{
-			// Bind descriptors using material type's { view + model } layouts
-			if (state.shadingModel != drawItem.mesh->material->shadingModel)
-			{
-				state.shadingModel = drawItem.mesh->material->shadingModel;
-
-				const auto& layouts = m_layouts[(size_t)state.shadingModel];
-				const auto& viewPipelineLayout = layouts.m_viewPipelineLayout.get();
-				state.modelPipelineLayout = layouts.m_modelPipelineLayout.get();
-				auto& viewDescriptorSet = layouts.m_viewDescriptorSets[frameIndex % m_commandBufferPool.GetNbConcurrentSubmits()].get();
-
-				commandBuffer.bindDescriptorSets(
-					vk::PipelineBindPoint::eGraphics, viewPipelineLayout,
-					(uint32_t)DescriptorSetIndices::View,
-					1, &viewDescriptorSet, 0, nullptr
-				);
-			}
-
-			// Bind model uniforms
-			if (state.model != drawItem.model)
-			{
-				state.model = drawItem.model;
-				state.model->Bind(commandBuffer, state.modelPipelineLayout);
-			}
-
-			// Bind material uniforms
-			if (drawItem.mesh->material != state.material)
-			{
-				state.material = drawItem.mesh->material;
-				state.material->BindDescriptors(commandBuffer);
-			}
-
-			// Bind Graphics Pipeline
-			if (drawItem.mesh->material->pipeline != state.pipeline)
-			{
-				state.pipeline = drawItem.mesh->material->pipeline;
-				state.material->BindPipeline(commandBuffer);
-			}
+			auto shadingModel = drawItem.mesh->material->shadingModel;
+			auto& viewDescriptorSet = m_viewDescriptorSets[(size_t)shadingModel][currentFrameIndex].get();
+			state.BindPipeline(commandBuffer, drawItem.mesh->material->pipeline);
+			state.BindView(commandBuffer, shadingModel, viewDescriptorSet);
+			state.BindModel(commandBuffer, drawItem.model);
+			state.BindMaterial(commandBuffer, drawItem.mesh->material);
 
 			// Draw
-			commandBuffer.drawIndexed(drawItem.mesh->nbIndices, 1, drawItem.mesh->indexOffset, 0, 0);
+ 			commandBuffer.drawIndexed(drawItem.mesh->nbIndices, 1, drawItem.mesh->indexOffset, 0, 0);
 		}
 	}
 
@@ -894,64 +913,24 @@ protected:
 
 	void CreateDescriptorLayouts()
 	{
-		// Clear previous layouts, fetch it from new graphics pipelines
-		for (auto& layout : m_layouts)
-		{
-			layout.m_viewSetLayout = vk::DescriptorSetLayout();
-			layout.m_viewPipelineLayout.reset();
-			layout.m_viewDescriptorSets.clear();
-		}
+		size_t set = (size_t)DescriptorSetIndices::View;
 
-		// Populate view descriptor set layout for each shading model used
-		for (const auto& material : m_materials)
-		{
-			auto& viewSetLayout = m_layouts[(size_t)material->shadingModel].m_viewSetLayout;
-			if (!viewSetLayout)
-				viewSetLayout = material->pipeline->GetDescriptorSetLayout((size_t)DescriptorSetIndices::View);
-		}
+		std::vector<vk::DescriptorSetLayout> viewSetLayouts;
+		viewSetLayouts.resize((size_t)ShadingModel::Count);
 
-		// Make sure we have an unlit view layout for Grid and Skybox
-		// If we don't have any unlit materials, use layout from the skybox
-		auto& unlitViewSetLayout = m_layouts[(size_t)ShadingModel::Unlit].m_viewSetLayout;
-		if (!unlitViewSetLayout)
-			unlitViewSetLayout = m_skybox->GetDescriptorSetLayout((size_t)DescriptorSetIndices::View);
+		// Unlit view layout for Grid and Skybox
+		viewSetLayouts[(size_t)ShadingModel::Unlit] = m_skybox->GetGraphicsPipeline().GetDescriptorSetLayout(set);
+
+		// Materials use only lit shading model (for now) todo: that might not always be the case
+		viewSetLayouts[(size_t)ShadingModel::Lit] = m_materials.front()->pipeline->GetDescriptorSetLayout(set);
 
 		// View layout and descriptor sets
 		for (size_t materialType = 0; materialType < (size_t)ShadingModel::Count; ++materialType)
 		{
-			auto& layout = m_layouts[materialType];
-			if (!layout.m_viewSetLayout)
-				continue; // shading model not used
-
-			std::vector<vk::DescriptorSetLayout> layouts(m_commandBufferPool.GetNbConcurrentSubmits(), layout.m_viewSetLayout);
-			layout.m_viewDescriptorSets = g_device->Get().allocateDescriptorSetsUnique(vk::DescriptorSetAllocateInfo(
+			auto& litViewSetLayout = viewSetLayouts[materialType];
+			std::vector<vk::DescriptorSetLayout> layouts(m_commandBufferPool.GetNbConcurrentSubmits(), litViewSetLayout);
+			m_viewDescriptorSets[materialType] = g_device->Get().allocateDescriptorSetsUnique(vk::DescriptorSetAllocateInfo(
 				m_descriptorPool.get(), static_cast<uint32_t>(layouts.size()), layouts.data()
-			));
-
-			layout.m_viewPipelineLayout = g_device->Get().createPipelineLayoutUnique(vk::PipelineLayoutCreateInfo(
-				{}, 1, &layout.m_viewSetLayout
-			));
-		}
-
-		// Model layout (all materials share the same descriptor set for model)
-		if (m_materials.empty() == false)
-		{
-			m_modelSetLayout = m_materials[0]->pipeline->GetDescriptorSetLayout((size_t)DescriptorSetIndices::Model);
-		}
-
-		// Model layout for each shading model
-		for (size_t materialType = 0; materialType < (size_t)ShadingModel::Count; ++materialType)
-		{
-			auto& layout = m_layouts[materialType];
-			if (!layout.m_viewSetLayout)
-				continue; // shading model not used
-
-			std::vector<vk::DescriptorSetLayout> layouts = {
-				layout.m_viewSetLayout, m_modelSetLayout // sets 0, 1
-			};
-
-			layout.m_modelPipelineLayout = g_device->Get().createPipelineLayoutUnique(vk::PipelineLayoutCreateInfo(
-				{}, static_cast<uint32_t>(layouts.size()), layouts.data()
 			));
 		}
 	}
@@ -963,7 +942,7 @@ protected:
 		// since all surface materials should share this layout
 		for (size_t materialType = 0; materialType < (size_t)ShadingModel::Count; ++materialType)
 		{
-			auto& viewDescriptorSets = m_layouts[materialType].m_viewDescriptorSets;
+			auto& viewDescriptorSets = m_viewDescriptorSets[materialType];
 
 			// Update view descriptor sets
 			for (size_t i = 0; i < viewDescriptorSets.size(); ++i)
@@ -997,7 +976,9 @@ protected:
 		// since all material of this type should share this layout
 		{
 			// Then allocate one descriptor set per model
-			std::vector<vk::DescriptorSetLayout> layouts(m_models.size(), m_modelSetLayout);
+			uint32_t set = (uint32_t)DescriptorSetIndices::Model;
+			auto modelSetLayout = m_materials[0]->pipeline->GetDescriptorSetLayout((size_t)DescriptorSetIndices::Model);
+			std::vector<vk::DescriptorSetLayout> layouts(m_models.size(), modelSetLayout);
 			auto modelDescriptorSets = g_device->Get().allocateDescriptorSetsUnique(vk::DescriptorSetAllocateInfo(
 				m_descriptorPool.get(), static_cast<uint32_t>(layouts.size()), layouts.data()
 			));
@@ -1022,8 +1003,9 @@ protected:
 		// Create material instance descriptor sets.
 		for (auto& material : m_materials)
 		{
+			size_t set = (size_t)DescriptorSetIndices::Material;
 			auto descriptorSets = g_device->Get().allocateDescriptorSetsUnique(vk::DescriptorSetAllocateInfo(
-				m_descriptorPool.get(), 1, &material->GetDescriptorSetLayout()
+				m_descriptorPool.get(), 1, &material->pipeline->GetDescriptorSetLayout(set)
 			));
 			material->descriptorSet = std::move(descriptorSets[0]);
 
@@ -1303,31 +1285,19 @@ private:
 
 	vk::UniqueDescriptorPool m_descriptorPool;
 
-	// --- Layouts --- //
+	// --- View --- //
 
 	// Each material type may need different scene
 	// uniforms (e.g. unlit shading does not need lights).
-	struct DescriptorLayouts
-	{
-		// set 0
-		vk::DescriptorSetLayout m_viewSetLayout;
-		vk::UniquePipelineLayout m_viewPipelineLayout;
-		std::vector<vk::UniqueDescriptorSet> m_viewDescriptorSets;
-
-		// set 1
-		vk::UniquePipelineLayout m_modelPipelineLayout;
-	};
-	std::array<DescriptorLayouts, (size_t)ShadingModel::Count> m_layouts;
-
-	// --- View --- //
-
+	using ViewDescriptorSets = std::array<std::vector<vk::UniqueDescriptorSet>, (size_t)ShadingModel::Count>;
+	
+	ViewDescriptorSets m_viewDescriptorSets;
 	std::vector<UniqueBuffer> m_viewUniformBuffers; // one per in flight frame since these change every frame
 	std::unique_ptr<UniqueBufferWithStaging> m_lightsUniformBuffer;
 
 	// --- Model --- //
 
 	// All material types use the same descriptor set layout for models
-	vk::DescriptorSetLayout m_modelSetLayout;
 	std::vector<Model> m_models;
 
 	// --- Material --- //
