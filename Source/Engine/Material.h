@@ -1,6 +1,6 @@
 #pragma once
 
-#include "TextureManager.h"
+#include "TextureCache.h"
 #include "DescriptorSetLayouts.h"
 
 #include "GraphicsPipeline.h"

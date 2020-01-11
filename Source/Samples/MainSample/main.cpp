@@ -21,8 +21,8 @@
 #include "file_utils.h"
 
 #include "Camera.h"
-#include "TextureManager.h"
-#include "BaseMaterialCache.h"
+#include "TextureCache.h"
+#include "MaterialCache.h"
 #include "DescriptorSetLayouts.h"
 
 #include "Grid.h"
@@ -173,7 +173,7 @@ public:
 		, m_framebuffers(Framebuffer::FromSwapchain(*m_swapchain, m_renderPass->Get()))
 		, m_vertexShader(std::make_unique<Shader>("primitive_vert.spv", "main"))
 		, m_camera(1.0f * glm::vec3(1.0f, 1.0f, 1.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f), 45.0f, 0.01f, 1000.0f)
-		, m_textureManager(std::make_unique<TextureManager>(m_basePath, &m_commandBufferPool))
+		, m_textureCache(std::make_unique<TextureCache>(m_basePath))
 	{
 		window.SetMouseButtonCallback(reinterpret_cast<void*>(this), OnMouseButton);
 		window.SetMouseScrollCallback(reinterpret_cast<void*>(this), OnMouseScroll);
@@ -202,7 +202,7 @@ protected:
 	{
 		vk::Extent2D imageExtent = m_swapchain->GetImageDescription().extent;
 
-		m_baseMaterialCache = std::make_unique<BaseMaterialCache>(m_renderPass->Get(), imageExtent);
+		m_materialCache = std::make_unique<MaterialCache>(m_renderPass->Get(), imageExtent);
 
 		CreateSkybox(commandBuffer);
 		m_grid = std::make_unique<Grid>(*m_renderPass, imageExtent);
@@ -227,7 +227,7 @@ protected:
 		m_renderPass.reset();
 		m_renderPass = std::make_unique<RenderPass>(m_swapchain->GetImageDescription().format);
 		m_framebuffers = Framebuffer::FromSwapchain(*m_swapchain, m_renderPass->Get());
-		m_baseMaterialCache->Reset(m_renderPass->Get(), m_swapchain->GetImageDescription().extent);
+		m_materialCache->Reset(m_renderPass->Get(), m_swapchain->GetImageDescription().extent);
 
 		// --- Recreate everything that depends on the number of images ---
 
@@ -721,7 +721,7 @@ protected:
 			materialInfo.baseMaterial = BaseMaterialID::Phong;
 			materialInfo.isTransparent = opacity < 1.0f;
 			materialInfo.constants.nbLights = m_lights.size();
-			auto* material = m_baseMaterialCache->CreateMaterial(materialInfo);
+			auto* material = m_materialCache->CreateMaterial(materialInfo);
 
 #ifdef DEBUG_MODE
 			aiString name;
@@ -737,7 +737,7 @@ protected:
 				{
 					for (int i = 0; i < binding.descriptorCount; ++i)
 					{
-						CombinedImageSampler texture = m_textureManager->LoadTexture(commandBuffer, "dummy_texture.png");
+						CombinedImageSampler texture = m_textureCache->LoadTexture("dummy_texture.png");
 						material->textures.push_back(std::move(texture));
 					}
 				}
@@ -750,7 +750,7 @@ protected:
 				{
 					aiString textureFile;
 					assimpMaterial->GetTexture(type, 0, &textureFile);
-					auto texture = m_textureManager->LoadTexture(commandBuffer, textureFile.C_Str());
+					auto texture = m_textureCache->LoadTexture(textureFile.C_Str());
 					material->textures[binding] = std::move(texture); // replace dummy with real texture
 				}
 			};
@@ -778,6 +778,8 @@ protected:
 			// Keep ownership of the material instance
 			m_materials[i] = material;
 		}
+
+		m_textureCache->UploadTextures(commandBuffer, m_commandBufferPool);
 	}
 
 	void CreateViewUniformBuffers()
@@ -827,7 +829,7 @@ protected:
 		// Each material can need different view parameters (e.g. Unlit doesn't need lights).
 		// Need a set of descriptors per concurrent frame
 		std::map<vk::DescriptorType, uint32_t> descriptorCount;
-		for (const auto& pipeline : m_baseMaterialCache->GetGraphicsPipelines())
+		for (const auto& pipeline : m_materialCache->GetGraphicsPipelines())
 		{
 			const auto& bindings = pipeline->GetDescriptorSetLayoutBindings((size_t)DescriptorSetIndices::View);
 			for (const auto& binding : bindings)
@@ -1133,8 +1135,8 @@ protected:
 	void CreateSkybox(vk::CommandBuffer commandBuffer)
 	{
 		m_skybox.reset();
-		m_skybox = std::make_unique<Skybox>(*m_renderPass, m_swapchain->GetImageDescription().extent);
-		m_skybox->UploadToGPU(m_textureManager.get(), commandBuffer);
+		m_skybox = std::make_unique<Skybox>(*m_renderPass, m_textureCache.get(), m_swapchain->GetImageDescription().extent);
+		m_skybox->UploadToGPU(commandBuffer, m_commandBufferPool);
 	}
 
 	void Update() override 
@@ -1329,7 +1331,7 @@ private:
 	std::vector<Model> m_models;
 
 	// --- Material --- //
-	std::unique_ptr<BaseMaterialCache> m_baseMaterialCache;
+	std::unique_ptr<MaterialCache> m_materialCache;
 	std::vector<Material*> m_materials;
 
 	std::unique_ptr<Skybox> m_skybox;
@@ -1341,7 +1343,7 @@ private:
 	std::vector<MeshDrawInfo> m_transparentDrawCache;
 
 	// Texture cache and image loading utility
-	std::unique_ptr<TextureManager> m_textureManager;
+	std::unique_ptr<TextureCache> m_textureCache;
 };
 
 int main(int argc, char* argv[])

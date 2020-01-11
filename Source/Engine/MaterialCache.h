@@ -43,12 +43,13 @@ struct MaterialInfo
 
 /* Loads and creates resources for base materials so that
  * material instance creation reuses graphics pipelines 
- * and shaders whenever possible. */
-class BaseMaterialCache
+ * and shaders whenever possible. Owns materials to update them
+ * when resources are reset. */
+class MaterialCache
 {
 public:
 	// We need a graphics pipeline for each MaterialInfo
-	BaseMaterialCache(vk::RenderPass renderPass, vk::Extent2D swapchainExtent);
+	MaterialCache(vk::RenderPass renderPass, vk::Extent2D swapchainExtent);
 
 	void Reset(vk::RenderPass renderPass, vk::Extent2D extent);
 	

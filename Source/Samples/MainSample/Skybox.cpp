@@ -51,8 +51,20 @@ const std::vector<float> vertices = {
 	 1.0f, -1.0f,  1.0f
 };
 
-Skybox::Skybox(const RenderPass& renderPass, vk::Extent2D swapchainExtent)
+Skybox::Skybox(const RenderPass& renderPass, TextureCache* textureCache, vk::Extent2D swapchainExtent)
+	: m_textureCache(textureCache)
 {
+	// Load textures
+	std::vector<std::string> cubeFacesFiles = {
+		"skybox/right.jpg",
+		"skybox/left.jpg",
+		"skybox/top.jpg",
+		"skybox/bottom.jpg",
+		"skybox/front.jpg",
+		"skybox/back.jpg"
+	};
+	cubeMap = m_textureCache->LoadCubeMapFaces(cubeFacesFiles);
+
 	// Create graphics pipeline
 	vertexShader = std::make_unique<Shader>("skybox_vert.spv", "main");
 	fragmentShader = std::make_unique<Shader>("skybox_frag.spv", "main");
@@ -115,24 +127,16 @@ void Skybox::UpdateDescriptors()
 	g_device->Get().updateDescriptorSets(static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
 }
 
-void Skybox::UploadToGPU(TextureManager* textureManager, vk::CommandBuffer& commandBuffer)
+void Skybox::UploadToGPU(vk::CommandBuffer& commandBuffer, CommandBufferPool& commandBufferPool)
 {
-	std::vector<std::string> cubeFacesFiles = {
-		"skybox/right.jpg",
-		"skybox/left.jpg",
-		"skybox/top.jpg",
-		"skybox/bottom.jpg",
-		"skybox/front.jpg",
-		"skybox/back.jpg"
-	};
-	cubeMap = textureManager->LoadCubeMapFaces(commandBuffer, cubeFacesFiles);
-
 	// Create and upload vertex buffer
 	vk::DeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
 	vertexBuffer = std::make_unique<UniqueBufferWithStaging>(bufferSize, vk::BufferUsageFlagBits::eVertexBuffer);
 	memcpy(vertexBuffer->GetStagingMappedData(), reinterpret_cast<const void*>(vertices.data()), bufferSize);
 	vertexBuffer->CopyStagingToGPU(commandBuffer);
-	textureManager->GetCommandBufferPool()->DestroyAfterSubmit(vertexBuffer->ReleaseStagingBuffer());
+	commandBufferPool.DestroyAfterSubmit(vertexBuffer->ReleaseStagingBuffer());
+
+	m_textureCache->UploadTextures(commandBuffer, commandBufferPool);
 
 	UpdateDescriptors();
 }

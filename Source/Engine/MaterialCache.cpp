@@ -1,9 +1,9 @@
-#include "BaseMaterialCache.h"
+#include "MaterialCache.h"
 
 #include "Shader.h"
 #include "GraphicsPipeline.h"
 
-BaseMaterialCache::BaseMaterialCache(vk::RenderPass renderPass, vk::Extent2D swapchainExtent)
+MaterialCache::MaterialCache(vk::RenderPass renderPass, vk::Extent2D swapchainExtent)
 	: m_renderPass(renderPass)
 	, m_imageExtent(swapchainExtent)
 {
@@ -24,7 +24,7 @@ BaseMaterialCache::BaseMaterialCache(vk::RenderPass renderPass, vk::Extent2D swa
 	});
 }
 
-void BaseMaterialCache::Reset(vk::RenderPass renderPass, vk::Extent2D extent)
+void MaterialCache::Reset(vk::RenderPass renderPass, vk::Extent2D extent)
 {
 	m_renderPass = renderPass;
 	m_imageExtent = extent;
@@ -38,7 +38,7 @@ void BaseMaterialCache::Reset(vk::RenderPass renderPass, vk::Extent2D extent)
 	}
 }
 
-Material* BaseMaterialCache::CreateMaterial(const MaterialInfo& materialInfo)
+Material* MaterialCache::CreateMaterial(const MaterialInfo& materialInfo)
 {
 	const auto& materialDescription = m_baseMaterialsInfo[(size_t)materialInfo.baseMaterial];
 
@@ -52,7 +52,7 @@ Material* BaseMaterialCache::CreateMaterial(const MaterialInfo& materialInfo)
 	return m_materials.back().get();
 }
 
-GraphicsPipeline* BaseMaterialCache::LoadGraphicsPipeline(const MaterialInfo& materialInfo)
+GraphicsPipeline* MaterialCache::LoadGraphicsPipeline(const MaterialInfo& materialInfo)
 {
 	auto pipelineIt = m_graphicsPipelines.find(materialInfo.Hash());
 	if (pipelineIt != m_graphicsPipelines.end())
@@ -77,7 +77,7 @@ GraphicsPipeline* BaseMaterialCache::LoadGraphicsPipeline(const MaterialInfo& ma
 	return it->second.get();
 }
 
-Shader& BaseMaterialCache::LoadShader(const std::string& filename)
+Shader& MaterialCache::LoadShader(const std::string& filename)
 {
 	auto shaderIt = m_shaders.find(filename);
 	if (shaderIt != m_shaders.end())
@@ -88,7 +88,7 @@ Shader& BaseMaterialCache::LoadShader(const std::string& filename)
 	return *it->second;
 }
 
-std::vector<const GraphicsPipeline*> BaseMaterialCache::GetGraphicsPipelines() const
+std::vector<const GraphicsPipeline*> MaterialCache::GetGraphicsPipelines() const
 {
 	std::vector<const GraphicsPipeline*> pipelines;
 	pipelines.reserve(m_graphicsPipelines.size());

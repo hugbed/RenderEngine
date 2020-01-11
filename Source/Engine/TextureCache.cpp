@@ -1,24 +1,27 @@
-#include "TextureManager.h"
+#include "TextureCache.h"
 
 #include "Texture.h"
 #include "CommandBufferPool.h"
+
+#include "hash.h"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
 #include <iostream>
 
-CombinedImageSampler TextureManager::LoadTexture(vk::CommandBuffer& commandBuffer, const std::string filename)
+CombinedImageSampler TextureCache::LoadTexture(const std::string filename)
 {
-	Texture* texture = CreateAndUploadTextureImage(commandBuffer, filename);
+	Texture* texture = CreateAndUploadTextureImage(filename);
 	vk::Sampler sampler = CreateSampler(texture->GetMipLevels());
 	return CombinedImageSampler{ texture, sampler };
 }
 
-Texture* TextureManager::CreateAndUploadTextureImage(vk::CommandBuffer& commandBuffer, const std::string& filename)
+Texture* TextureCache::CreateAndUploadTextureImage(const std::string& filename)
 {
 	// Check if we already loaded this texture
-	auto& cachedTexture = m_textures.find(filename);
+	uint64_t id = fnv_hash((uint8_t*)filename.data(), filename.size());
+	auto& cachedTexture = m_textures.find(id);
 	if (cachedTexture != m_textures.end())
 		return cachedTexture->second.get();
 
@@ -32,7 +35,7 @@ Texture* TextureManager::CreateAndUploadTextureImage(vk::CommandBuffer& commandB
 	uint32_t mipLevels = static_cast<uint32_t>(std::floor(std::log2((std::max)(texWidth, texHeight)))) + 1;
 
 	// Texture image
-	auto [pair, res] = m_textures.emplace(filename, std::make_unique<Texture>(
+	auto [pair, res] = m_textures.emplace(id, std::make_unique<Texture>(
 		texWidth, texHeight, 4UL, // R8G8B8A8, depth = 4
 		vk::Format::eR8G8B8A8Unorm, // figure out gamma correction if we need to do sRGB or something
 		vk::ImageTiling::eOptimal,
@@ -45,18 +48,14 @@ Texture* TextureManager::CreateAndUploadTextureImage(vk::CommandBuffer& commandB
 	auto& texture = pair->second;
 
 	memcpy(texture->GetStagingMappedData(), reinterpret_cast<const void*>(pixels), (size_t)texWidth* texHeight * 4);
-	texture->UploadStagingToGPU(commandBuffer, vk::ImageLayout::eShaderReadOnlyOptimal);
-
-	// We won't need the staging buffer after the initial upload
-	auto* stagingBuffer = texture->ReleaseStagingBuffer();
-	m_commandBufferPool->DestroyAfterSubmit(stagingBuffer);
-
 	stbi_image_free(pixels);
+
+	m_texturesToUpload.push_back(texture.get());
 
 	return texture.get();
 }
 
-vk::Sampler TextureManager::CreateSampler(uint32_t nbMipLevels)
+vk::Sampler TextureCache::CreateSampler(uint32_t nbMipLevels)
 {
 	// Check if we already have a sampler
 	auto samplerIt = m_samplers.find(nbMipLevels);
@@ -86,13 +85,17 @@ vk::Sampler TextureManager::CreateSampler(uint32_t nbMipLevels)
 	return pair->second.get();
 }
 
-CombinedImageSampler TextureManager::LoadCubeMapFaces(vk::CommandBuffer& commandBuffer, const std::vector<std::string>& filenames)
+CombinedImageSampler TextureCache::LoadCubeMapFaces(const std::vector<std::string>& filenames)
 {
 	if (filenames.size() != 6)
 		return {};
 
 	// Check if we already loaded this texture
-	auto& cachedTexture = m_textures.find(filenames[0]); // todo: use better ID
+	std::string filename;
+	for (const auto& file : filenames)
+		filename += file + ";"; // use hash of ";".join(filenames) as id
+	uint64_t id = fnv_hash((uint8_t*)filename.data(), filename.size());
+	auto& cachedTexture = m_textures.find(id); // todo: use better ID
 	if (cachedTexture != m_textures.end())
 	{
 		Texture* texture = cachedTexture->second.get();
@@ -136,7 +139,7 @@ CombinedImageSampler TextureManager::LoadCubeMapFaces(vk::CommandBuffer& command
 	// Create cubemap
 
 	// todo: filenames[0] is bad, use something else than the filename of the first face
-	auto [pair, res] = m_textures.emplace(filenames[0], std::make_unique<Texture>(
+	auto [pair, res] = m_textures.emplace(id, std::make_unique<Texture>(
 		width, height, 4UL, // R8G8B8A8, depth = 4
 		vk::Format::eR8G8B8A8Unorm, // figure out gamma correction if we need to do sRGB or something
 		vk::ImageTiling::eOptimal,
@@ -160,10 +163,19 @@ CombinedImageSampler TextureManager::LoadCubeMapFaces(vk::CommandBuffer& command
 		data += bufferSize;
 	}
 
-	texture->UploadStagingToGPU(commandBuffer, vk::ImageLayout::eShaderReadOnlyOptimal);
-	auto* stagingBuffer = texture->ReleaseStagingBuffer();
-	m_commandBufferPool->DestroyAfterSubmit(stagingBuffer);
+	m_texturesToUpload.push_back(texture.get());
 
 	vk::Sampler sampler = CreateSampler(1);
 	return CombinedImageSampler{ texture.get(), sampler };
+}
+
+void TextureCache::UploadTextures(vk::CommandBuffer& commandBuffer, CommandBufferPool& commandBufferPool)
+{
+	for (const auto& texture : m_texturesToUpload)
+	{
+		texture->UploadStagingToGPU(commandBuffer, vk::ImageLayout::eShaderReadOnlyOptimal);
+		auto* stagingBuffer = texture->ReleaseStagingBuffer();
+		commandBufferPool.DestroyAfterSubmit(stagingBuffer);
+	}
+	m_texturesToUpload.clear();
 }
