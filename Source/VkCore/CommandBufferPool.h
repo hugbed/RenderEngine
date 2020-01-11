@@ -30,12 +30,12 @@ public:
 		return m_fences.size();
 	}
 
-	vk::CommandBuffer GetCommandBuffer()
+	vk::CommandBuffer& GetCommandBuffer()
 	{
 		return m_commandBuffers[m_commandBufferIndex].get();
 	}
 
-	vk::CommandBuffer ResetAndGetCommandBuffer()
+	vk::CommandBuffer& ResetAndGetCommandBuffer()
 	{
 		// Clear command buffer using resetCommandPool
 		g_device->Get().resetCommandPool(m_commandBufferPools[m_commandBufferIndex].get(), {});

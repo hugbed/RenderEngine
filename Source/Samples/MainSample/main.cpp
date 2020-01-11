@@ -202,7 +202,7 @@ protected:
 	{
 		vk::Extent2D imageExtent = m_swapchain->GetImageDescription().extent;
 
-		m_baseMaterialCache = std::make_unique<BaseMaterialCache>(imageExtent);
+		m_baseMaterialCache = std::make_unique<BaseMaterialCache>(m_renderPass->Get(), imageExtent);
 
 		CreateSkybox(commandBuffer);
 		m_grid = std::make_unique<Grid>(*m_renderPass, imageExtent);
@@ -221,13 +221,13 @@ protected:
 	void OnSwapchainRecreated() override
 	{
 		// Reset resources that depend on the swapchain images
-		m_graphicsPipelines.clear();
+		//m_graphicsPipelines.clear();
 		m_framebuffers.clear();
-		m_renderPass.reset();
 
+		m_renderPass.reset();
 		m_renderPass = std::make_unique<RenderPass>(m_swapchain->GetImageDescription().format);
 		m_framebuffers = Framebuffer::FromSwapchain(*m_swapchain, m_renderPass->Get());
-		m_baseMaterialCache->Reset(m_swapchain->GetImageDescription().extent);
+		m_baseMaterialCache->Reset(m_renderPass->Get(), m_swapchain->GetImageDescription().extent);
 
 		// --- Recreate everything that depends on the number of images ---
 
@@ -655,7 +655,7 @@ protected:
 			Mesh mesh;
 			mesh.indexOffset = m_indices.size();
 			mesh.nbIndices = (vk::DeviceSize)aMesh->mNumFaces * aMesh->mFaces->mNumIndices;
-			mesh.material = m_materials[aMesh->mMaterialIndex].get();
+			mesh.material = m_materials[aMesh->mMaterialIndex];
 			size_t vertexIndexOffset = m_vertices.size();
 
 			bool hasUV = aMesh->HasTextureCoords(0);
@@ -720,9 +720,8 @@ protected:
 			MaterialInfo materialInfo;
 			materialInfo.baseMaterial = BaseMaterialID::Phong;
 			materialInfo.isTransparent = opacity < 1.0f;
-			materialInfo.renderPass = m_renderPass->Get();
 			materialInfo.constants.nbLights = m_lights.size();
-			auto& material = m_baseMaterialCache->CreateMaterial(materialInfo);
+			auto* material = m_baseMaterialCache->CreateMaterial(materialInfo);
 
 #ifdef DEBUG_MODE
 			aiString name;
@@ -777,7 +776,7 @@ protected:
 			m_commandBufferPool.DestroyAfterSubmit(material->uniformBuffer->ReleaseStagingBuffer());
 
 			// Keep ownership of the material instance
-			m_materials[i] = std::move(material);
+			m_materials[i] = material;
 		}
 	}
 
@@ -893,6 +892,14 @@ protected:
 
 	void CreateDescriptorLayouts()
 	{
+		// Clear previous layouts, fetch it from new graphics pipelines
+		for (auto& layout : m_layouts)
+		{
+			layout.m_viewSetLayout = vk::DescriptorSetLayout();
+			layout.m_viewPipelineLayout.reset();
+			layout.m_viewDescriptorSets.clear();
+		}
+
 		// Populate view descriptor set layout for each shading model used
 		for (const auto& material : m_materials)
 		{
@@ -1323,7 +1330,7 @@ private:
 
 	// --- Material --- //
 	std::unique_ptr<BaseMaterialCache> m_baseMaterialCache;
-	std::vector<std::unique_ptr<Material>> m_materials;
+	std::vector<Material*> m_materials;
 
 	std::unique_ptr<Skybox> m_skybox;
 	std::unique_ptr<Grid> m_grid;

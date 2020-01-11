@@ -98,7 +98,7 @@ void RenderLoop::Render()
 		1, &m_commandBufferPool.GetCommandBuffer(),
 		1, &m_gpuSync.renderFinishedSemaphore.get()
 	);
-	m_commandBufferPool.Submit(submitInfo);
+	m_commandBufferPool.Submit(std::move(submitInfo));
 	m_commandBufferPool.MoveToNext();
 
 	// Presentation

@@ -35,7 +35,6 @@ struct MaterialConstants
 struct MaterialInfo
 {
 	BaseMaterialID baseMaterial;
-	VkRenderPass renderPass;
 	MaterialConstants constants;
 	bool isTransparent = false;
 
@@ -49,12 +48,11 @@ class BaseMaterialCache
 {
 public:
 	// We need a graphics pipeline for each MaterialInfo
-	BaseMaterialCache(vk::Extent2D swapchainExtent);
+	BaseMaterialCache(vk::RenderPass renderPass, vk::Extent2D swapchainExtent);
 
-	// Invalidates all materials
-	void Reset(vk::Extent2D extent) { m_graphicsPipelines.clear(); }
+	void Reset(vk::RenderPass renderPass, vk::Extent2D extent);
 	
-	std::unique_ptr<Material> CreateMaterial(const MaterialInfo& materialInfo);
+	Material* CreateMaterial(const MaterialInfo& materialInfo);
 
 	const BaseMaterialInfo& GetBaseMaterialInfo(BaseMaterialID baseMaterial) const
 	{
@@ -65,9 +63,16 @@ public:
 
 private:
 	Shader& LoadShader(const std::string& filename);
+	GraphicsPipeline* LoadGraphicsPipeline(const MaterialInfo& materialInfo);
 
+	vk::RenderPass m_renderPass; // light/color pass, there could be others
 	vk::Extent2D m_imageExtent;
 	std::vector<BaseMaterialInfo> m_baseMaterialsInfo;
 	std::map<std::string, std::unique_ptr<Shader>> m_shaders;
 	std::map<uint64_t, std::unique_ptr<GraphicsPipeline>> m_graphicsPipelines;
+
+	// Keep ownership of materials since we need to be able to update their
+	// graphics pipeline when it's invalidated
+	std::vector<MaterialInfo> m_materialsInfo;
+	std::vector<std::unique_ptr<Material>> m_materials;
 };
