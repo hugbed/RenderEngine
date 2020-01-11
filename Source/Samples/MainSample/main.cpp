@@ -24,21 +24,14 @@
 #include "TextureCache.h"
 #include "MaterialCache.h"
 #include "DescriptorSetLayouts.h"
+#include "Model.h"
 
 #include "Grid.h"
 
 #include <GLFW/glfw3.h>
 
 // For Uniform Buffer
-#define GLM_FORCE_RADIANS
-#define GLM_FORCE_DEPTH_ZERO_TO_ONE
-#include <glm/glm.hpp>
-#include <glm/gtc/type_ptr.hpp>
-#include <glm/gtc/matrix_transform.hpp>
-#define GLM_ENABLE_EXPERIMENTAL
-#include <glm/gtx/hash.hpp>
-#include <glm/gtx/norm.hpp>
-#include <glm/gtx/type_aligned.hpp>
+#include "glm_includes.h"
 
 // Scene loading
 #include <assimp/Importer.hpp> 
@@ -57,11 +50,6 @@ struct ViewUniforms
 	glm::aligned_mat4 view;
 	glm::aligned_mat4 proj;
 	glm::aligned_vec3 pos;
-};
-
-struct ModelUniforms
-{
-	glm::aligned_mat4 transform;
 };
 
 struct PhongMaterialProperties
@@ -104,55 +92,6 @@ namespace std {
 		}
 	};
 }
-
-struct Mesh
-{
-	vk::DeviceSize indexOffset;
-	vk::DeviceSize nbIndices;
-	const Material* material;
-};
-
-struct Model
-{
-	Model()
-		: uniformBuffer(std::make_unique<UniqueBuffer>(
-			vk::BufferCreateInfo(
-				{}, sizeof(ModelUniforms), vk::BufferUsageFlagBits::eUniformBuffer
-			), VmaAllocationCreateInfo{ VMA_ALLOCATION_CREATE_MAPPED_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU }
-		))
-	{
-		memcpy(uniformBuffer->GetMappedData(), &transform, sizeof(glm::mat4));
-	}
-
-	void SetTransform(glm::mat4 transform)
-	{
-		this->transform = std::move(transform);
-		memcpy(uniformBuffer->GetMappedData(), &this->transform, sizeof(glm::mat4));
-	}
-
-	glm::mat4& GetTransform() { return transform; }
-
-	void Bind(vk::CommandBuffer& commandBuffer) const
-	{
-		uint32_t set = (uint32_t)DescriptorSetIndices::Model;
-		commandBuffer.bindDescriptorSets(
-			vk::PipelineBindPoint::eGraphics,
-			meshes[0].material->pipeline->GetPipelineLayout(set), set,
-			1, &descriptorSet.get(), 0, nullptr
-		);
-	}
-
-	std::unique_ptr<UniqueBuffer> uniformBuffer;
-
-	// A model as multiple parts (meshes)
-	std::vector<Mesh> meshes;
-
-	// Per-object descriptors
-	vk::UniqueDescriptorSet descriptorSet;
-
-private:
-	glm::mat4 transform = glm::mat4(1.0f);
-};
 
 struct MeshDrawInfo
 {
