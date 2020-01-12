@@ -1,13 +1,9 @@
 #pragma once
 
 #include "Texture.h"
-#include "GraphicsPipeline.h"
 #include "Shader.h"
+#include "GraphicsPipeline.h"
 #include "RenderPass.h"
-#include "CommandBufferPool.h"
-#include "Device.h"
-
-#include <stb_image.h>
 
 #include <memory>
 #include <vector>
