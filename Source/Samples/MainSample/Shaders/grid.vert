@@ -24,12 +24,10 @@ vec3 gridPlane[6] = vec3[](
 
 vec3 UnprojectPoint(float x, float y, float z, mat4 view, mat4 projection)
 {
-    vec4 point = vec4(x, y, z, 1.0);
     mat4 viewInv = inverse(view);
     mat4 projInverse = inverse(projection);
-    vec4 result = viewInv * (projInverse * point);
-    vec3 finalResult = result.xyz / result.w;
-    return finalResult;
+    vec4 unprojectedPoint = viewInv * (projInverse * vec4(x, y, z, 1.0));
+    return (unprojectedPoint.xyz / unprojectedPoint.w);
 }
 
 // Set 2: bound for each material 

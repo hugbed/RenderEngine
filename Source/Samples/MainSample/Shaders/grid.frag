@@ -23,27 +23,25 @@ float checkerboard(vec2 R, float scale) {
 	) % 2);
 }
 
-vec4 grid(vec3 R, float scale, bool drawAxis) {
+vec4 grid(vec3 R, float scale) {
     // Pick a coordinate to visualize in a grid
     vec2 coord = R.xz * scale;
 
-    float mult = 1;
-
-    if(scale == 1)
-        mult = 2;
-
     // Compute anti-aliased world-space grid lines
-    vec2 grid = abs(fract(coord - 0.5) - 0.5) / (fwidth(coord) * mult);
-    float line = min(grid.x, grid.y); 
+    vec2 derivative = fwidth(coord);
+    vec2 grid = abs(fract(coord - 0.5) - 0.5) / derivative;
+    float line = min(grid.x, grid.y);
+    float minimumz = min(derivative.y, 1);
+    float minimumx = min(derivative.x, 1);
 
     vec4 color = vec4(0.2, 0.2, 0.2, 1.0 - min(line, 1.0));
 
     // z axis
-    if(coord.x > -0.001 && coord.x < 0.001)
+    if(R.x > -0.1 * minimumx && R.x < 0.1 * minimumx)
         color.z = 1.0;
 
     //x axis
-    if(coord.y > -0.001 && coord.y < 0.001)
+    if(R.z > -0.1 * minimumz && R.z < 0.1 * minimumz)
         color.x = 1.0;
 
     return color;
@@ -51,32 +49,29 @@ vec4 grid(vec3 R, float scale, bool drawAxis) {
 
 float computeDepth(vec3 pos) {
 	vec4 clip_space_pos = fragProj * fragView * vec4(pos.xyz, 1.0);
-	float clip_space_depth = (clip_space_pos.z / clip_space_pos.w);
-	return clip_space_depth;
+	return (clip_space_pos.z / clip_space_pos.w);
 }
 
 float computeLinearDepth(vec3 pos) {
-    float near = 0.01;
-    float far = 30000;
+    float near = 0.1;
+    float far = 100;
 	vec4 clip_space_pos = fragProj * fragView * vec4(pos.xyz, 1.0);
 	float clip_space_depth = (clip_space_pos.z / clip_space_pos.w) * 2.0 - 1.0;
     float linearDepth = (2.0 * near * far) / (far + near - clip_space_depth * (far - near));
-	return clip_space_depth;
+	return linearDepth / far;
 }
 
 void main() {
     float t = -nearPoint.y / (farPoint.y - nearPoint.y);
-	vec3 R = nearPoint + t * (farPoint - nearPoint);
+	vec3 pos3D = nearPoint + t * (farPoint - nearPoint);
 
-    vec4 c = grid(R, 10, true) + grid(R, 1, true) * float(t > 0) ;
+    vec4 c = (grid(pos3D, 10) + grid(pos3D, 1) ) * float(t > 0);
 
-	float spotLight = min(1.0, 5.0 - length(R.xyz));
-
-    float depth = computeDepth(R);
-    float linearDepth = computeLinearDepth(R);
-    spotLight = (1.0 - linearDepth) * 10.0;
+    float depth = computeDepth(pos3D);
+    float linearDepth = computeLinearDepth(pos3D);
+    float spotLight = max(0, (0.5 - linearDepth));
 
     gl_FragDepth = depth;
     outColor = c;
-    outColor.a = outColor.a * spotLight;
+    outColor.a *= spotLight;
 }

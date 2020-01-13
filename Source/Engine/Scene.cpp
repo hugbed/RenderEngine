@@ -48,7 +48,7 @@ Scene::Scene(
 	, m_imageExtent(imageExtent)
 	, m_textureCache(std::make_unique<TextureCache>(m_basePath))
 	, m_materialCache(std::make_unique<MaterialCache>(renderPass.Get(), imageExtent))
-	, m_camera(1.0f * glm::vec3(1.0f, 1.0f, 1.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f), 45.0f, 0.01f, 1000.0f)
+	, m_camera(1.0f * glm::vec3(1.0f, 1.0f, 1.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f), 45.0f, 0.01f, 100.0f)
 {
 }
 
@@ -95,9 +95,9 @@ void Scene::Update(uint32_t imageIndex)
 		1.0f, 0.0f, 0.0f, 0.0f,
 		0.0f, -1.0f, 0.0f, 0.0f,
 		0.0f, 0.0f, 0.5f, 0.0f,
-		0.0f, 0.0f, 0.0f, 1.0f
+		0.0f, 0.0f, 0.5f, 1.0f
 	);
-	ubo.proj *= clip;
+	ubo.proj = clip * ubo.proj;
 
 	// Upload to GPU
 	auto& uniformBuffer = GetViewUniformBuffer(imageIndex);
