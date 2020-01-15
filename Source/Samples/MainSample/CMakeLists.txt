@@ -30,3 +30,7 @@ target_link_libraries(
 if (WIN32)
   set_property(TARGET ${PROJECT_NAME} PROPERTY VS_DEBUGGER_WORKING_DIRECTORY ${PROJECT_BINARY_DIR}/Debug)
 endif ()
+
+add_custom_command(
+  TARGET ${PROJECT_NAME} PRE_BUILD
+  COMMAND py -3 ${CMAKE_SOURCE_DIR}/Scripts/compile-shaders.py $<CONFIG>)
