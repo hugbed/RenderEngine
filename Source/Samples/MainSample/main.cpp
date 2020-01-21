@@ -27,6 +27,7 @@
 #include "Model.h"
 #include "RenderState.h"
 #include "Scene.h"
+#include "ShadowMap.h"
 
 #include "Grid.h"
 
@@ -81,6 +82,7 @@ protected:
 		vk::Extent2D imageExtent = m_swapchain->GetImageDescription().extent;
 
 		m_scene->Load(commandBuffer);
+		UpdateShadowMaps();
 
 		CreateSecondaryCommandBuffers();
 		RecordRenderPassCommands();
@@ -97,14 +99,17 @@ protected:
 		m_renderPass = std::make_unique<RenderPass>(m_swapchain->GetImageDescription().format);
 		m_framebuffers = Framebuffer::FromSwapchain(*m_swapchain, m_renderPass->Get());
 
-		// --- Recreate everything that depends on the number of images ---
+		// --- Recreate everything that depends on the swapchain images --- //
+
+		vk::Extent2D imageExtent = m_swapchain->GetImageDescription().extent;
 
 		// Use any command buffer for init
 		auto commandBuffer = m_commandBufferPool.ResetAndGetCommandBuffer();
 		commandBuffer.begin({ vk::CommandBufferUsageFlagBits::eOneTimeSubmit });
 		{
-			m_scene->Reset(commandBuffer, *m_renderPass, m_swapchain->GetImageDescription().extent);
-			m_grid->Reset(*m_renderPass, m_swapchain->GetImageDescription().extent);
+			m_scene->Reset(commandBuffer, *m_renderPass, imageExtent);
+			UpdateShadowMaps();
+			m_grid->Reset(*m_renderPass, imageExtent);
 		}
 		commandBuffer.end();
 
@@ -115,7 +120,7 @@ protected:
 		m_commandBufferPool.WaitUntilSubmitComplete();
 
 		CreateSecondaryCommandBuffers();
-		RecordRenderPassCommands();
+		m_frameDirty = kAllFramesDirty;
 	}
 
 	void RecordRenderPassCommands()
@@ -149,8 +154,8 @@ protected:
 		commandBuffer->end();
 	}
 
-	static constexpr uint8_t kAllFrameDirty = std::numeric_limits<uint8_t>::max();
-	uint8_t m_frameDirty = kAllFrameDirty;
+	static constexpr uint8_t kAllFramesDirty = std::numeric_limits<uint8_t>::max();
+	uint8_t m_frameDirty = kAllFramesDirty;
 
 	void RenderFrame(uint32_t imageIndex, vk::CommandBuffer commandBuffer) override
 	{
@@ -161,6 +166,7 @@ protected:
 		// Record commands again if something changed
 		if ((m_frameDirty & (1 << (uint8_t)imageIndex)) > 0)
 		{
+			RenderShadowMaps(commandBuffer, imageIndex);
 			RecordFrameRenderPassCommands(imageIndex);
 			m_frameDirty &= ~(1 << (uint8_t)imageIndex);
 		}
@@ -169,7 +175,6 @@ protected:
 			vk::ClearColorValue(std::array<float, 4>{ 0.0f, 0.0f, 0.0f, 1.0f }),
 			vk::ClearDepthStencilValue(1.0f, 0.0f)
 		};
-
 		auto renderPassInfo = vk::RenderPassBeginInfo(
 			m_renderPass->Get(), framebuffer.Get(),
 			vk::Rect2D(vk::Offset2D(0, 0), framebuffer.GetExtent()),
@@ -197,6 +202,44 @@ protected:
 		m_renderPassCommandBuffers = g_device->Get().allocateCommandBuffersUnique(vk::CommandBufferAllocateInfo(
 			m_secondaryCommandPool.get(), vk::CommandBufferLevel::eSecondary, m_framebuffers.size()
 		));
+	}
+
+	// For shadow map shaders
+	ShaderCache m_shaderCache;
+	const vk::Extent2D kShadowMapExtent = vk::Extent2D(2048, 2048);
+
+	void UpdateShadowMaps()
+	{
+		if (m_shadowMaps.empty() == false)
+		{
+			for (auto& shadowMap : m_shadowMaps)
+				shadowMap.Reset(kShadowMapExtent);
+		}
+		else
+		{
+			for (const auto& light : m_scene->GetLights())
+			{
+				m_shadowMaps.emplace_back(
+					kShadowMapExtent, light, m_shaderCache, *m_scene
+				);
+			}
+		}
+
+		std::vector<CombinedImageSampler> shadowTextures;
+		shadowTextures.reserve(m_shadowMaps.size());
+		for (const auto& shadowMap : m_shadowMaps)
+		{
+			shadowTextures.push_back(m_shadowMaps.back().GetCombinedImageSampler());
+		}
+		m_scene->UpdateShadowMaps(shadowTextures);
+	}
+
+	void RenderShadowMaps(vk::CommandBuffer& commandBuffer, uint32_t frameIndex)
+	{
+		for (const auto& shadowMap : m_shadowMaps)
+		{
+			shadowMap.Render(commandBuffer, frameIndex);
+		}
 	}
 
 	Camera& GetCamera() { return m_scene->GetCamera(); }
@@ -300,7 +343,7 @@ protected:
 			if (app->m_scene->HasTransparentObjects())
 			{
 				app->m_scene->SortTransparentObjects();
-				app->m_frameDirty = kAllFrameDirty;
+				app->m_frameDirty = kAllFramesDirty;
 			}
 		}
 		else if (app->m_isMouseDown && app->m_cameraMode == CameraMode::FreeCamera)
@@ -346,7 +389,7 @@ protected:
 		if (key == GLFW_KEY_G && action == GLFW_PRESS)
 		{
 			app->m_showGrid = !app->m_showGrid;
-			app->m_frameDirty = kAllFrameDirty;
+			app->m_frameDirty = kAllFramesDirty;
 		}
 	}
 
@@ -358,6 +401,7 @@ private:
 	vk::UniqueCommandPool m_secondaryCommandPool;
 	std::vector<vk::UniqueCommandBuffer> m_renderPassCommandBuffers;
 
+	std::vector<ShadowMap> m_shadowMaps;
 	std::unique_ptr<Scene> m_scene;
 	std::unique_ptr<Grid> m_grid;
 };

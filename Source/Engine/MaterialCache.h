@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Material.h"
+#include "ShaderCache.h"
 #include "hash.h"
 
 #include <vulkan/vulkan.hpp>
@@ -27,9 +28,10 @@ struct BaseMaterialInfo
 	std::string fragmentShader;
 };
 
-struct MaterialConstants
+struct MaterialConstants // surface.frag
 {
 	uint32_t nbLights = 1;
+	uint32_t useShadows = 1;
 };
 
 struct MaterialInfo
@@ -69,7 +71,7 @@ private:
 	vk::RenderPass m_renderPass; // light/color pass, there could be others
 	vk::Extent2D m_imageExtent;
 	std::vector<BaseMaterialInfo> m_baseMaterialsInfo;
-	std::map<std::string, std::unique_ptr<Shader>> m_shaders;
+	ShaderCache m_shaderCache; // could be external also
 	std::map<uint64_t, std::unique_ptr<GraphicsPipeline>> m_graphicsPipelines;
 
 	// Keep ownership of materials since we need to be able to update their

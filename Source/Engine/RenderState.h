@@ -46,7 +46,7 @@ public:
 		if (newModel != model || isSetCompatible[set] == false)
 		{
 			model = newModel;
-			model->Bind(commandBuffer);
+			model->Bind(commandBuffer, *pipeline);
 			isSetCompatible[set] = true;
 		}
 	}

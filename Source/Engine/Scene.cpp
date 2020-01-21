@@ -81,15 +81,6 @@ void Scene::Update(uint32_t imageIndex)
 {
 	vk::Extent2D extent = m_imageExtent;
 
-	ViewUniforms ubo = {};
-	ubo.view = m_camera.GetViewMatrix();
-	ubo.proj = glm::perspective(
-		glm::radians(m_camera.GetFieldOfView()),
-		extent.width / (float)extent.height,
-		m_camera.GetNearPlane(), m_camera.GetFarPlane()
-	);
-	ubo.pos = m_camera.GetEye();
-
 	// OpenGL -> Vulkan invert y, half z
 	auto clip = glm::mat4(
 		1.0f, 0.0f, 0.0f, 0.0f,
@@ -97,14 +88,21 @@ void Scene::Update(uint32_t imageIndex)
 		0.0f, 0.0f, 0.5f, 0.0f,
 		0.0f, 0.0f, 0.5f, 1.0f
 	);
-	ubo.proj = clip * ubo.proj;
+
+	m_viewUniforms.pos = m_camera.GetEye();
+	m_viewUniforms.view = m_camera.GetViewMatrix();
+	m_viewUniforms.proj = clip * glm::perspective(
+		glm::radians(m_camera.GetFieldOfView()),
+		extent.width / (float)extent.height,
+		m_camera.GetNearPlane(), m_camera.GetFarPlane()
+	);
 
 	// Upload to GPU
 	auto& uniformBuffer = GetViewUniformBuffer(imageIndex);
-	memcpy(uniformBuffer.GetMappedData(), reinterpret_cast<const void*>(&ubo), sizeof(ViewUniforms));
+	memcpy(uniformBuffer.GetMappedData(), reinterpret_cast<const void*>(&m_viewUniforms), sizeof(ViewUniforms));
 }
 
-void Scene::DrawOpaqueObjects(vk::CommandBuffer commandBuffer, uint32_t frameIndex, RenderState& renderState)
+void Scene::DrawOpaqueObjects(vk::CommandBuffer commandBuffer, uint32_t frameIndex, RenderState& renderState) const
 {
 	DrawSceneObjects(commandBuffer, frameIndex, renderState, m_opaqueDrawCache);
 
@@ -120,12 +118,18 @@ void Scene::DrawOpaqueObjects(vk::CommandBuffer commandBuffer, uint32_t frameInd
 	}
 }
 
-void Scene::DrawTransparentObjects(vk::CommandBuffer commandBuffer, uint32_t frameIndex, RenderState& renderState)
+void Scene::DrawTransparentObjects(vk::CommandBuffer commandBuffer, uint32_t frameIndex, RenderState& renderState) const
 {
 	DrawSceneObjects(commandBuffer, frameIndex, renderState, m_transparentDrawCache);
 }
 
-void Scene::DrawSceneObjects(vk::CommandBuffer commandBuffer, uint32_t frameIndex, RenderState& state, const std::vector<MeshDrawInfo>& drawCalls)
+void Scene::DrawAllWithoutShading(vk::CommandBuffer& commandBuffer, uint32_t frameIndex, RenderState& renderState) const
+{
+	DrawWithoutShading(commandBuffer, frameIndex, renderState, m_opaqueDrawCache);
+	DrawWithoutShading(commandBuffer, frameIndex, renderState, m_transparentDrawCache);
+}
+
+void Scene::DrawSceneObjects(vk::CommandBuffer commandBuffer, uint32_t frameIndex, RenderState& state, const std::vector<MeshDrawInfo>& drawCalls) const
 {
 	uint32_t currentFrameIndex = frameIndex % m_commandBufferPool->GetNbConcurrentSubmits();
 
@@ -148,6 +152,27 @@ void Scene::DrawSceneObjects(vk::CommandBuffer commandBuffer, uint32_t frameInde
 		state.BindMaterial(commandBuffer, drawItem.mesh->material);
 
 		// Draw
+		commandBuffer.drawIndexed(drawItem.mesh->nbIndices, 1, drawItem.mesh->indexOffset, 0, 0);
+	}
+}
+
+void Scene::DrawWithoutShading(vk::CommandBuffer& commandBuffer, uint32_t frameIndex, RenderState& state, const std::vector<MeshDrawInfo>& drawCalls) const
+{
+	uint32_t currentFrameIndex = frameIndex % m_commandBufferPool->GetNbConcurrentSubmits();
+
+	// Bind the one big vertex + index buffers
+	if (drawCalls.empty() == false)
+	{
+		vk::DeviceSize offsets[] = { 0 };
+		vk::Buffer vertexBuffers[] = { m_vertexBuffer->Get() };
+		commandBuffer.bindVertexBuffers(0, 1, vertexBuffers, offsets);
+		commandBuffer.bindIndexBuffer(m_indexBuffer->Get(), 0, vk::IndexType::eUint32);
+	}
+
+	auto shadingModel = ShadingModel::Unlit;
+	for (const auto& drawItem : drawCalls)
+	{
+		state.BindModel(commandBuffer, drawItem.model);
 		commandBuffer.drawIndexed(drawItem.mesh->nbIndices, 1, drawItem.mesh->indexOffset, 0, 0);
 	}
 }
@@ -410,6 +435,7 @@ void Scene::LoadMaterials(vk::CommandBuffer commandBuffer)
 		materialInfo.baseMaterial = BaseMaterialID::Phong;
 		materialInfo.isTransparent = opacity < 1.0f;
 		materialInfo.constants.nbLights = m_lights.size();
+		materialInfo.constants.useShadows = 1;
 		auto* material = m_materialCache->CreateMaterial(materialInfo);
 
 #ifdef DEBUG_MODE
@@ -578,6 +604,7 @@ void Scene::CreateDescriptorSets()
 	UpdateMaterialDescriptors();
 }
 
+// todo: this is actually CreateDescriptorSets
 void Scene::CreateDescriptorLayouts()
 {
 	size_t set = (size_t)DescriptorSetIndices::View;
@@ -618,7 +645,7 @@ void Scene::UpdateMaterialDescriptors()
 			vk::DescriptorBufferInfo descriptorBufferInfoView(m_viewUniformBuffers[i].Get(), 0, sizeof(ViewUniforms));
 			std::vector<vk::WriteDescriptorSet> writeDescriptorSets = {
 				vk::WriteDescriptorSet(
-					viewDescriptorSets[i].get(), binding++, {},
+					viewDescriptorSets[i].get(), 0, {},
 					1, vk::DescriptorType::eUniformBuffer, nullptr, &descriptorBufferInfoView
 				) // binding = 0
 			};
@@ -628,9 +655,9 @@ void Scene::UpdateMaterialDescriptors()
 				vk::DescriptorBufferInfo descriptorBufferInfoLights(m_lightsUniformBuffer->Get(), 0, sizeof(Light) * m_lights.size());
 				writeDescriptorSets.push_back(
 					vk::WriteDescriptorSet(
-						viewDescriptorSets[i].get(), binding++, {},
+						viewDescriptorSets[i].get(), 1, {},
 						1, vk::DescriptorType::eUniformBuffer, nullptr, &descriptorBufferInfoLights
-					) // binding = 1
+					) // binding = 2
 				);
 			}
 
@@ -730,6 +757,77 @@ void Scene::UpdateMaterialDescriptors()
 
 		g_device->Get().updateDescriptorSets(static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
 	}
+}
+
+void Scene::SetShadowCaster(vk::CommandBuffer& commandBuffer, const glm::mat4& transform, uint32_t shadowMapIndex, uint32_t imageIndex)
+{
+	// Light transform
+
+	m_viewUniforms.lightTransform = transform;
+	m_viewUniforms.shadowMapIndex = shadowMapIndex;
+
+	// Upload to GPU
+	const auto& viewUniformBuffer = m_viewUniformBuffers[imageIndex % m_commandBufferPool->GetNbConcurrentSubmits()];
+	memcpy(
+		viewUniformBuffer.GetMappedData(),
+		reinterpret_cast<const void*>(&m_viewUniforms), sizeof(ViewUniforms)
+	);
+
+	// Push constant
+	if (m_materials.empty() == false)
+	{
+		commandBuffer.pushConstants(
+			m_materials[0]->pipeline->GetPipelineLayout(0),
+			vk::ShaderStageFlagBits::eFragment, 0, sizeof(uint32_t), &shadowMapIndex
+		);
+	}
+}
+
+void Scene::UpdateShadowMaps(const std::vector<CombinedImageSampler>& shadowMaps)
+{
+	const uint32_t kShadowMapsBinding = 2;
+
+	uint32_t nbShadowTextures = 0;
+
+	// Make sure we match the number of shadow maps from the pipeline
+	auto* material = m_materials[0];
+	const auto& bindings = m_materials[0]->pipeline->GetDescriptorSetLayoutBindings(0);
+	for (const auto& binding : bindings)
+	{
+		if (binding.binding == kShadowMapsBinding)
+		{
+			nbShadowTextures = binding.descriptorCount;
+			break;
+		}
+	}
+
+	std::vector<vk::DescriptorImageInfo> texturesInfo;
+	texturesInfo.reserve(shadowMaps.size());
+	for (int i = 0; i < nbShadowTextures; ++i)
+	{
+		const auto& shadowMap = shadowMaps[i % shadowMaps.size()]; // mustdo: don't wrap, replace with dummy instead
+		texturesInfo.emplace_back(
+			shadowMap.sampler,
+			shadowMap.texture->GetImageView(),
+			vk::ImageLayout::eDepthStencilReadOnlyOptimal
+		);
+	}
+
+	std::vector<vk::WriteDescriptorSet> writeDescriptorSets;
+	writeDescriptorSets.reserve(m_viewDescriptorSets[(size_t)ShadingModel::Lit].size());
+	for (auto& viewDescriptorSet : m_viewDescriptorSets[(size_t)ShadingModel::Lit])
+	{
+		writeDescriptorSets.push_back(vk::WriteDescriptorSet(
+			viewDescriptorSet.get(), kShadowMapsBinding, {},
+			static_cast<uint32_t>(texturesInfo.size()),
+			vk::DescriptorType::eCombinedImageSampler, texturesInfo.data(), nullptr
+		));
+	}
+	g_device->Get().updateDescriptorSets(
+		static_cast<uint32_t>(writeDescriptorSets.size()),
+		writeDescriptorSets.data(),
+		0, nullptr
+	);
 }
 
 void Scene::UploadToGPU(vk::CommandBuffer& commandBuffer)

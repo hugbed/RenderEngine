@@ -29,7 +29,8 @@ struct Light {
 vec4 PhongLighting(
     Light light,
     PhongMaterial material,
-    vec3 normal, vec3 fragPos, vec3 viewPos
+    vec3 normal, vec3 fragPos, vec3 viewPos,
+    float shadow
 ) {
     vec3 viewDir = normalize(viewPos - fragPos);
 
@@ -66,5 +67,5 @@ vec4 PhongLighting(
         specular *= intensity;
     }
 
-    return (ambient + diffuse + specular) * attenuation;
+    return (ambient + (1.0 - shadow) * (diffuse + specular)) * attenuation;
 }

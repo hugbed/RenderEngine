@@ -101,6 +101,21 @@ Shader::Shader(const std::string& filename, std::string entryPoint)
 			m_shaderStage
 		);
 
+		// remember that this binding is a specialization constant
+		// to replace it later
+		if ((bool)type.array_size_literal[0])
+		{
+			for (const auto& c : comp.get_specialization_constants())
+			{
+				if (c.constant_id == (spirv_cross::ConstantID)type.array[0])
+				{
+					// keep set, binding, constant_id
+					m_specializationRef.push_back({ set, binding, c.constant_id });
+					break;
+				}
+			}
+		}
+
 		// We only support 1D arrays for now
 		ASSERT(type.array.empty() || type.array.size() == 1);
 	}
@@ -218,6 +233,24 @@ vk::PipelineVertexInputStateCreateInfo Shader::GetVertexInputStateInfo() const
 
 void Shader::SetSpecializationConstants(const void* data, size_t size)
 {
+	// Replace placeholder array sizes with real values
+	for (const auto& specRef : m_specializationRef)
+	{
+		// Find matching specialization constant
+		for (const auto& spec : m_specializationMapEntries)
+		{
+			if (spec.constantID == specRef.constantID)
+			{
+				ASSERT(spec.size == sizeof(uint32_t));
+
+				// update descriptor count
+				void* src = (char*)data + spec.offset;
+				void* dest = &m_descriptorSetLayouts[specRef.set][specRef.binding].descriptorCount;
+				memcpy(dest, src, sizeof(uint32_t));
+			}
+		}
+	}
+
 	m_specializationInfo = {};
 	m_specializationInfo.dataSize = size;
 	m_specializationInfo.mapEntryCount = static_cast<uint32_t>(m_specializationMapEntries.size());

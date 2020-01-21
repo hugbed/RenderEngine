@@ -35,6 +35,11 @@ namespace
 	}
 }
 
+GraphicsPipelineInfo::GraphicsPipelineInfo()
+	: sampleCount(g_physicalDevice->GetMsaaSamples())
+{
+}
+
 GraphicsPipeline::GraphicsPipeline(
 	vk::RenderPass renderPass,
 	vk::Extent2D viewportExtent,
@@ -89,7 +94,7 @@ void GraphicsPipeline::Init(
 	vk::PipelineMultisampleStateCreateInfo multisampling;
 	multisampling.sampleShadingEnable = VK_FALSE;
 	multisampling.minSampleShading = 1.0f;
-	multisampling.rasterizationSamples = g_physicalDevice->GetMsaaSamples();
+	multisampling.rasterizationSamples = info.sampleCount;
 
 	vk::PipelineColorBlendAttachmentState colorBlendAttachment;
 	if (info.blendEnable)

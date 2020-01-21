@@ -6,6 +6,7 @@
 MaterialCache::MaterialCache(vk::RenderPass renderPass, vk::Extent2D swapchainExtent)
 	: m_renderPass(renderPass)
 	, m_imageExtent(swapchainExtent)
+	, m_shaderCache()
 {
 	// All materials are based on the same "base materials"
 	// Create a material description for each one of them.
@@ -60,10 +61,12 @@ GraphicsPipeline* MaterialCache::LoadGraphicsPipeline(const MaterialInfo& materi
 
 	const auto& materialDescription = m_baseMaterialsInfo[(size_t)materialInfo.baseMaterial];
 
-	auto& vertexShader = LoadShader(materialDescription.vertexShader);
-	auto& fragmentShader = LoadShader(materialDescription.fragmentShader);
+	auto& vertexShader = m_shaderCache.Load(materialDescription.vertexShader);
+	auto& fragmentShader = m_shaderCache.Load(materialDescription.fragmentShader);
 	if (materialDescription.shadingModel == ShadingModel::Lit)
+	{
 		fragmentShader.SetSpecializationConstants(materialInfo.constants);
+	}
 
 	GraphicsPipelineInfo info;
 	info.blendEnable = materialInfo.isTransparent;
@@ -75,17 +78,6 @@ GraphicsPipeline* MaterialCache::LoadGraphicsPipeline(const MaterialInfo& materi
 		));
 
 	return it->second.get();
-}
-
-Shader& MaterialCache::LoadShader(const std::string& filename)
-{
-	auto shaderIt = m_shaders.find(filename);
-	if (shaderIt != m_shaders.end())
-		return *(shaderIt->second);
-
-	auto shader = std::make_unique<Shader>(filename, "main");
-	auto [it, wasAdded] = m_shaders.emplace(filename, std::move(shader));
-	return *it->second;
 }
 
 std::vector<const GraphicsPipeline*> MaterialCache::GetGraphicsPipelines() const

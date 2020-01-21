@@ -14,7 +14,7 @@ public:
 
 	static std::vector<Framebuffer> FromSwapchain(const Swapchain& swapchain, vk::RenderPass renderPass);
 
-	Framebuffer(vk::RenderPass renderPass, vk::Extent2D extent, const std::array<vk::ImageView, 3>& attachments);
+	Framebuffer(vk::RenderPass renderPass, vk::Extent2D extent, const std::vector<vk::ImageView>& attachments);
 
 	const vk::Extent2D& GetExtent() const { return m_extent; }
 

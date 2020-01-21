@@ -7,14 +7,19 @@
 #include <vector>
 #include <map>
 
+struct SpecializationRef
+{
+	uint32_t set;
+	uint32_t binding;
+	uint32_t constantID;
+};
+
 class Shader
 {
 public:
 	// todo: support loading byte array directly
 
 	Shader(const std::string& filename, std::string entryPoint);
-
-	static vk::UniqueShaderModule CreateShaderModule(const std::vector<char>& code);
 
 	template <class T>
 	void SetSpecializationConstants(const T& obj)
@@ -39,9 +44,12 @@ public:
 	}
 
 protected:
+	static vk::UniqueShaderModule CreateShaderModule(const std::vector<char>& code);
+
 	vk::VertexInputBindingDescription m_bindingDescription;
 	std::vector<vk::VertexInputAttributeDescription> m_attributeDescriptions;
 	std::vector<std::vector<vk::DescriptorSetLayoutBinding>> m_descriptorSetLayouts;
+	std::vector<SpecializationRef> m_specializationRef;
 	std::vector<vk::SpecializationMapEntry> m_specializationMapEntries;
 	vk::SpecializationInfo m_specializationInfo;
 	std::vector<vk::PushConstantRange> m_pushConstantRanges;

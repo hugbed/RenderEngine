@@ -14,7 +14,7 @@ std::vector<Framebuffer> Framebuffer::FromSwapchain(const Swapchain& swapchain, 
 
 	for (size_t i = 0; i < swapchain.GetImageCount(); ++i)
 	{
-		std::array<vk::ImageView, 3> attachments = {
+		std::vector<vk::ImageView> attachments = {
 			colorImageView,
 			depthImageView,
 			imageViews[i]
@@ -25,7 +25,7 @@ std::vector<Framebuffer> Framebuffer::FromSwapchain(const Swapchain& swapchain, 
 	return framebuffers;
 }
 
-Framebuffer::Framebuffer(vk::RenderPass renderPass, vk::Extent2D extent, const std::array<vk::ImageView, 3>& attachments)
+Framebuffer::Framebuffer(vk::RenderPass renderPass, vk::Extent2D extent, const std::vector<vk::ImageView>& attachments)
 	: m_extent(extent)
 {
 	vk::FramebufferCreateInfo frameBufferInfo(

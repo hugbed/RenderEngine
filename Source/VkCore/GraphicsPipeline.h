@@ -13,8 +13,12 @@ struct ImageDescription;
 
 struct GraphicsPipelineInfo
 {
+	GraphicsPipelineInfo();
+
 	bool blendEnable = false;
 	bool depthWriteEnable = true;
+	vk::SampleCountFlagBits sampleCount;
+	vk::CullModeFlagBits cullMode = vk::CullModeFlagBits::eBack;
 };
 
 class GraphicsPipeline

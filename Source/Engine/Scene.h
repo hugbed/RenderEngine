@@ -5,6 +5,7 @@
 #include "RenderState.h"
 #include "Camera.h"
 #include "Skybox.h"
+#include "Light.h"
 
 #include <assimp/Importer.hpp> 
 #include <assimp/scene.h>     
@@ -20,6 +21,8 @@ struct ViewUniforms
 	glm::aligned_mat4 view;
 	glm::aligned_mat4 proj;
 	glm::aligned_vec3 pos;
+	glm::aligned_mat4 lightTransform;
+	glm::aligned_int32 shadowMapIndex = 0;
 };
 
 enum class CameraMode { OrbitCamera, FreeCamera };
@@ -44,19 +47,6 @@ struct LitMaterialProperties
 {
 	PhongMaterialProperties phong;
 	EnvironmentMaterialProperties env;
-};
-
-// todo: this belongs somewhere else
-struct Light
-{
-	glm::aligned_int32 type;
-	glm::aligned_vec3 pos;
-	glm::aligned_vec3 direction;
-	glm::aligned_vec4 ambient;
-	glm::aligned_vec4 diffuse;
-	glm::aligned_vec4 specular;
-	glm::aligned_float32 innerCutoff; // (cos of the inner angle)
-	glm::aligned_float32 outerCutoff; // (cos of the outer angle)
 };
 
 struct MeshDrawInfo
@@ -93,18 +83,33 @@ public:
 
 	void Update(uint32_t imageIndex);
 
-	void DrawOpaqueObjects(vk::CommandBuffer commandBuffer, uint32_t frameIndex, RenderState& renderState);
+	void DrawOpaqueObjects(vk::CommandBuffer commandBuffer, uint32_t frameIndex, RenderState& renderState) const;
 	
 	bool HasTransparentObjects() const { return m_transparentDrawCache.empty() == false; }
 	void SortTransparentObjects();
-	void DrawTransparentObjects(vk::CommandBuffer commandBuffer, uint32_t frameIndex, RenderState& renderState);
+	void DrawTransparentObjects(vk::CommandBuffer commandBuffer, uint32_t frameIndex, RenderState& renderState) const;
+
+	// Assumes external pipeline is already bound.
+	// Binds vertices + view + model descriptors and calls draw for each mesh
+	void DrawAllWithoutShading(vk::CommandBuffer& commandBuffer, uint32_t frameIndex, RenderState& renderState) const;
 
 	Camera& GetCamera() { return m_camera; } // todo: there should be a camera control or something
 
+	const Camera& GetCamera() const { return m_camera; } // todo: there should be a camera control or something
+
 	void ResetCamera();
 
+	const std::vector<Light>& GetLights() const { return m_lights; }
+
+	void UpdateShadowMaps(const std::vector<CombinedImageSampler>& shadowMaps);
+
+	void SetShadowCaster(vk::CommandBuffer& commandBuffer, const glm::mat4& transform, uint32_t shadowMapIndex, uint32_t imageIndex);
+
 private:
-	void DrawSceneObjects(vk::CommandBuffer commandBuffer, uint32_t frameIndex, RenderState& state, const std::vector<MeshDrawInfo>& drawCalls);
+	// Uses scene materials
+	void DrawSceneObjects(vk::CommandBuffer commandBuffer, uint32_t frameIndex, RenderState& state, const std::vector<MeshDrawInfo>& drawCalls) const;
+
+	void DrawWithoutShading(vk::CommandBuffer& commandBuffer, uint32_t frameIndex, RenderState& state, const std::vector<MeshDrawInfo>& drawCalls) const;
 
 	void LoadScene(vk::CommandBuffer commandBuffer);
 	void LoadLights(vk::CommandBuffer buffer);
@@ -151,6 +156,7 @@ private:
 
 	using ViewDescriptorSets = std::array<std::vector<vk::UniqueDescriptorSet>, (size_t)ShadingModel::Count>;
 
+	ViewUniforms m_viewUniforms;
 	ViewDescriptorSets m_viewDescriptorSets;
 	std::vector<UniqueBuffer> m_viewUniformBuffers; // one per in flight frame since these change every frame
 	std::unique_ptr<UniqueBufferWithStaging> m_lightsUniformBuffer;

@@ -43,12 +43,12 @@ struct Model
 
 	glm::mat4& GetTransform() { return transform; }
 
-	void Bind(vk::CommandBuffer& commandBuffer) const
+	void Bind(vk::CommandBuffer& commandBuffer, const GraphicsPipeline& pipeline) const
 	{
 		uint32_t set = (uint32_t)DescriptorSetIndices::Model;
 		commandBuffer.bindDescriptorSets(
 			vk::PipelineBindPoint::eGraphics,
-			meshes[0].material->pipeline->GetPipelineLayout(set), set,
+			pipeline.GetPipelineLayout(set), set,
 			1, &descriptorSet.get(), 0, nullptr
 		);
 	}

@@ -99,7 +99,7 @@ Swapchain::Swapchain(vk::SurfaceKHR surface, vk::Extent2D desiredExtent)
 
 	// Depth buffer
 	m_depthImage = std::make_unique<Image>(
-		m_imageDescription.extent.width, m_imageDescription.extent.height, 4UL,
+		m_imageDescription.extent.width, m_imageDescription.extent.height, 1UL,
 		g_physicalDevice->FindDepthFormat(),
 		vk::ImageTiling::eOptimal,
 		vk::ImageUsageFlagBits::eDepthStencilAttachment,

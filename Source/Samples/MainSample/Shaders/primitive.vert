@@ -9,6 +9,7 @@ layout(location = 0) out vec2 fragTexCoord;
 layout(location = 1) out vec3 fragNormal;
 layout(location = 2) out vec3 fragPos;
 layout(location = 3) out vec3 viewPos;
+layout(location = 4) out vec4 fragLightPos;
 
 //--- Set 0 (Scene Uniforms) --- //
 #include "view_set.glsl"
@@ -24,4 +25,5 @@ void main() {
     fragTexCoord = inTexCoord;
     fragNormal = mat3(model.transform) * inNormal; // assumes afine transform
     viewPos = view.pos;
+    fragLightPos = view.lightTransform * vec4(fragPos, 1.0);
 }

@@ -29,7 +29,7 @@ public:
 		vk::SampleCountFlagBits nbSamples = vk::SampleCountFlagBits::e1
 	);
 
-	vk::ImageView GetImageView() const { return m_imageView.get(); }
+	const vk::ImageView& GetImageView() const { return m_imageView.get(); }
 
 	uint32_t GetMipLevels() const { return m_mipLevels; }
 
