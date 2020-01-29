@@ -1,8 +1,21 @@
+#define MAX_NB_SHADOWS 128
+
+// todo: could have this instead:
+// layout(constant_id = CONSTANT_NB_SHADOWS)
+//     const uint kNbShadows = MAX_NB_SHADOWS;
+
+layout(set = SET_VIEW, binding = BINDING_VIEW_SHADOW_MAPS)
+    uniform sampler2D shadowMaps[MAX_NB_SHADOWS];
+
+layout(set = SET_VIEW, binding = BINDING_VIEW_SHADOW_DATA)
+    uniform ShadowData {
+        mat4 transform[MAX_NB_SHADOWS];
+    } shadowData;
+
 /// 1.0 means shadow, 0.0 no shadow
-float ComputeShadow(Light light, in sampler2D shadowMap, vec4 fragLightPos, vec3 fragPos, vec3 normal)
+float ComputeShadow(Light light, vec3 fragPos, vec3 normal)
 {
-    if (USE_SHADOWS == 0)
-        return 0.0;
+    vec4 fragLightPos = shadowData.transform[light.shadowIndex] * vec4(fragPos, 1.0);
 
     vec3 lightDir = normalize(light.pos - fragPos);
 
@@ -18,10 +31,10 @@ float ComputeShadow(Light light, in sampler2D shadowMap, vec4 fragLightPos, vec3
 
     // PCF
     float shadow = 0.0;
-    vec2 texelSize = 1.0 / textureSize(shadowMap, 0);
+    vec2 texelSize = 1.0 / textureSize(shadowMaps[light.shadowIndex], 0);
     for(int x = -1; x <= 1; ++x) {
         for(int y = -1; y <= 1; ++y) {
-            float depth = texture(shadowMap, mapCoord + vec2(x, y) * texelSize).r; 
+            float depth = texture(shadowMaps[light.shadowIndex], mapCoord + vec2(x, y) * texelSize).r; 
             shadow += currentDepth - bias > depth ? 1.0 : 0.0;
         }
     }

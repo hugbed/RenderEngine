@@ -1,0 +1,23 @@
+// --- Descriptor Sets Layout --- //
+
+// Constants
+#define CONSTANT_NB_LIGHTS 0
+#define CONSTANT_USE_SHADOWS 1
+#define CONSTANT_NB_SHADOWS 2
+
+// Set 0 (View)
+#define SET_VIEW 0
+#define BINDING_VIEW_UNIFORMS 0
+#define VIEW_BINDINGS_LIGHTS 1
+#define BINDING_VIEW_SHADOW_MAPS 2
+#define BINDING_VIEW_SHADOW_DATA 3
+
+// Set 1 (Model)
+#define SET_MODEL 1
+#define BINDING_MODEL_UNIFORMS 0
+
+// Set 2 (Material)
+#define SET_MATERIAL 2
+#define BINDING_MATERIAL_PROPERTIES 0
+#define BINDING_MATERIAL_TEX 1
+#define BINDING_MATERIAL_TEX_ENV 2

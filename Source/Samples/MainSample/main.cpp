@@ -206,7 +206,7 @@ protected:
 
 	// For shadow map shaders
 	ShaderCache m_shaderCache;
-	const vk::Extent2D kShadowMapExtent = vk::Extent2D(2048, 2048);
+	const vk::Extent2D kShadowMapExtent = vk::Extent2D(2*2048, 2*2048);
 
 	void UpdateShadowMaps()
 	{
@@ -225,13 +225,12 @@ protected:
 			}
 		}
 
-		std::vector<CombinedImageSampler> shadowTextures;
-		shadowTextures.reserve(m_shadowMaps.size());
+		std::vector<const ShadowMap*> shadowMaps;
+		shadowMaps.reserve(m_shadowMaps.size());
 		for (const auto& shadowMap : m_shadowMaps)
-		{
-			shadowTextures.push_back(m_shadowMaps.back().GetCombinedImageSampler());
-		}
-		m_scene->UpdateShadowMaps(shadowTextures);
+			shadowMaps.push_back(&shadowMap);
+
+		m_scene->UpdateShadowMaps(shadowMaps);
 	}
 
 	void RenderShadowMaps(vk::CommandBuffer& commandBuffer, uint32_t frameIndex)

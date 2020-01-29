@@ -16,14 +16,22 @@ const uint LIGHT_TYPE_POINT = 2;
 const uint LIGHT_TYPE_SPOT = 3;
 
 struct Light {
-    int type;
+    int type; // see LightType enum
+
     vec3 pos; // point
     vec3 direction; // directional
+
+    // colors
     vec4 ambient;
     vec4 diffuse;
     vec4 specular;
+
+    // spot lights
     float innerCutoff; // spot (cos of the inner angle)
     float outerCutoff; // spot (cos of the outer angle)
+
+    // shadows
+    int shadowIndex;
 };
 
 vec4 PhongLighting(

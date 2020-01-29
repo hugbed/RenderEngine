@@ -1,6 +1,7 @@
 #include "Scene.h"
 
 #include "CommandBufferPool.h"
+#include "ShadowMap.h"
 
 #define _USE_MATH_DEFINES
 #include <math.h>
@@ -213,7 +214,7 @@ void Scene::LoadLights(vk::CommandBuffer buffer)
 
 		Light light;
 		light.type = (int)aLight->mType;
-		light.ambient = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f); // add a little until we have global illumination
+		light.ambient = glm::vec4(0.2f, 0.2f, 0.2f, 1.0f); // add a little until we have global illumination
 		light.diffuse = ::ClampColor(glm::make_vec4(&aLight->mColorDiffuse.r));
 		light.specular = ::ClampColor(glm::make_vec4(&aLight->mColorSpecular.r));
 		light.pos = transform[3];
@@ -232,8 +233,21 @@ void Scene::LoadLights(vk::CommandBuffer buffer)
 			light.outerCutoff = std::cos(aLight->mAngleInnerCone * 1.20f);
 		}
 
+		// mustdo: different shadow types (2d, cascade, cube) will need
+		// a different index count
+		light.shadowIndex = i;
+
 		m_lights.push_back(std::move(light));
 	}
+
+	// Reserve shadow data for each light
+	m_shadowDataBuffer = std::make_unique<UniqueBuffer>(
+		vk::BufferCreateInfo(
+			{},
+			m_lights.size() * sizeof(ShadowData),
+			vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eTransferSrc // todo: needs eTransferSrc?
+		), VmaAllocationCreateInfo{ VMA_ALLOCATION_CREATE_MAPPED_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU }
+	);
 }
 
 void Scene::LoadCamera()
@@ -435,7 +449,6 @@ void Scene::LoadMaterials(vk::CommandBuffer commandBuffer)
 		materialInfo.baseMaterial = BaseMaterialID::Phong;
 		materialInfo.isTransparent = opacity < 1.0f;
 		materialInfo.constants.nbLights = m_lights.size();
-		materialInfo.constants.useShadows = 1;
 		auto* material = m_materialCache->CreateMaterial(materialInfo);
 
 #ifdef DEBUG_MODE
@@ -772,20 +785,12 @@ void Scene::SetShadowCaster(vk::CommandBuffer& commandBuffer, const glm::mat4& t
 		viewUniformBuffer.GetMappedData(),
 		reinterpret_cast<const void*>(&m_viewUniforms), sizeof(ViewUniforms)
 	);
-
-	// Push constant
-	if (m_materials.empty() == false)
-	{
-		commandBuffer.pushConstants(
-			m_materials[0]->pipeline->GetPipelineLayout(0),
-			vk::ShaderStageFlagBits::eFragment, 0, sizeof(uint32_t), &shadowMapIndex
-		);
-	}
 }
 
-void Scene::UpdateShadowMaps(const std::vector<CombinedImageSampler>& shadowMaps)
+void Scene::UpdateShadowMaps(const std::vector<const ShadowMap*>& shadowMaps)
 {
 	const uint32_t kShadowMapsBinding = 2;
+	const uint32_t kShadowDataBinding = 3;
 
 	uint32_t nbShadowTextures = 0;
 
@@ -805,14 +810,27 @@ void Scene::UpdateShadowMaps(const std::vector<CombinedImageSampler>& shadowMaps
 	texturesInfo.reserve(shadowMaps.size());
 	for (int i = 0; i < nbShadowTextures; ++i)
 	{
-		const auto& shadowMap = shadowMaps[i % shadowMaps.size()]; // mustdo: don't wrap, replace with dummy instead
+		const auto& shadowMap = *shadowMaps[i % shadowMaps.size()]; // mustdo: don't wrap, replace with dummy instead
+		auto combinedImageSampler = shadowMap.GetCombinedImageSampler();
 		texturesInfo.emplace_back(
-			shadowMap.sampler,
-			shadowMap.texture->GetImageView(),
+			combinedImageSampler.sampler,
+			combinedImageSampler.texture->GetImageView(),
 			vk::ImageLayout::eDepthStencilReadOnlyOptimal
 		);
 	}
 
+	// Update shadow transforms
+	auto* transformData = m_shadowDataBuffer->GetMappedData();
+	ASSERT(shadowMaps.size() * sizeof(ShadowData) <= m_shadowDataBuffer->Size());
+	for (int i = 0; i < shadowMaps.size(); ++i)
+	{
+		const auto& shadowMap = *shadowMaps[i];
+		ShadowData data = { shadowMap.GetLightTransform() };
+		void* dest = (char*)transformData + i * sizeof(ShadowData);
+		memcpy(dest, &data, sizeof(ShadowData));
+	}
+
+	// mustdo: update descriptor sets only once
 	std::vector<vk::WriteDescriptorSet> writeDescriptorSets;
 	writeDescriptorSets.reserve(m_viewDescriptorSets[(size_t)ShadingModel::Lit].size());
 	for (auto& viewDescriptorSet : m_viewDescriptorSets[(size_t)ShadingModel::Lit])
@@ -821,6 +839,12 @@ void Scene::UpdateShadowMaps(const std::vector<CombinedImageSampler>& shadowMaps
 			viewDescriptorSet.get(), kShadowMapsBinding, {},
 			static_cast<uint32_t>(texturesInfo.size()),
 			vk::DescriptorType::eCombinedImageSampler, texturesInfo.data(), nullptr
+		));
+
+		vk::DescriptorBufferInfo descriptorBufferInfo(m_shadowDataBuffer->Get(), 0, shadowMaps.size() * sizeof(ShadowData));
+		writeDescriptorSets.push_back(vk::WriteDescriptorSet(
+			viewDescriptorSet.get(), kShadowDataBinding, {},
+			1, vk::DescriptorType::eUniformBuffer, nullptr, &descriptorBufferInfo
 		));
 	}
 	g_device->Get().updateDescriptorSets(

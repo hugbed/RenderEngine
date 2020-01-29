@@ -1,32 +1,26 @@
 #version 450
 #extension GL_ARB_separate_shader_objects : enable
 
-#include "phong.glsl"
+#include "material_common.glsl"
 
 layout(location = 0) in vec2 fragTexCoord;
 layout(location = 1) in vec3 fragNormal;
 layout(location = 2) in vec3 fragPos;
 layout(location = 3) in vec3 viewPos;
-layout(location = 4) in vec4 fragLightPos;
 
 layout(location = 0) out vec4 outColor;
 
 //--- Set 0 (Scene Uniforms) --- //
 
-layout(constant_id = 0) const uint NB_LIGHTS = 1;
+#include "phong.glsl"
 
-layout(set = 0, binding = 1) uniform Lights {
-    Light light[NB_LIGHTS];
-} lights;
+layout(constant_id = CONSTANT_NB_LIGHTS)
+    const uint NB_LIGHTS = 1;
 
-layout(push_constant) uniform ShadowBlock {
-  layout(offset = 0) int mapIndex;
-} shadowConst;
-
-layout(set = 0, binding = 2) uniform sampler2D shadowMaps[NB_LIGHTS];
-
-// --- Set 1 (Model Uniforms) --- //
-// ...
+layout(set = SET_VIEW, binding = VIEW_BINDINGS_LIGHTS)
+    uniform Lights {
+        Light light[NB_LIGHTS];
+    } lights;
 
 // --- Set 2 (Material Uniforms) --- //
 
@@ -36,25 +30,26 @@ struct EnvironmentProperties {
     float transmission; // refraction [0..1]
 };
 
-layout(set = 2, binding = 0) uniform MaterialProperties {
-    PhongMaterial phong;
-    EnvironmentProperties env;
-} material;
+layout(set = SET_MATERIAL, binding = BINDING_MATERIAL_PROPERTIES)
+    uniform MaterialProperties {
+        PhongMaterial phong;
+        EnvironmentProperties env;
+    } material;
 
-layout(set = 2, binding = 1) uniform sampler2D texSamplers[PHONG_TEX_COUNT];
+layout(set = SET_MATERIAL, binding = BINDING_MATERIAL_TEX)
+    uniform sampler2D texSamplers[PHONG_TEX_COUNT];
 
-layout(set = 2, binding = 2) uniform samplerCube environmentSampler;
-
-layout(constant_id = 1) const uint USE_SHADOWS = 1;
+layout(set = SET_MATERIAL, binding = BINDING_MATERIAL_TEX_ENV)
+    uniform samplerCube environmentSampler;
 
 #include "shadow.glsl"
 
-// todo: have #define to choose either rgba or texture instead of using both
 void main() {
     vec3 normal = normalize(fragNormal);
 
     // --- Shading --- //
 
+    // todo: have #define to choose either rgba or texture instead of using both
     vec4 diffuse = material.phong.diffuse * texture(texSamplers[PHONG_TEX_DIFFUSE], fragTexCoord);
     vec4 specular = material.phong.specular * texture(texSamplers[PHONG_TEX_SPECULAR], fragTexCoord);
     PhongMaterial phongMaterial = PhongMaterial(diffuse, specular, material.phong.shininess);
@@ -62,7 +57,7 @@ void main() {
     vec3 shadedColor = vec3(0.0, 0.0, 0.0);
     for (int i = 0; i < NB_LIGHTS; ++i)
     {
-        float shadow = ComputeShadow(lights.light[i], shadowMaps[shadowConst.mapIndex], fragLightPos, fragPos, normal);
+        float shadow = ComputeShadow(lights.light[i], fragPos, normal);
         shadedColor += PhongLighting(lights.light[i], phongMaterial, normal, fragPos, viewPos, shadow).rgb;
     }
 

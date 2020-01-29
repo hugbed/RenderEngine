@@ -31,7 +31,6 @@ struct BaseMaterialInfo
 struct MaterialConstants // surface.frag
 {
 	uint32_t nbLights = 1;
-	uint32_t useShadows = 1;
 };
 
 struct MaterialInfo

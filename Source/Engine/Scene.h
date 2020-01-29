@@ -16,6 +16,8 @@
 
 #include <iostream>
 
+class ShadowMap;
+
 struct ViewUniforms
 {
 	glm::aligned_mat4 view;
@@ -23,6 +25,11 @@ struct ViewUniforms
 	glm::aligned_vec3 pos;
 	glm::aligned_mat4 lightTransform;
 	glm::aligned_int32 shadowMapIndex = 0;
+};
+
+struct ShadowData
+{
+	glm::aligned_mat4 transform;
 };
 
 enum class CameraMode { OrbitCamera, FreeCamera };
@@ -101,7 +108,7 @@ public:
 
 	const std::vector<Light>& GetLights() const { return m_lights; }
 
-	void UpdateShadowMaps(const std::vector<CombinedImageSampler>& shadowMaps);
+	void UpdateShadowMaps(const std::vector<const ShadowMap*>& shadowMaps);
 
 	void SetShadowCaster(vk::CommandBuffer& commandBuffer, const glm::mat4& transform, uint32_t shadowMapIndex, uint32_t imageIndex);
 
@@ -151,6 +158,8 @@ private:
 	// --- Lights --- //
 
 	std::vector<Light> m_lights;
+
+	std::unique_ptr<UniqueBuffer> m_shadowDataBuffer;
 
 	// --- View --- //
 
