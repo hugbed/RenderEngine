@@ -17,6 +17,7 @@ ShadowMap::ShadowMap(vk::Extent2D extent, const Light& light, ShaderCache& shade
 
 	CreateViewUniformBuffers();
 	UpdateViewUniforms();
+	UpdateDescriptorSets();
 }
 
 void ShadowMap::Reset(vk::Extent2D extent)
@@ -30,6 +31,7 @@ void ShadowMap::Reset(vk::Extent2D extent)
 	CreateDescriptorPool();
 	CreateDescriptorSets();
 	UpdateViewUniforms();
+	UpdateDescriptorSets();
 }
 
 void ShadowMap::Render(vk::CommandBuffer& commandBuffer, uint32_t frameIndex) const
@@ -221,26 +223,54 @@ void ShadowMap::UpdateViewUniforms()
 	// --- Update values --- //
 
 	m_viewUniforms = {};
+
+#ifdef SHADOWMAP_CAM_FRUSTRUM_CULLING
+	// todo: fit light matrix to only the relevant
+	// shadow casters/receivers. We'd need to also take
+	// into account shadow casters outside cam frustrum
+	// casting shadow into the camera frustrum.
+
+	// Compute camera frustrum corners
+	std::vector<glm::vec3> camFrustrumPts = m_scene->GetCamera().ComputeFrustrumCorners();
+
+	// Simplify to bounding box in world coordinates
+	BoundingBox box_world = BoundingBox::FromPoints(camFrustrumPts);
+
+	// Find bounding box of scene objects inside view frustrum
+	box_world = box_world.Intersection(m_scene->GetBoundingBox());
+#else
+	// Until then, capture all the scene in the shadow map
+	BoundingBox box_world = m_scene->GetBoundingBox();
+#endif
+
+	// Center the light in the middle of this box.
+	// Computing the projection matrix will then only require
+	// to compute the scaling matrix to bring this box between -1 and 1.
+	glm::vec3 center = box_world.min + (box_world.max - box_world.min)/2.0f;
+
+	// Choose a right vector to find the up vector
+	glm::vec3 right(0.0f, 0.0f, 1.0f);
+	if (std::abs(glm::dot(m_light.direction, right)) > 0.9999f)
+		right = glm::vec3(1.0f, 0.0f, 0.0f);
+
+	// Use this center and the light direction for the view matrix
+	glm::vec3 l_eye = center;
+	glm::vec3 l_center = center + m_light.direction;
+	glm::vec3 l_up = glm::cross(m_light.direction, right);
 	m_viewUniforms.view = glm::lookAt(
-		m_light.pos,
-		m_scene->GetCamera().GetLookAt(),
-		glm::vec3(0.0f, 1.0f, 0.0)
+		l_eye, l_center, l_up
 	);
 
-	// mustdo: compute light frustrum in a smart way
-	// we could use the depth to compute min/max depth of the camera
-	// maybe that would help
-
-	//ubo.proj = glm::perspective(
-	//	glm::radians(m_scene->GetCamera().GetFieldOfView()),
-	//	m_extent.width / (float)m_extent.height,
-	//	m_scene->GetCamera().GetNearPlane(), m_scene->GetCamera().GetFarPlane()
-	//);
-	float camSize = 1.5f;
-	float near_plane = 0.0f;
-	float far_plane = 3.0f;
-	m_viewUniforms.proj = glm::ortho(-camSize, camSize, -camSize, camSize, near_plane, far_plane); // ortho if directional
-	m_viewUniforms.pos = m_light.pos;
+	// The projection matrix maps this box in light space between -1.0 and 1.0
+	BoundingBox box_light = m_viewUniforms.view * box_world;
+	m_viewUniforms.proj = glm::ortho(
+		box_light.min.x, box_light.max.x,
+		box_light.min.y, box_light.max.y,
+		box_light.min.z, box_light.max.z
+	);
+	
+	// skip position for directional lights
+	//m_viewUniforms.pos = m_light.pos;
 
 	// OpenGL -> Vulkan invert y, half z
 	auto clip = glm::mat4(
@@ -251,10 +281,12 @@ void ShadowMap::UpdateViewUniforms()
 	);
 	m_viewUniforms.proj = clip * m_viewUniforms.proj;
 
-	// --- Update Descriptor Set --- //
+	// Write values to uniform buffer
+	memcpy(m_viewUniformBuffer->GetMappedData(), reinterpret_cast<const void*>(&m_viewUniforms), sizeof(ViewUniforms));
+}
 
-	// mustdo: do update this only once
-
+void ShadowMap::UpdateDescriptorSets()
+{
 	uint32_t binding = 0;
 	vk::DescriptorBufferInfo descriptorBufferInfoView(m_viewUniformBuffer->Get(), 0, sizeof(ViewUniforms));
 	std::vector<vk::WriteDescriptorSet> writeDescriptorSets = {
@@ -264,8 +296,4 @@ void ShadowMap::UpdateViewUniforms()
 		) // binding = 0
 	};
 	g_device->Get().updateDescriptorSets(static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
-
-	// --- Write values to uniform buffer --- //
-
-	memcpy(m_viewUniformBuffer->GetMappedData(), reinterpret_cast<const void*>(&m_viewUniforms), sizeof(ViewUniforms));
 }

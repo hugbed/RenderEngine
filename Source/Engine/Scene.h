@@ -104,6 +104,8 @@ public:
 
 	const Camera& GetCamera() const { return m_camera; } // todo: there should be a camera control or something
 
+	BoundingBox GetBoundingBox() const { return m_boundingBox; }
+
 	void ResetCamera();
 
 	const std::vector<Light>& GetLights() const { return m_lights; }
@@ -172,6 +174,8 @@ private:
 
 	// --- Model --- //
 	
+	BoundingBox m_boundingBox;
+
 	float m_maxVertexDist = 0.0f;
 	std::vector<Vertex> m_vertices;
 	std::vector<uint32_t> m_indices;

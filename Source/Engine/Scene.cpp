@@ -49,7 +49,12 @@ Scene::Scene(
 	, m_imageExtent(imageExtent)
 	, m_textureCache(std::make_unique<TextureCache>(m_basePath))
 	, m_materialCache(std::make_unique<MaterialCache>(renderPass.Get(), imageExtent))
-	, m_camera(1.0f * glm::vec3(1.0f, 1.0f, 1.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f), 45.0f, 0.01f, 100.0f)
+	, m_camera(
+		1.0f * glm::vec3(1.0f, 1.0f, 1.0f),
+		glm::vec3(0.0f, 0.0f, 0.0f),
+		glm::vec3(0.0f, 0.0f, 1.0f), 45.0f, 0.01f, 5.0f,
+		m_imageExtent.width, m_imageExtent.height)
+	, m_boundingBox()
 {
 }
 
@@ -57,6 +62,8 @@ void Scene::Reset(vk::CommandBuffer& commandBuffer, const RenderPass& renderPass
 {
 	m_renderPass = &renderPass;
 	m_imageExtent = imageExtent;
+
+	m_camera.SetImageExtent(m_imageExtent.width, m_imageExtent.height);
 
 	m_materialCache->Reset(m_renderPass->Get(), m_imageExtent);
 	m_skybox->Reset(*m_renderPass, m_imageExtent);
@@ -82,21 +89,9 @@ void Scene::Update(uint32_t imageIndex)
 {
 	vk::Extent2D extent = m_imageExtent;
 
-	// OpenGL -> Vulkan invert y, half z
-	auto clip = glm::mat4(
-		1.0f, 0.0f, 0.0f, 0.0f,
-		0.0f, -1.0f, 0.0f, 0.0f,
-		0.0f, 0.0f, 0.5f, 0.0f,
-		0.0f, 0.0f, 0.5f, 1.0f
-	);
-
 	m_viewUniforms.pos = m_camera.GetEye();
 	m_viewUniforms.view = m_camera.GetViewMatrix();
-	m_viewUniforms.proj = clip * glm::perspective(
-		glm::radians(m_camera.GetFieldOfView()),
-		extent.width / (float)extent.height,
-		m_camera.GetNearPlane(), m_camera.GetFarPlane()
-	);
+	m_viewUniforms.proj = m_camera.GetProjectionMatrix();
 
 	// Upload to GPU
 	auto& uniformBuffer = GetViewUniformBuffer(imageIndex);
@@ -205,6 +200,7 @@ void Scene::LoadScene(vk::CommandBuffer commandBuffer)
 
 void Scene::LoadLights(vk::CommandBuffer buffer)
 {
+	int nbShadowCastingLights = 0;
 	for (int i = 0; i < m_assimp.scene->mNumLights; ++i)
 	{
 		aiLight* aLight = m_assimp.scene->mLights[i];
@@ -233,9 +229,9 @@ void Scene::LoadLights(vk::CommandBuffer buffer)
 			light.outerCutoff = std::cos(aLight->mAngleInnerCone * 1.20f);
 		}
 
-		// mustdo: different shadow types (2d, cascade, cube) will need
-		// a different index count
-		light.shadowIndex = i;
+		// mustdo: different shadow types (2d, cascade, cube) will need a different index count
+		if (light.type == aiLightSource_DIRECTIONAL)
+			light.shadowIndex = nbShadowCastingLights++;
 
 		m_lights.push_back(std::move(light));
 	}
@@ -244,7 +240,7 @@ void Scene::LoadLights(vk::CommandBuffer buffer)
 	m_shadowDataBuffer = std::make_unique<UniqueBuffer>(
 		vk::BufferCreateInfo(
 			{},
-			m_lights.size() * sizeof(ShadowData),
+			nbShadowCastingLights * sizeof(ShadowData),
 			vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eTransferSrc // todo: needs eTransferSrc?
 		), VmaAllocationCreateInfo{ VMA_ALLOCATION_CREATE_MAPPED_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU }
 	);
@@ -364,8 +360,8 @@ void Scene::LoadNodeAndChildren(aiNode* node, glm::mat4 transform)
 	{
 		// Create a new model if it has mesh(es)
 		Model model;
+		model.UpdateTransform(newTransform);
 		LoadMeshes(*node, model);
-		model.SetTransform(newTransform);
 		m_models.push_back(std::move(model));
 	}
 
@@ -375,6 +371,10 @@ void Scene::LoadNodeAndChildren(aiNode* node, glm::mat4 transform)
 
 void Scene::LoadMeshes(const aiNode& fileNode, Model& model)
 {
+	float maxFloat = std::numeric_limits<float>::max();
+
+	BoundingBox box;
+	
 	model.meshes.reserve(m_assimp.scene->mNumMeshes);
 	for (size_t i = 0; i < fileNode.mNumMeshes; ++i)
 	{
@@ -399,6 +399,8 @@ void Scene::LoadMeshes(const aiNode& fileNode, Model& model)
 			vertex.normal = hasNormals ? glm::make_vec3(&aMesh->mNormals[v].x) : glm::vec3(0.0f);
 
 			m_maxVertexDist = (std::max)(m_maxVertexDist, glm::length(vertex.pos - glm::vec3(0.0f)));
+			box.min = (glm::min)(box.min, vertex.pos);
+			box.max = (glm::max)(box.max, vertex.pos);
 
 			m_vertices.push_back(vertex);
 		}
@@ -411,6 +413,10 @@ void Scene::LoadMeshes(const aiNode& fileNode, Model& model)
 
 		model.meshes.push_back(std::move(mesh));
 	}
+
+	model.SetLocalAABB(box);
+
+	m_boundingBox = m_boundingBox.Union(model.GetWorldAABB());
 }
 
 void Scene::LoadMaterials(vk::CommandBuffer commandBuffer)

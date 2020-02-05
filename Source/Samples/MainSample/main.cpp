@@ -219,9 +219,13 @@ protected:
 		{
 			for (const auto& light : m_scene->GetLights())
 			{
-				m_shadowMaps.emplace_back(
-					kShadowMapExtent, light, m_shaderCache, *m_scene
-				);
+				// todo: support other light types for shadows
+				if (light.type == aiLightSource_DIRECTIONAL)
+				{
+					m_shadowMaps.emplace_back(
+						kShadowMapExtent, light, m_shaderCache, *m_scene
+					);
+				}
 			}
 		}
 
@@ -235,8 +239,9 @@ protected:
 
 	void RenderShadowMaps(vk::CommandBuffer& commandBuffer, uint32_t frameIndex)
 	{
-		for (const auto& shadowMap : m_shadowMaps)
+		for (auto& shadowMap : m_shadowMaps)
 		{
+			shadowMap.UpdateViewUniforms();
 			shadowMap.Render(commandBuffer, frameIndex);
 		}
 	}
@@ -339,7 +344,14 @@ protected:
 			camera.SetCameraView(finalPositionV3, camera.GetLookAt(), app->m_upVector);
 
 			// We need to recompute transparent object order if camera changes
-			if (app->m_scene->HasTransparentObjects())
+			bool shouldRenderShadowMaps = false;
+#ifdef SHADOWMAP_CAM_FRUSTRUM_CULLING
+			// when implementing camera frustrum culling, we need
+			// to render shadow maps every time the camera moves
+			// (at least for the close objects).
+			shouldRenderShadowMaps = true;
+#endif
+			if (app->m_scene->HasTransparentObjects() || shouldRenderShadowMaps)
 			{
 				app->m_scene->SortTransparentObjects();
 				app->m_frameDirty = kAllFramesDirty;

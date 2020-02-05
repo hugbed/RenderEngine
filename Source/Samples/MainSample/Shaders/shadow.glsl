@@ -15,6 +15,10 @@ layout(set = SET_VIEW, binding = BINDING_VIEW_SHADOW_DATA)
 /// 1.0 means shadow, 0.0 no shadow
 float ComputeShadow(Light light, vec3 fragPos, vec3 normal)
 {
+    // todo: implement shadows for other light types
+    if (light.type != LIGHT_TYPE_DIRECTIONAL)
+        return 0.0;
+
     vec4 fragLightPos = shadowData.transform[light.shadowIndex] * vec4(fragPos, 1.0);
 
     vec3 lightDir = normalize(light.pos - fragPos);

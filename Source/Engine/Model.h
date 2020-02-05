@@ -2,6 +2,7 @@
 
 #include "DescriptorSetLayouts.h"
 #include "Material.h"
+#include "BoundingBox.h"
 
 #include "Buffers.h"
 
@@ -25,20 +26,22 @@ struct ModelUniforms
 
 struct Model
 {
-	Model()
-		: uniformBuffer(std::make_unique<UniqueBuffer>(
-			vk::BufferCreateInfo(
-				{}, sizeof(ModelUniforms), vk::BufferUsageFlagBits::eUniformBuffer
-			), VmaAllocationCreateInfo{ VMA_ALLOCATION_CREATE_MAPPED_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU }
-			))
-	{
-		memcpy(uniformBuffer->GetMappedData(), &transform, sizeof(glm::mat4));
-	}
+	Model();
 
-	void SetTransform(glm::mat4 transform)
+	void UpdateTransform(glm::mat4 transform)
 	{
 		this->transform = std::move(transform);
 		memcpy(uniformBuffer->GetMappedData(), &this->transform, sizeof(glm::mat4));
+	}
+
+	void SetLocalAABB(const BoundingBox& box)
+	{
+		boundingBox = transform * box;
+	}
+
+	const BoundingBox& GetWorldAABB()
+	{
+		return boundingBox;
 	}
 
 	glm::mat4& GetTransform() { return transform; }
@@ -62,5 +65,6 @@ struct Model
 	vk::UniqueDescriptorSet descriptorSet;
 
 private:
+	BoundingBox boundingBox = {};
 	glm::mat4 transform = glm::mat4(1.0f);
 };

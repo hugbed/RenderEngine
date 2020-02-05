@@ -39,6 +39,8 @@ public:
 		return m_viewUniforms.proj * m_viewUniforms.view;
 	}
 
+	void UpdateViewUniforms();
+
 private:
 	void CreateDepthImage();
 
@@ -56,7 +58,7 @@ private:
 
 	void CreateViewUniformBuffers();
 
-	void UpdateViewUniforms();
+	void UpdateDescriptorSets();
 
 private:
 	const char* vertexShaderFile = "shadow_map_vert.spv";
@@ -74,7 +76,7 @@ private:
 	std::unique_ptr<GraphicsPipeline> m_graphicsPipeline;
 
 	ViewUniforms m_viewUniforms;
-	vk::UniqueDescriptorPool m_descriptorPool;
+	vk::UniqueDescriptorPool m_descriptorPool; // todo: group descriptor pools
 	vk::UniqueDescriptorSet m_viewDescriptorSet;
 	std::unique_ptr<UniqueBuffer> m_viewUniformBuffer;
 };

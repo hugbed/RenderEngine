@@ -28,7 +28,7 @@ struct BaseMaterialInfo
 	std::string fragmentShader;
 };
 
-struct MaterialConstants // surface.frag
+struct MaterialConstants
 {
 	uint32_t nbLights = 1;
 };
