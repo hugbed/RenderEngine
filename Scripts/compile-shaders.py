@@ -5,6 +5,7 @@ import json
 import hashlib
 import sys
 import base64
+import re
 
 if len(sys.argv) < 2:
     print("Argument error, expecting 'compile_shaders.py [Debug|Release|RelWithDebInfo]'")
@@ -18,9 +19,31 @@ input_dir =  project_dir / "Source" / "Samples" / "MainSample" / "Shaders" # cou
 output_dir = project_dir / "Build" / "Source" / "Samples" / "MainSample" / config # could be passed as argument (executable path)
 shader_cache_path = project_dir / "Build" / "shader_cache_{}.json".format(config.lower())
 
-def hash_file(file_path_str):
+def append_includes(file_path_str):
+    contents = ""
     with open(file_path_str, 'r') as f:
-        return hash_str(f.read())
+        contents = f.read()
+    traversed_inputs = []
+    return append_includes_internal(get_includes(file_path_str), contents, traversed_inputs)
+
+def append_includes_internal(includes, contents, traversed_inputs):
+    if not includes:
+        return contents
+
+    # we could append where the include is but it doesn't matter
+    # since we just want to know if all of this changed
+    for include in includes:
+        include_path = input_dir / include
+        if include_path not in traversed_inputs: # prevent infinite recursion
+            traversed_inputs.append(str(include_path))
+            with open(include_path, 'r') as f:
+                contents += f.read()
+            contents = append_includes_internal(get_includes(include_path), contents, traversed_inputs)
+    
+    return contents
+
+def hash_glsl_file(file_path_str):
+    return hash_str(append_includes(file_path_str))
 
 def hash_str(s):
     hasher = hashlib.md5()
@@ -31,8 +54,20 @@ def generate_cache_item(input_path_str, output_path_str):
     return {
         "input": hash_str(input_path_str),
         "output": str(Path(output_path_str).resolve()),
-        "checksum": hash_file(input_path_str)
+        "checksum": hash_glsl_file(input_path_str)
     }
+
+def get_includes(input_path_str):
+    # open file
+    contents = ""
+    with open(input_path_str, "r") as f:
+        contents = f.read()
+
+    # look for #include "something.glsl"
+    m = re.findall(r'#include\s*"([a-zA-Z0-9_]+.(?:glsl))"', contents)
+    if not m:
+        return []
+    return m
 
 def is_target_up_to_date(shader_cache, cache_item):
     input = cache_item["input"]
