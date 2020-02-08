@@ -84,7 +84,7 @@ Shader::Shader(const std::string& filename, std::string entryPoint)
 	for (const auto& sampler : shaderResources.sampled_images)
 	{
 		auto set = comp.get_decoration(sampler.id, spv::Decoration::DecorationDescriptorSet);
-		if (m_descriptorSetLayouts.size() < set)
+		if (m_descriptorSetLayouts.size() <= set)
 			m_descriptorSetLayouts.resize(set + 1);
 
 		auto& descriptorSetLayout = m_descriptorSetLayouts[set];
