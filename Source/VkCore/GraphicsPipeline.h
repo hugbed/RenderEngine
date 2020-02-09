@@ -15,7 +15,9 @@ struct GraphicsPipelineInfo
 {
 	GraphicsPipelineInfo();
 
+	vk::PrimitiveTopology primitiveTopology = vk::PrimitiveTopology::eTriangleList;
 	bool blendEnable = false;
+	bool depthTestEnable = true;
 	bool depthWriteEnable = true;
 	vk::SampleCountFlagBits sampleCount;
 	vk::CullModeFlagBits cullMode = vk::CullModeFlagBits::eBack;

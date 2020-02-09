@@ -157,7 +157,7 @@ void ShadowMap::CreateGraphicsPipeline()
 	GraphicsPipelineInfo info;
 	info.sampleCount = vk::SampleCountFlagBits::e1;
 
-	// Use fron culling to prevent peter-panning
+	// Use front culling to prevent peter-panning
 	// note that this prevents from rendering shadows
 	// for meshes that don't have a back face (e.g. a plane)
 	// eBack could be used in this case.
@@ -213,62 +213,52 @@ void ShadowMap::CreateViewUniformBuffers()
 		vk::BufferCreateInfo(
 			{},
 			sizeof(ViewUniforms),
-			vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eTransferSrc // todo: needs eTransferSrc?
+			vk::BufferUsageFlagBits::eUniformBuffer
 		), VmaAllocationCreateInfo{ VMA_ALLOCATION_CREATE_MAPPED_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU }
 	);
 }
 
 void ShadowMap::UpdateViewUniforms()
 {
-	// --- Update values --- //
-
-	m_viewUniforms = {};
-
-#ifdef SHADOWMAP_CAM_FRUSTRUM_CULLING
-	// todo: fit light matrix to only the relevant
-	// shadow casters/receivers. We'd need to also take
-	// into account shadow casters outside cam frustrum
-	// casting shadow into the camera frustrum.
-
 	// Compute camera frustrum corners
 	std::vector<glm::vec3> camFrustrumPts = m_scene->GetCamera().ComputeFrustrumCorners();
 
 	// Simplify to bounding box in world coordinates
-	BoundingBox box_world = BoundingBox::FromPoints(camFrustrumPts);
-
-	// Find bounding box of scene objects inside view frustrum
-	box_world = box_world.Intersection(m_scene->GetBoundingBox());
-#else
-	// Until then, capture all the scene in the shadow map
-	BoundingBox box_world = m_scene->GetBoundingBox();
-#endif
-
-	// Center the light in the middle of this box.
-	// Computing the projection matrix will then only require
-	// to compute the scaling matrix to bring this box between -1 and 1.
-	glm::vec3 center = box_world.min + (box_world.max - box_world.min)/2.0f;
+	BoundingBox camBox_world = BoundingBox::FromPoints(camFrustrumPts);
 
 	// Choose a right vector to find the up vector
 	glm::vec3 right(0.0f, 0.0f, 1.0f);
 	if (std::abs(glm::dot(m_light.direction, right)) > 0.9999f)
 		right = glm::vec3(1.0f, 0.0f, 0.0f);
 
-	// Use this center and the light direction for the view matrix
-	glm::vec3 l_eye = center;
-	glm::vec3 l_center = center + m_light.direction;
-	glm::vec3 l_up = glm::cross(m_light.direction, right);
-	m_viewUniforms.view = glm::lookAt(
-		l_eye, l_center, l_up
+	// Use the light direction for the view matrix. View doesn't need to be centered in the box.
+	// If it's not, the orthographic projection will take translation into account.
+	glm::mat4 view = glm::lookAt(
+		glm::vec3(0.0f, 0.0f, 0.0f),
+		m_light.direction,
+		glm::cross(m_light.direction, right)
 	);
 
+	// Transform to light space and fit to scene objects
+	BoundingBox camBox_view = view * camBox_world;
+	BoundingBox sceneBox_view = view * m_scene->GetBoundingBox();
+
+	// Make sure to keep all objects that can cast shadow into the camera frustrum.
+	// Light is looking at -z so bring near plane to the fartest object in the light direction (-z).
+	camBox_view.max.z = sceneBox_view.max.z;
+
+	// else tightly fix objects from scene inside the frustrum (left, right and far planes)
+	camBox_view.min = (glm::max)(camBox_view.min, sceneBox_view.min);
+	camBox_view.max.x = (std::min)(camBox_view.max.x, sceneBox_view.max.x);
+	camBox_view.max.y = (std::min)(camBox_view.max.y, sceneBox_view.max.y);
+
 	// The projection matrix maps this box in light space between -1.0 and 1.0
-	BoundingBox box_light = m_viewUniforms.view * box_world;
-	m_viewUniforms.proj = glm::ortho(
-		box_light.min.x, box_light.max.x,
-		box_light.min.y, box_light.max.y,
-		box_light.min.z, box_light.max.z
+	glm::mat4 proj = glm::ortho(
+		camBox_view.min.x, camBox_view.max.x,
+		camBox_view.min.y, camBox_view.max.y,
+		camBox_view.min.z, camBox_view.max.z
 	);
-	
+
 	// skip position for directional lights
 	//m_viewUniforms.pos = m_light.pos;
 
@@ -279,7 +269,10 @@ void ShadowMap::UpdateViewUniforms()
 		0.0f, 0.0f, 0.5f, 0.0f,
 		0.0f, 0.0f, 0.5f, 1.0f
 	);
-	m_viewUniforms.proj = clip * m_viewUniforms.proj;
+
+	m_viewUniforms = {};
+	m_viewUniforms.view = view;
+	m_viewUniforms.proj = clip * proj;
 
 	// Write values to uniform buffer
 	memcpy(m_viewUniformBuffer->GetMappedData(), reinterpret_cast<const void*>(&m_viewUniforms), sizeof(ViewUniforms));

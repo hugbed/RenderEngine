@@ -11,9 +11,6 @@
 
 class PhysicalDevice;
 
-// Image using Vulkan Memory Allocator
-
-
 // Device singleton implementation. Init/Term is not thread-safe
 // however, all other public functions should be const and thus thread-safe.
 class Device

@@ -68,7 +68,7 @@ void GraphicsPipeline::Init(
 
 	vk::PipelineShaderStageCreateInfo shaderStages[] = { vertexShader.GetShaderStageInfo(), fragmentShader.GetShaderStageInfo() };
 
-	vk::PipelineInputAssemblyStateCreateInfo inputAssembly({}, vk::PrimitiveTopology::eTriangleList);
+	vk::PipelineInputAssemblyStateCreateInfo inputAssembly({}, info.primitiveTopology);
 
 	// Viewport state
 
@@ -178,7 +178,7 @@ void GraphicsPipeline::Init(
 
 	vk::PipelineDepthStencilStateCreateInfo depthStencilState(
 		{},
-		true, // depthTestEnable
+		info.depthTestEnable, // depthTestEnable
 		info.depthWriteEnable, // depthWriteEnable
 		vk::CompareOp::eLessOrEqual, // depthCompareOp
 		false, // depthBoundsTestEnable

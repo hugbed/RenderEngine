@@ -23,8 +23,6 @@ struct ViewUniforms
 	glm::aligned_mat4 view;
 	glm::aligned_mat4 proj;
 	glm::aligned_vec3 pos;
-	glm::aligned_mat4 lightTransform;
-	glm::aligned_int32 shadowMapIndex = 0;
 };
 
 struct ShadowData
@@ -110,9 +108,9 @@ public:
 
 	const std::vector<Light>& GetLights() const { return m_lights; }
 
-	void UpdateShadowMaps(const std::vector<const ShadowMap*>& shadowMaps);
+	void InitShadowMaps(const std::vector<const ShadowMap*>& shadowMaps);
 
-	void SetShadowCaster(vk::CommandBuffer& commandBuffer, const glm::mat4& transform, uint32_t shadowMapIndex, uint32_t imageIndex);
+	void UpdateShadowMapsTransforms(const std::vector<glm::mat4>& shadowMaps);
 
 private:
 	// Uses scene materials

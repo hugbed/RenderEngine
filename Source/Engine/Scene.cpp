@@ -52,7 +52,7 @@ Scene::Scene(
 	, m_camera(
 		1.0f * glm::vec3(1.0f, 1.0f, 1.0f),
 		glm::vec3(0.0f, 0.0f, 0.0f),
-		glm::vec3(0.0f, 0.0f, 1.0f), 45.0f, 0.01f, 5.0f,
+		glm::vec3(0.0f, 0.0f, 1.0f), 45.0f, 0.01f, 100.0f,
 		m_imageExtent.width, m_imageExtent.height)
 	, m_boundingBox()
 {
@@ -241,7 +241,7 @@ void Scene::LoadLights(vk::CommandBuffer buffer)
 		vk::BufferCreateInfo(
 			{},
 			nbShadowCastingLights * sizeof(ShadowData),
-			vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eTransferSrc // todo: needs eTransferSrc?
+			vk::BufferUsageFlagBits::eUniformBuffer
 		), VmaAllocationCreateInfo{ VMA_ALLOCATION_CREATE_MAPPED_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU }
 	);
 }
@@ -778,22 +778,19 @@ void Scene::UpdateMaterialDescriptors()
 	}
 }
 
-void Scene::SetShadowCaster(vk::CommandBuffer& commandBuffer, const glm::mat4& transform, uint32_t shadowMapIndex, uint32_t imageIndex)
+void Scene::UpdateShadowMapsTransforms(const std::vector<glm::mat4>& transforms)
 {
-	// Light transform
-
-	m_viewUniforms.lightTransform = transform;
-	m_viewUniforms.shadowMapIndex = shadowMapIndex;
-
-	// Upload to GPU
-	const auto& viewUniformBuffer = m_viewUniformBuffers[imageIndex % m_commandBufferPool->GetNbConcurrentSubmits()];
-	memcpy(
-		viewUniformBuffer.GetMappedData(),
-		reinterpret_cast<const void*>(&m_viewUniforms), sizeof(ViewUniforms)
-	);
+	auto* transformData = m_shadowDataBuffer->GetMappedData();
+	ASSERT(transforms.size() * sizeof(ShadowData) <= m_shadowDataBuffer->Size());
+	for (int i = 0; i < transforms.size(); ++i)
+	{
+		ShadowData data = { transforms[i] };
+		void* dest = (char*)transformData + i * sizeof(ShadowData);
+		memcpy(dest, &data, sizeof(ShadowData));
+	}
 }
 
-void Scene::UpdateShadowMaps(const std::vector<const ShadowMap*>& shadowMaps)
+void Scene::InitShadowMaps(const std::vector<const ShadowMap*>& shadowMaps)
 {
 	const uint32_t kShadowMapsBinding = 2;
 	const uint32_t kShadowDataBinding = 3;

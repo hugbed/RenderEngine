@@ -28,6 +28,7 @@
 #include "RenderState.h"
 #include "Scene.h"
 #include "ShadowMap.h"
+#include "TexturedQuad.h"
 
 #include "Grid.h"
 
@@ -45,6 +46,12 @@
 class App : public RenderLoop
 {
 public:
+	struct Options
+	{
+		bool showGrid = true;
+		bool showShadowMapPreview = false;
+	} m_options;
+
 	App(vk::SurfaceKHR surface, vk::Extent2D extent, Window& window, std::string basePath, std::string sceneFile)
 		: RenderLoop(surface, extent, window)
 		, m_renderPass(std::make_unique<RenderPass>(m_swapchain->GetImageDescription().format))
@@ -75,14 +82,12 @@ protected:
 
 	CameraMode m_cameraMode = CameraMode::OrbitCamera;
 
-	bool m_showGrid = true;
-
 	void Init(vk::CommandBuffer& commandBuffer) override
 	{
 		vk::Extent2D imageExtent = m_swapchain->GetImageDescription().extent;
 
 		m_scene->Load(commandBuffer);
-		UpdateShadowMaps();
+		UpdateShadowMaps(commandBuffer);
 
 		CreateSecondaryCommandBuffers();
 		RecordRenderPassCommands();
@@ -108,7 +113,7 @@ protected:
 		commandBuffer.begin({ vk::CommandBufferUsageFlagBits::eOneTimeSubmit });
 		{
 			m_scene->Reset(commandBuffer, *m_renderPass, imageExtent);
-			UpdateShadowMaps();
+			UpdateShadowMaps(commandBuffer);
 			m_grid->Reset(*m_renderPass, imageExtent);
 		}
 		commandBuffer.end();
@@ -145,11 +150,15 @@ protected:
 			m_scene->DrawOpaqueObjects(commandBuffer.get(), frameIndex, state);
 
 			// Then the grid
-			if (m_showGrid)
+			if (m_options.showGrid)
 				m_grid->Draw(commandBuffer.get());
 
 			// Draw transparent objects last (sorted by distance to camera)
 			m_scene->DrawTransparentObjects(commandBuffer.get(), frameIndex, state);
+
+			// UI/Utilities last
+			if (m_options.showShadowMapPreview && m_shadowMapPreviewQuad != nullptr)
+				m_shadowMapPreviewQuad->Draw(commandBuffer.get());
 		}
 		commandBuffer->end();
 	}
@@ -208,7 +217,7 @@ protected:
 	ShaderCache m_shaderCache;
 	const vk::Extent2D kShadowMapExtent = vk::Extent2D(2*2048, 2*2048);
 
-	void UpdateShadowMaps()
+	void UpdateShadowMaps(vk::CommandBuffer& commandBuffer)
 	{
 		if (m_shadowMaps.empty() == false)
 		{
@@ -234,16 +243,46 @@ protected:
 		for (const auto& shadowMap : m_shadowMaps)
 			shadowMaps.push_back(&shadowMap);
 
-		m_scene->UpdateShadowMaps(shadowMaps);
+		m_scene->InitShadowMaps(shadowMaps);
+
+		if (m_options.showShadowMapPreview)
+		{
+			// Optional view on the depth map
+			if (m_shadowMaps.empty() == false)
+			{
+				if (m_shadowMapPreviewQuad == nullptr)
+				{
+					m_shadowMapPreviewQuad = std::make_unique<TexturedQuad>(
+						m_shadowMaps[0].GetCombinedImageSampler(),
+						*m_renderPass,
+						m_swapchain->GetImageDescription().extent,
+						vk::ImageLayout::eDepthStencilReadOnlyOptimal
+						);
+				}
+				else
+				{
+					m_shadowMapPreviewQuad->Reset(
+						m_shadowMaps[0].GetCombinedImageSampler(),
+						*m_renderPass,
+						m_swapchain->GetImageDescription().extent
+					);
+				}
+			}
+		}
 	}
 
 	void RenderShadowMaps(vk::CommandBuffer& commandBuffer, uint32_t frameIndex)
 	{
+		std::vector<glm::mat4> transforms;
+		transforms.reserve(m_shadowMaps.size());
 		for (auto& shadowMap : m_shadowMaps)
 		{
 			shadowMap.UpdateViewUniforms();
 			shadowMap.Render(commandBuffer, frameIndex);
+			transforms.push_back(shadowMap.GetLightTransform());
 		}
+
+		m_scene->UpdateShadowMapsTransforms(transforms);
 	}
 
 	Camera& GetCamera() { return m_scene->GetCamera(); }
@@ -256,6 +295,8 @@ protected:
 
 		const float speed = 1.0f; // in m/s
 
+		bool cameraMoved = false;
+
 		for (const std::pair<int,bool>& key : m_keyState)
 		{
 			if (key.second && m_cameraMode == CameraMode::FreeCamera) 
@@ -267,20 +308,29 @@ protected:
 				switch (key.first) {
 					case GLFW_KEY_W:
 						camera.MoveCamera(forward, dx, false);
+						cameraMoved = true;
 						break;
 					case GLFW_KEY_A:
 						camera.MoveCamera(rightVector, -dx, true);
+						cameraMoved = true;
 						break;
 					case GLFW_KEY_S:
 						camera.MoveCamera(forward, -dx, false);
+						cameraMoved = true;
 						break;
 					case GLFW_KEY_D:
 						camera.MoveCamera(rightVector, dx, true);
+						cameraMoved = true;
 						break;
 					default:
 						break;
 				}
 			}
+		}
+
+		if (cameraMoved)
+		{
+			OnCameraUpdated();
 		}
 	}
 
@@ -343,19 +393,7 @@ protected:
 
 			camera.SetCameraView(finalPositionV3, camera.GetLookAt(), app->m_upVector);
 
-			// We need to recompute transparent object order if camera changes
-			bool shouldRenderShadowMaps = false;
-#ifdef SHADOWMAP_CAM_FRUSTRUM_CULLING
-			// when implementing camera frustrum culling, we need
-			// to render shadow maps every time the camera moves
-			// (at least for the close objects).
-			shouldRenderShadowMaps = true;
-#endif
-			if (app->m_scene->HasTransparentObjects() || shouldRenderShadowMaps)
-			{
-				app->m_scene->SortTransparentObjects();
-				app->m_frameDirty = kAllFramesDirty;
-			}
+			app->OnCameraUpdated();
 		}
 		else if (app->m_isMouseDown && app->m_cameraMode == CameraMode::FreeCamera)
 		{
@@ -380,6 +418,8 @@ protected:
 
 			auto lookatDist = glm::distance(newLookat, camera.GetEye());
 			camera.LookAt(newLookat, app->m_upVector);
+
+			app->OnCameraUpdated();
 		}
 		app->m_lastMousePos.x = xPos; 
 		app->m_lastMousePos.y = yPos;
@@ -394,13 +434,23 @@ protected:
 			if (app->m_cameraMode == CameraMode::FreeCamera) 
 			{
 				app->m_scene->ResetCamera();
+				app->OnCameraUpdated();
 			}
 			app->m_cameraMode = app->m_cameraMode == CameraMode::FreeCamera ? CameraMode::OrbitCamera : CameraMode::FreeCamera;
 		}
 		if (key == GLFW_KEY_G && action == GLFW_PRESS)
 		{
-			app->m_showGrid = !app->m_showGrid;
+			app->m_options.showGrid = !app->m_options.showGrid;
 			app->m_frameDirty = kAllFramesDirty;
+		}
+	}
+
+	void OnCameraUpdated()
+	{
+		if (m_scene->HasTransparentObjects() || m_shadowMaps.empty() == false)
+		{
+			m_scene->SortTransparentObjects();
+			m_frameDirty = kAllFramesDirty;
 		}
 	}
 
@@ -415,6 +465,7 @@ private:
 	std::vector<ShadowMap> m_shadowMaps;
 	std::unique_ptr<Scene> m_scene;
 	std::unique_ptr<Grid> m_grid;
+	std::unique_ptr<TexturedQuad> m_shadowMapPreviewQuad;
 };
 
 int main(int argc, char* argv[])
