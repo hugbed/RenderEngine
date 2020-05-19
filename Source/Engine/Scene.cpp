@@ -184,8 +184,10 @@ void Scene::LoadScene(vk::CommandBuffer commandBuffer)
 		| aiProcess_GenNormals
 		| aiProcess_JoinIdenticalVertices;
 
+	auto sceneName = m_basePath + "/" + m_sceneFilename;
+
 	m_assimp.importer = std::make_unique<Assimp::Importer>();
-	m_assimp.scene = m_assimp.importer->ReadFile(m_sceneFilename.c_str(), 0);
+	m_assimp.scene = m_assimp.importer->ReadFile(sceneName.c_str(), 0);
 	if (m_assimp.scene == nullptr)
 	{
 		std::cout << m_assimp.importer->GetErrorString() << std::endl;
