@@ -2,13 +2,13 @@
 
 Vulkan rendering engine.
 
-# Features
+## Features
 
 - Vulkan rendering engine abstractions.
 - Rendering techniques implementation (lighting, shadow mapping).
 - Scene loading
 
-# Setup
+## Setup
 
 - Make sure to have Vulkan SDK installed.
 - Create a folder name Build.
