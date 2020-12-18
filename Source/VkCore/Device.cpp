@@ -64,8 +64,8 @@ Device::Device(const PhysicalDevice& physicalDevice)
 
 	// Create memory allocator
 	VmaAllocatorCreateInfo allocatorInfo = {};
-	allocatorInfo.physicalDevice = physicalDevice.Get();
-	allocatorInfo.device = m_device.get();
+	allocatorInfo.physicalDevice = static_cast<VkPhysicalDevice>(physicalDevice.Get());
+	allocatorInfo.device = static_cast<VkDevice>(m_device.get());
 	vmaCreateAllocator(&allocatorInfo, &m_allocator);
 }
 

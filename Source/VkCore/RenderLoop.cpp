@@ -48,7 +48,7 @@ void RenderLoop::Run()
 		Update();
 		Render();
 	}
-	vkDeviceWaitIdle(g_device->Get());
+	vkDeviceWaitIdle(static_cast<VkDevice>(g_device->Get()));
 }
 
 void RenderLoop::UpdateDeltaTime()
@@ -71,11 +71,11 @@ void RenderLoop::Render()
 	// Use C API because eErrorOutOfDateKHR throws
 	uint32_t imageIndex = 0;
 	auto result = vkAcquireNextImageKHR(
-		g_device->Get(),
-		m_swapchain->Get(),
+		static_cast<VkDevice>(g_device->Get()),
+		static_cast<VkSwapchainKHR>(m_swapchain->Get()),
 		UINT64_MAX,
-		m_gpuSync.imageAvailableSemaphore.get(),
-		nullptr, // fence
+		static_cast<VkSemaphore>(m_gpuSync.imageAvailableSemaphore.get()),
+		VK_NULL_HANDLE, // fence
 		&imageIndex);
 	if (result == (VkResult)vk::Result::eErrorOutOfDateKHR) 
 	{
@@ -110,7 +110,7 @@ void RenderLoop::Render()
 	presentInfo.pSwapchains = &m_swapchain->Get();
 	presentInfo.pImageIndices = &imageIndex;
 
-	result = vkQueuePresentKHR(g_device->GetPresentQueue(), &static_cast<const VkPresentInfoKHR&>(presentInfo));
+	result = vkQueuePresentKHR(static_cast<VkQueue>(g_device->GetPresentQueue()), &static_cast<const VkPresentInfoKHR&>(presentInfo));
 
 	if (result == (VkResult)vk::Result::eSuboptimalKHR ||
 		result == (VkResult)vk::Result::eErrorOutOfDateKHR ||

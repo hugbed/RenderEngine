@@ -52,7 +52,7 @@ public:
 
 	vk::SampleCountFlagBits GetMsaaSamples() { return m_msaaSamples; }
 
-	value_type Get() const { return m_physicalDevice; }
+	value_type Get() const { return value_type(m_physicalDevice); }
 
 protected:
 	vk::PhysicalDevice PickPhysicalDevice();

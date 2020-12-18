@@ -1,139 +1,199 @@
-from pathlib import Path
+import re
+import sys
+import json
+import base64
+import hashlib
 import subprocess
 import os
-import json
-import hashlib
-import sys
-import base64
-import re
 
-if len(sys.argv) < 2:
-    print("Argument error, expecting 'compile_shaders.py [Debug|Release|RelWithDebInfo]'")
+def get_includes_directives(shader_str):
+	""" look for #include "something.glsl" """
+	m = re.findall(r'#include\s*"([a-zA-Z0-9_]+.(?:glsl))"', shader_str)
+	return m if m else []
 
-config = sys.argv[1] # { Debug, Release, RelWithDebInfo }
+def get_files_in_directory(path, extensions):
+	files = []
+	for f in os.listdir(path):
+		if not os.path.isfile(os.path.join(path, f)):
+			continue
 
-script_path = os.path.dirname(sys.argv[0])
-project_dir = Path(script_path) / ".."
+		if not extensions or os.path.splitext(f)[1][1:] in extensions:
+			files.append(f)
 
-input_dir =  project_dir / "Source" / "Samples" / "MainSample" / "Shaders" # could be passed as argument
-output_dir = project_dir / "Build" / "Source" / "Samples" / "MainSample" / config # could be passed as argument (executable path)
-shader_cache_path = project_dir / "Build" / "shader_cache_{}.json".format(config.lower())
+	return files
 
-def append_includes(file_path_str):
-    contents = ""
-    with open(file_path_str, 'r') as f:
-        contents = f.read()
-    traversed_inputs = []
-    return append_includes_internal(get_includes(file_path_str), contents, traversed_inputs)
+def build_file_inclusion_graph(directory, files):
+	""" Build a list of files into which each file is included, of the form:
+		 -> { 'file': [ "included_in1", "included_in2" ] }
+		In this example, when "file" changes, you need to rebuild "included_in1", "included_in2"
+	"""
+	files_that_include = {}
+	for file in files:
+		with open(os.path.join(directory, file), 'r') as f:
+			contents = f.read()
+		
+		# if this file changes, we need to rebuild it
+		files_that_include[file] = []
 
-def append_includes_internal(includes, contents, traversed_inputs):
-    if not includes:
-        return contents
+		# if any of these includes change, we need to rebuild this file
+		include_directives = get_includes_directives(contents)
+		for included_file in include_directives:
+			files_that_include.setdefault(included_file, []).append(file)
 
-    # we could append where the include is but it doesn't matter
-    # since we just want to know if all of this changed
-    for include in includes:
-        include_path = input_dir / include
-        if include_path not in traversed_inputs: # prevent infinite recursion
-            traversed_inputs.append(str(include_path))
-            with open(include_path, 'r') as f:
-                contents += f.read()
-            contents = append_includes_internal(get_includes(include_path), contents, traversed_inputs)
-    
-    return contents
+	return files_that_include
 
-def hash_glsl_file(file_path_str):
-    return hash_str(append_includes(file_path_str))
+def get_files_to_rebuild(files_that_include, files_changed):
+	files_to_rebuild = set()
+	for file in files_changed:
+		# build file
+		files_to_rebuild.add(file)
 
-def hash_str(s):
-    hasher = hashlib.md5()
-    hasher.update(s.encode())
-    return base64.b64encode(hasher.digest()).decode("utf-8")
+		# build other files that include this one
+		if file in files_that_include:
+			files_to_rebuild = files_to_rebuild.union(set(files_that_include[file]))
 
-def generate_cache_item(input_path_str, output_path_str):
-    return {
-        "input": hash_str(input_path_str),
-        "output": str(Path(output_path_str).resolve()),
-        "checksum": hash_glsl_file(input_path_str)
-    }
+	return list(files_to_rebuild)
 
-def get_includes(input_path_str):
-    # open file
-    contents = ""
-    with open(input_path_str, "r") as f:
-        contents = f.read()
+def get_str_hash(str):
+	hasher = hashlib.md5()
+	hasher.update(str.encode())
+	return base64.b64encode(hasher.digest()).decode("utf-8")
 
-    # look for #include "something.glsl"
-    m = re.findall(r'#include\s*"([a-zA-Z0-9_]+.(?:glsl))"', contents)
-    if not m:
-        return []
-    return m
+def get_file_hashes(directory, files):
+	""" returns { "filename": "SOME_BASE_64_HASH", ... } """
+	file_to_hash = {}
+	for file in files:
+		with open(os.path.join(directory, file), 'r') as f:
+			file_to_hash[file] = get_str_hash(f.read())
 
-def is_target_up_to_date(shader_cache, cache_item):
-    input = cache_item["input"]
-    if input not in shader_cache:
-        return False
+	return file_to_hash
 
-    output = cache_item["output"]
-    previous_item = shader_cache[input]
+def get_difference(old_map, new_map):
+	diffs = []
+	for key, value in new_map.items():
+		if key not in old_map or old_map[key] != value:
+			diffs.append(key)
 
-    return input in shader_cache and \
-        Path(output).is_file() and \
-        previous_item["output"] == cache_item["output"] and \
-        previous_item["checksum"] == cache_item["checksum"]
-
-def shader_path_to_output(shader_path):
-    shader_name = shader_path.split(os.path.sep)[-1]
-    shader_name = shader_name.replace(".", "_")
-    output_file = Path(output_dir) / (shader_name + ".spv")
-    return str(output_file)
+	return diffs
 
 def build_shader(shader_path, output_path):
-    print("[build] Building shader '{}' -> '{}'".format(shader_path, output_path))
-    command = ["glslc.exe", shader_path, "-o", str(output_path)]
-    try:
-        subprocess.check_call(command, stderr=subprocess.STDOUT)
-        return True
-    except:
-        exit(1)
+	command = ["glslc.exe", shader_path, "-o", str(output_path)]
+	subprocess.check_call(command, stderr=subprocess.STDOUT)
 
-def load_shader_cache():
-    if not shader_cache_path.is_file():
-        return {}
-    try:
-        with open(str(shader_cache_path)) as f:
-            return json.load(f)
-    except:
-        os.remove(str(shader_cache_path))
-        return {}
+def shader_filename_to_spv(file_path):
+	[ name, ext ] = os.path.splitext(file_path)
+	return "{}_{}.spv".format(name, ext[1::])
 
-def save_shader_cache(shader_cache):
-    with open(str(shader_cache_path), 'w') as f:
-        json.dump(shader_cache, f)
+# --------- Tests --------- #
 
-def build_shaders(shaders_paths, shader_cache):
-    for shader in shaders_paths:
-        input_file_str = str(shader)
-        output_file_str = shader_path_to_output(input_file_str)
-        c = generate_cache_item(input_file_str, output_file_str)
-        if is_target_up_to_date(shader_cache, c):
-            print("[skip] Already up to date: {}".format(str(shader)))
-        else:
-            if build_shader(str(shader), output_file_str):
-                shader_cache[c["input"]] = c
+import unittest
 
-# --- main -- #
+class TestStuff(unittest.TestCase):
+	def test_include_directires(self):
+		shader_test = """
+			#include "something.glsl"
+			#include "something_else.glsl"
+			float somecode() {}
+		"""
+		expected_includes = ["something.glsl", "something_else.glsl"]
+		res_includes = get_includes_directives(shader_test)
+		self.assertEqual(expected_includes, res_includes)
 
-fragment_shaders = Path(input_dir).glob('**/*.frag')
-vertex_shaders = Path(input_dir).glob('**/*.vert')
+	def test_path_in_directory(self):
+		directory_test = "F:\\Personal\\RenderEngine\\Scripts"
+		res = get_files_in_directory(directory_test)
+		self.assertEqual(res, ["compile-shaders.py", "compile-shaders2.py"])
 
-shader_cache = load_shader_cache()
-if shader_cache:
-    print("[info] Using shader cache found in '{}'".format(str(shader_cache_path.relative_to(script_path))))
-else:
-    print("[info] Shader cache not found, generating one in '{}'".format(str(shader_cache_path.relative_to(script_path))))
+	def test_dependency_graph(self):
+		base_path = "F:\\Personal\\RenderEngine\\Source\\Samples\\MainSample\\Shaders"
+		files = get_files_in_directory(base_path)
+		files_that_include = build_file_inclusion_graph(base_path, files)
+		#print(files_that_include)
 
-build_shaders(fragment_shaders, shader_cache)
-build_shaders(vertex_shaders, shader_cache)
+	def test_get_file_hashes(self):
+		files_that_include = { "a": ["b", "c"], "d": ["e"] }
+		self.assertEqual(get_files_to_rebuild(files_that_include, ["a"]), ["b", "c"])
+		self.assertEqual(get_files_to_rebuild(files_that_include, ["b"]), [])
+		self.assertEqual(get_files_to_rebuild(files_that_include, ["c"]), [])
+		self.assertEqual(get_files_to_rebuild(files_that_include, ["d"]), ["e"])
 
-save_shader_cache(shader_cache)
+	def test_get_file_hashes(self):
+		base_path = "F:\\Personal\\RenderEngine\\Source\\Samples\\MainSample\\Shaders"
+		files = get_files_in_directory(base_path)
+		hashes = get_file_hashes(base_path, files)
+		# print(hashes)
+
+	def test_difference(self):
+		self.assertEqual(get_difference(
+			{ "a": "1", "b": "2", "c": "3" },
+			{ "a": "2", "b": "2", "c": "3" }
+		), ["a"])
+		self.assertEqual(get_difference(
+			{ "a": "1", "b": "2", "c": "3" },
+			{ "d": "0" }
+		), ["d"])
+
+if __name__ == '__main__':
+	#if len(sys.argv) < 2:
+	#	print("Argument error, expecting 'compile_shaders2.py path_to_shaders output_path'")
+	#	exit(1)
+	script_path = os.path.dirname(os.path.realpath(__file__))
+
+	shaders_path = sys.argv[1] # e.g. "F:\\Personal\\RenderEngine\\Source\\Samples\\MainSample\\Shaders"
+	output_path = sys.argv[2] # e.g. "F:\\Personal\\RenderEngine\\Build\\Source\\Samples\\MainSample"
+
+	print("[SPIRV] Reading shaders from: {}".format(shaders_path))
+	print("[SPIRV] Outputing shaders to: {}".format(output_path))
+
+	# Load files in directory
+	files_in_directory = get_files_in_directory(shaders_path, ["glsl", "frag", "vert"])
+	if not files_in_directory:
+		print("No files to build")
+		exit(0)
+
+	# Load previous file hashes
+	last_file_hashes = {}
+	config_file = os.path.join("F:\\Personal\\RenderEngine\\Scripts", "..", "Build", "config.json") # todo: replace hardcoded
+	if os.path.exists(config_file):
+		with open(config_file) as f:
+			config = json.load(f)
+			if shaders_path in config:
+				last_file_hashes = config[shaders_path]
+
+	# Clear hash of files that do not exist anymore
+	for filename, file_hash in last_file_hashes.items():
+		file_output = os.path.join(output_path, shader_filename_to_spv(filename))
+		has_output = os.path.splitext(filename)[1] in [ ".frag", ".vert" ]
+		if has_output and not os.path.exists(file_output):
+			last_file_hashes[filename] = ""
+
+	# Find files that have changed
+	current_file_hashes = get_file_hashes(shaders_path, files_in_directory)
+	file_diffs = get_difference(last_file_hashes, current_file_hashes)
+
+	# Find files to rebuild
+	files_that_include = build_file_inclusion_graph(shaders_path, files_in_directory)
+	files_to_build = get_files_to_rebuild(files_that_include, file_diffs)
+
+	# Filter-out glsl files, don't need to build those
+	files_to_build[:] = filter(lambda f: os.path.splitext(f)[1] != ".glsl" , files_to_build)
+	files_in_directory[:] = filter(lambda f: os.path.splitext(f)[1] != ".glsl" , files_in_directory)
+
+	# Output files that are already up to date
+	for file in files_in_directory:
+		if file not in files_to_build:
+			print("[SPIRV] Skipped, already up to date: {} -> {}".format(file, shader_filename_to_spv(file)))
+
+	# Build shaders
+	for file in files_to_build:
+		file_spv = shader_filename_to_spv(file)
+		print("[SPIRV] Building shader '{}' -> '{}'".format(file, file_spv))
+		shader_in = os.path.join(shaders_path, file)
+		shader_out = os.path.join(output_path, file_spv)
+		build_shader(shader_in, shader_out)
+
+	# Save current hashes
+	with open(config_file, 'w') as f:
+		json.dump({ shaders_path : current_file_hashes }, f)
+
+	# unittest.main()

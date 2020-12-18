@@ -24,7 +24,7 @@ struct UniqueBuffer : public DeferredDestructible
 
 	vk::DeviceSize Size() const { return m_size; }
 
-	value_type Get() const { return m_buffer; }
+	value_type Get() const { return value_type(m_buffer); }
 
 private:
 	size_t m_size;
@@ -71,7 +71,7 @@ struct UniqueImage : public DeferredDestructible
 
 	IMPLEMENT_MOVABLE_ONLY(UniqueImage);
 
-	value_type Get() const { return m_image; }
+	value_type Get() const { return value_type(m_image); }
 
 private:
 	VkImage m_image = VK_NULL_HANDLE;
