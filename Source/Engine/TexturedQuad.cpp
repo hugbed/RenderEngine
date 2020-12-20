@@ -7,22 +7,26 @@ TexturedQuad::TexturedQuad(
 	vk::ImageLayout imageLayout
 )
 	: m_combinedImageSampler(combinedImageSampler)
-	, m_vertexShader(std::make_unique<Shader>("textured_quad_vert.spv", "main"))
-	, m_fragmentShader(std::make_unique<Shader>("textured_quad_frag.spv", "main"))
 	, m_imageLayout(imageLayout)
 {
-	if (imageLayout == vk::ImageLayout::eDepthStencilReadOnlyOptimal)
-	{
-		uint32_t isGrayscale = 1;
-		m_fragmentShader->SetSpecializationConstants(isGrayscale);
-	}
+	ShaderID vertexShaderID = m_shaderSystem.CreateShader("textured_quad_vert.spv", "main");
+	ShaderID fragmentShaderID = m_shaderSystem.CreateShader("textured_quad_frag.spv", "main");
+
+	uint32_t isGrayscale = 1;
+	m_vertexShader = m_shaderSystem.CreateShaderInstance(vertexShaderID);
+	m_fragmentShader = m_shaderSystem.CreateShaderInstance(
+		fragmentShaderID,
+		imageLayout == vk::ImageLayout::eDepthStencilReadOnlyOptimal ? 
+			SpecializationConstant::Create(isGrayscale) :
+			SpecializationConstant{}
+	);
 
 	GraphicsPipelineInfo info;
 	info.primitiveTopology = vk::PrimitiveTopology::eTriangleStrip;
 	m_graphicsPipeline = std::make_unique<GraphicsPipeline>(
 		renderPass.Get(),
 		swapchainExtent,
-		*m_vertexShader, *m_fragmentShader,
+		m_shaderSystem, m_vertexShader, m_fragmentShader,
 		info
 	);
 
@@ -39,7 +43,7 @@ void TexturedQuad::Reset(CombinedImageSampler combinedImageSampler, const Render
 	info.primitiveTopology = vk::PrimitiveTopology::eTriangleStrip;
 	m_graphicsPipeline = std::make_unique<GraphicsPipeline>(
 		renderPass.Get(), swapchainExtent,
-		*m_vertexShader, *m_fragmentShader,
+		m_shaderSystem, m_vertexShader, m_fragmentShader,
 		info
 	);
 

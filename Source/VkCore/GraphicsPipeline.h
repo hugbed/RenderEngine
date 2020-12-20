@@ -31,15 +31,19 @@ public:
 	GraphicsPipeline(
 		vk::RenderPass renderPass,
 		vk::Extent2D viewportExtent,
-		const Shader& vertexShader, const Shader& fragmentShader
+		const ShaderSystem& shaderSystem,
+		ShaderInstanceID vertexShaderID, ShaderInstanceID fragmentShaderID,
+		const GraphicsPipelineInfo& info
 	);
 
 	GraphicsPipeline(
 		vk::RenderPass renderPass,
 		vk::Extent2D viewportExtent,
-		const Shader& vertexShader, const Shader& fragmentShader,
-		const GraphicsPipelineInfo& info
+		const ShaderSystem& shaderSystem,
+		ShaderInstanceID vertexShaderID, ShaderInstanceID fragmentShaderID
 	);
+
+	const ShaderSystem* m_shaderSystem = nullptr;
 
 	const vk::DescriptorSetLayout& GetDescriptorSetLayout(size_t set) const
 	{
@@ -49,11 +53,6 @@ public:
 	const std::vector<vk::DescriptorSetLayoutBinding>& GetDescriptorSetLayoutBindings(size_t set) const 
 	{
 		return m_descriptorSetLayoutBindings[set];
-	}
-
-	const std::vector<vk::PushConstantRange> GetPushConstantRanges() const
-	{
-		return m_pushConstantRanges;
 	}
 
 	vk::PipelineLayout GetPipelineLayout(size_t set) const
@@ -78,16 +77,16 @@ private:
 	void Init(
 		vk::RenderPass renderPass,
 		vk::Extent2D viewportExtent,
-		const Shader& vertexShader, const Shader& fragmentShader,
+		ShaderInstanceID vertexShaderID, ShaderInstanceID fragmentShaderID,
 		const GraphicsPipelineInfo& info
 	);
 
 	vk::UniquePipeline m_graphicsPipeline;
 
 	// A list of DescriptorSetLayoutBinding per descriptor set
-	std::vector<uint64_t> m_pipelineCompatibility; // for each set, hash of 
+	std::vector<uint64_t> m_pipelineCompatibility; // for each set, hash of bindings and constants
 	std::vector<std::vector<vk::DescriptorSetLayoutBinding>> m_descriptorSetLayoutBindings;
 	std::vector<vk::UniquePipelineLayout> m_pipelineLayouts; // i is for sets 0..i
 	std::vector<vk::UniqueDescriptorSetLayout> m_descriptorSetLayouts;
-	std::vector<vk::PushConstantRange> m_pushConstantRanges;
+};
 };

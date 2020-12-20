@@ -66,12 +66,16 @@ Skybox::Skybox(const RenderPass& renderPass, TextureCache* textureCache, vk::Ext
 	cubeMap = m_textureCache->LoadCubeMapFaces(cubeFacesFiles);
 
 	// Create graphics pipeline
-	vertexShader = std::make_unique<Shader>("skybox_vert.spv", "main");
-	fragmentShader = std::make_unique<Shader>("skybox_frag.spv", "main");
+	ShaderID vertexShaderID = shaderSystem.CreateShader("skybox_vert.spv", "main");
+	ShaderID fragmentShaderID = shaderSystem.CreateShader("skybox_frag.spv", "main");
+
+	vertexShader = shaderSystem.CreateShaderInstance(vertexShaderID);
+	fragmentShader = shaderSystem.CreateShaderInstance(fragmentShaderID);
+
 	pipeline = std::make_unique<GraphicsPipeline>(
 		renderPass.Get(),
 		swapchainExtent,
-		*vertexShader, *fragmentShader
+		shaderSystem, vertexShader, fragmentShader
 	);
 
 	CreateDescriptors();
@@ -82,7 +86,7 @@ void Skybox::Reset(const RenderPass& renderPass, vk::Extent2D swapchainExtent)
 	pipeline = std::make_unique<GraphicsPipeline>(
 		renderPass.Get(),
 		swapchainExtent,
-		*vertexShader, *fragmentShader
+		shaderSystem, vertexShader, fragmentShader
 	);
 
 	CreateDescriptors();

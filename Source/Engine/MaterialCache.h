@@ -1,7 +1,6 @@
 #pragma once
 
 #include "Material.h"
-#include "ShaderCache.h"
 #include "hash.h"
 
 #include <vulkan/vulkan.hpp>
@@ -64,13 +63,12 @@ public:
 	std::vector<const GraphicsPipeline*> GetGraphicsPipelines() const;
 
 private:
-	Shader& LoadShader(const std::string& filename);
 	GraphicsPipeline* LoadGraphicsPipeline(const MaterialInfo& materialInfo);
 
 	vk::RenderPass m_renderPass; // light/color pass, there could be others
 	vk::Extent2D m_imageExtent;
 	std::vector<BaseMaterialInfo> m_baseMaterialsInfo;
-	ShaderCache m_shaderCache; // could be external also
+	ShaderSystem m_shaderSystem; // todo: share shader system between systems
 	std::map<uint64_t, std::unique_ptr<GraphicsPipeline>> m_graphicsPipelines;
 
 	// Keep ownership of materials since we need to be able to update their

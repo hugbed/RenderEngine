@@ -14,15 +14,18 @@ public:
 
 	Grid(const RenderPass& renderPass, vk::Extent2D swapchainExtent)
 	{
-		vertexShader = std::make_unique<Shader>("grid_vert.spv", "main");
-		fragmentShader = std::make_unique<Shader>("grid_frag.spv", "main");
+		ShaderID vertexShaderID = shaderSystem.CreateShader("grid_vert.spv", "main");
+		ShaderID fragmentShaderID = shaderSystem.CreateShader("grid_frag.spv", "main");
+		vertexShader = shaderSystem.CreateShaderInstance(vertexShaderID);
+		fragmentShader = shaderSystem.CreateShaderInstance(fragmentShaderID);
+
 		GraphicsPipelineInfo info;
 		info.blendEnable = true;
 		info.depthWriteEnable = true;
 		pipeline = std::make_unique<GraphicsPipeline>(
 			renderPass.Get(),
 			swapchainExtent,
-			*vertexShader, *fragmentShader,
+			shaderSystem, vertexShader, fragmentShader,
 			info
 		);
 	}
@@ -40,13 +43,15 @@ public:
 		pipeline = std::make_unique<GraphicsPipeline>(
 			renderPass.Get(),
 			swapchainExtent,
-			*vertexShader, *fragmentShader,
+			shaderSystem, vertexShader, fragmentShader,
 			info
 		);
 	}
 
 private:
 	std::unique_ptr<GraphicsPipeline> pipeline;
-	std::unique_ptr<Shader> vertexShader;
-	std::unique_ptr<Shader> fragmentShader;
+
+	ShaderSystem shaderSystem; // todo: share shader system between systems
+	ShaderInstanceID vertexShader;
+	ShaderInstanceID fragmentShader;
 };

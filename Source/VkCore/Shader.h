@@ -1,5 +1,7 @@
 #pragma once
 
+#include "spirv_vk.h"
+
 #include <vulkan/vulkan.hpp>
 
 #include <string>
@@ -7,55 +9,102 @@
 #include <vector>
 #include <map>
 
-struct SpecializationRef
+using ShaderID = uint32_t;
+using ShaderInstanceID = uint32_t;
+
+struct SpecializationConstant
+{
+	template <class T>
+	static SpecializationConstant Create(const T& t)
+	{
+		SpecializationConstant c;
+		c.data = reinterpret_cast<const char*>(&t);
+		c.size = sizeof(T);
+		return c;
+	}
+
+	const char* data = nullptr;
+	size_t size = 0;
+};
+
+struct SpecializationConstantRef
 {
 	uint32_t set;
 	uint32_t binding;
 	uint32_t constantID;
 };
 
-class Shader
+// Used to automatically generate vulkan structures for building graphics pipelines.
+struct ShaderReflection
+{
+	ShaderReflection(uint32_t* code, size_t codeSize) /* how many uint32_t */
+		: comp(code, codeSize)
+		, shaderResources(comp.get_shader_resources())
+	{}
+
+	spirv_cross::CompilerReflection comp;
+	spirv_cross::ShaderResources shaderResources;
+
+	// Extracted info
+	std::vector<SpecializationConstantRef> specializationRefs;
+	std::vector<vk::SpecializationMapEntry> specializationMapEntries;
+};
+
+class ShaderSystem
 {
 public:
-	// todo: support loading byte array directly
+	// --- Shader Creation --- //
 
-	Shader(const std::string& filename, std::string entryPoint);
+	ShaderID CreateShader(const std::string& filename, std::string entryPoint);
+	ShaderID CreateShader(const char* data, size_t size, std::string entryPoint);
+	ShaderInstanceID CreateShaderInstance(ShaderID shaderID);
+	ShaderInstanceID CreateShaderInstance(ShaderID shaderID, SpecializationConstant specialization);
 
-	template <class T>
-	void SetSpecializationConstants(const T& obj)
-	{
-		SetSpecializationConstants(reinterpret_cast<const void*>(&obj), sizeof(T));
-	}
+	// --- Helpers to create generate graphics pipeline creation info --- //
 
-	void SetSpecializationConstants(const void* data, size_t size);
+	// Note: pointers in this structure are invalidated when CreateShaderInstance is called
+	auto GetShaderStageInfo(
+		ShaderInstanceID id,
+		vk::SpecializationInfo& specializationInfo
+	) const -> vk::PipelineShaderStageCreateInfo;
 
-	vk::PipelineShaderStageCreateInfo GetShaderStageInfo() const;
+	auto GetVertexInputStateInfo(
+		ShaderInstanceID id,
+		std::vector<vk::VertexInputAttributeDescription>& attributeDescriptions, // will be populated
+		vk::VertexInputBindingDescription& bindingDescription // will be populated
+	) const -> vk::PipelineVertexInputStateCreateInfo;
+	
+	auto GetDescriptorSetLayoutBindings(
+		ShaderInstanceID id
+	) const -> std::vector<std::vector<vk::DescriptorSetLayoutBinding>>; // todo: use SmallVector or similar for those temporary vectors
 
-	vk::PipelineVertexInputStateCreateInfo GetVertexInputStateInfo() const;
-
-	const std::vector<std::vector<vk::DescriptorSetLayoutBinding>>& GetDescriptorSetLayoutBindings() const
-	{
-		return m_descriptorSetLayouts;
-	}
-
-	const std::vector<vk::PushConstantRange>& GetPushConstantRanges() const
-	{
-		return m_pushConstantRanges;
-	}
-
-protected:
-	static vk::UniqueShaderModule CreateShaderModule(const std::vector<char>& code);
-
-	vk::VertexInputBindingDescription m_bindingDescription;
-	std::vector<vk::VertexInputAttributeDescription> m_attributeDescriptions;
-	std::vector<std::vector<vk::DescriptorSetLayoutBinding>> m_descriptorSetLayouts;
-	std::vector<SpecializationRef> m_specializationRef;
-	std::vector<vk::SpecializationMapEntry> m_specializationMapEntries;
-	vk::SpecializationInfo m_specializationInfo;
-	std::vector<vk::PushConstantRange> m_pushConstantRanges;
+	auto GetPushConstantRanges(
+		ShaderInstanceID id
+	) const -> std::vector<vk::PushConstantRange>;
 
 private:
-	vk::ShaderStageFlagBits m_shaderStage;
-	std::string m_entryPoint;
-	vk::UniqueShaderModule m_shaderModule;
+	// --- Base Shader --- //
+
+	// ShaderID -> Array Index
+	std::vector<vk::UniqueShaderModule> m_modules;
+	std::vector<std::string> m_entryPoints; // usually "main", could be standardized to remove this vector
+	std::vector<std::unique_ptr<ShaderReflection>> m_reflections;
+	ShaderID m_nextShaderID = 0;
+
+	// To know if a shader for this file already exists
+	std::map<uint64_t, ShaderID> m_filenameHashToShaderID;
+
+	// --- Shader Instance (base shader with specific specialization constants) --- //
+
+	struct Entry
+	{
+		uint32_t offset = 0;
+		uint32_t size = 0;
+	};
+	std::vector<char> m_specializationBlock; // specialization constants data block
+
+	// ShaderInstanceID -> Array Index
+	std::vector<ShaderID> m_instanceIDToShaderID;
+	std::vector<Entry> m_specializations;
+	ShaderInstanceID m_nextInstanceID = 0;
 };

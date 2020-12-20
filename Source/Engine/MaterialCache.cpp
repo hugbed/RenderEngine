@@ -6,7 +6,6 @@
 MaterialCache::MaterialCache(vk::RenderPass renderPass, vk::Extent2D swapchainExtent)
 	: m_renderPass(renderPass)
 	, m_imageExtent(swapchainExtent)
-	, m_shaderCache()
 {
 	// All materials are based on the same "base materials"
 	// Create a material description for each one of them.
@@ -61,19 +60,21 @@ GraphicsPipeline* MaterialCache::LoadGraphicsPipeline(const MaterialInfo& materi
 
 	const auto& materialDescription = m_baseMaterialsInfo[(size_t)materialInfo.baseMaterial];
 
-	auto& vertexShader = m_shaderCache.Load(materialDescription.vertexShader);
-	auto& fragmentShader = m_shaderCache.Load(materialDescription.fragmentShader);
+	ShaderID vertexShaderID = m_shaderSystem.CreateShader(materialDescription.vertexShader, "main");
+	ShaderID fragmentShaderID = m_shaderSystem.CreateShader(materialDescription.fragmentShader, "main");
+	ShaderInstanceID vertexInstanceID = m_shaderSystem.CreateShaderInstance(vertexShaderID);
+	ShaderInstanceID fragmentInstanceID = 0;
 	if (materialDescription.shadingModel == ShadingModel::Lit)
-	{
-		fragmentShader.SetSpecializationConstants(materialInfo.constants);
-	}
+		fragmentInstanceID = m_shaderSystem.CreateShaderInstance(fragmentShaderID, SpecializationConstant::Create(materialInfo.constants));
+	else
+		fragmentInstanceID = m_shaderSystem.CreateShaderInstance(fragmentShaderID);
 
 	GraphicsPipelineInfo info;
 	info.blendEnable = materialInfo.isTransparent;
 	auto [it, wasAdded] = m_graphicsPipelines.emplace(materialInfo.Hash(),
 		std::make_unique<GraphicsPipeline>(
 			m_renderPass, m_imageExtent,
-			vertexShader, fragmentShader,
+			m_shaderSystem, vertexInstanceID, fragmentInstanceID,
 			info
 		));
 

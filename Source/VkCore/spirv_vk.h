@@ -7,7 +7,7 @@
 namespace spirv_vk
 {
 	// This is only intended for vertex input types so not all types are listed here
-	vk::Format get_vk_format_from_variable(const spirv_cross::Compiler& comp, spirv_cross::ID variableId)
+	static vk::Format get_vk_format_from_variable(const spirv_cross::Compiler& comp, spirv_cross::ID variableId)
 	{
 		using Type = spirv_cross::SPIRType::BaseType;
 
@@ -141,7 +141,7 @@ namespace spirv_vk
 	}
 
 	// This is only intended for vertex input types so not all types are listed here
-	uint32_t sizeof_vkformat(vk::Format format)
+	static uint32_t sizeof_vkformat(vk::Format format)
 	{
 		switch (format)
 		{
@@ -276,7 +276,7 @@ namespace spirv_vk
 		return {};
 	}
 
-	vk::ShaderStageFlagBits execution_model_to_shader_stage(spv::ExecutionModel executionModel)
+	static vk::ShaderStageFlagBits execution_model_to_shader_stage(spv::ExecutionModel executionModel)
 	{
 		switch (executionModel)
 		{
@@ -297,7 +297,7 @@ namespace spirv_vk
 		return {};
 	}
 
-	uint32_t sizeof_constant(const spirv_cross::Compiler& comp, spirv_cross::TypeID typeID)
+	static uint32_t sizeof_constant(const spirv_cross::Compiler& comp, spirv_cross::TypeID typeID)
 	{
 		using Type = spirv_cross::SPIRType::BaseType;
 

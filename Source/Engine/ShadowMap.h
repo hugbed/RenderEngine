@@ -1,7 +1,6 @@
 #pragma once
 
 #include "Light.h"
-#include "ShaderCache.h"
 #include "Scene.h"
 
 #include "RenderPass.h"

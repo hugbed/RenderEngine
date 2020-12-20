@@ -151,8 +151,11 @@ void ShadowMap::CreateFramebuffer()
 
 void ShadowMap::CreateGraphicsPipeline()
 {
-	const auto& vertexShader = m_shaderCache->Load(vertexShaderFile);
-	const auto& fragmentShader = m_shaderCache->Load(fragmentShaderFile);
+	ShaderID vertexShaderID = m_shaderCache->LoadShader(vertexShaderFile);
+	ShaderID fragmentShaderID = m_shaderCache->LoadShader(fragmentShaderFile);
+
+	ShaderInstanceID vertexShaderInstanceID = m_shaderCache->CreateShaderInstance(vertexShaderID);
+	ShaderInstanceID fragmentShaderInstanceID = m_shaderCache->CreateShaderInstance(fragmentShaderID);
 
 	GraphicsPipelineInfo info;
 	info.sampleCount = vk::SampleCountFlagBits::e1;
@@ -165,7 +168,8 @@ void ShadowMap::CreateGraphicsPipeline()
 
 	m_graphicsPipeline = std::make_unique<GraphicsPipeline>(
 		*m_renderPass, m_extent,
-		vertexShader, fragmentShader,
+		m_shaderCache->GetShaderSystem(),
+		vertexShaderInstanceID, fragmentShaderInstanceID,
 		info
 	);
 }

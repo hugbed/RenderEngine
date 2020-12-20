@@ -46,8 +46,10 @@ private:
 
 	vk::ImageLayout m_imageLayout;
 	CombinedImageSampler m_combinedImageSampler;
-	std::unique_ptr<Shader> m_vertexShader;
-	std::unique_ptr<Shader> m_fragmentShader;
+
+	ShaderSystem m_shaderSystem; // todo: share shader system between systems
+	ShaderInstanceID m_vertexShader;
+	ShaderInstanceID m_fragmentShader;
 	std::unique_ptr<GraphicsPipeline> m_graphicsPipeline;
 
 	vk::UniqueDescriptorPool m_descriptorPool; // todo: group descriptor pools

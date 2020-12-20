@@ -36,8 +36,11 @@ private:
 	TextureCache* m_textureCache{ nullptr };
 	CombinedImageSampler cubeMap;
 	std::unique_ptr<GraphicsPipeline> pipeline;
-	std::unique_ptr<Shader> vertexShader;
-	std::unique_ptr<Shader> fragmentShader;
+
+	ShaderSystem shaderSystem; // todo: share ShaderSystem between systems
+	ShaderInstanceID vertexShader;
+	ShaderInstanceID fragmentShader;
+	
 	std::unique_ptr<UniqueBufferWithStaging> vertexBuffer;
 	vk::UniqueDescriptorPool descriptorPool; // consider merging with global pool
 	
