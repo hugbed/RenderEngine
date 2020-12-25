@@ -9,6 +9,8 @@
 
 #include "glm_includes.h"
 
+#include <gsl/pointers>
+
 #include <memory>
 
 // Utility to draw a texture on a small viewport on the screen
@@ -24,6 +26,7 @@ public:
 		CombinedImageSampler combinedImageSampler,
 		const RenderPass& renderPass,
 		vk::Extent2D swapchainExtent,
+		GraphicsPipelineSystem& graphicsPipelineSystem,
 		vk::ImageLayout imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
 	);
 
@@ -47,10 +50,10 @@ private:
 	vk::ImageLayout m_imageLayout;
 	CombinedImageSampler m_combinedImageSampler;
 
-	ShaderSystem m_shaderSystem; // todo: share shader system between systems
 	ShaderInstanceID m_vertexShader;
 	ShaderInstanceID m_fragmentShader;
-	std::unique_ptr<GraphicsPipeline> m_graphicsPipeline;
+	GraphicsPipelineID m_graphicsPipelineID;
+	gsl::not_null<GraphicsPipelineSystem*> m_graphicsPipelineSystem; // todo: share pipeline system between systems
 
 	vk::UniqueDescriptorPool m_descriptorPool; // todo: group descriptor pools
 	vk::UniqueDescriptorSet m_descriptorSet;

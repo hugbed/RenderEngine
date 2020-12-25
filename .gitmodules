@@ -10,3 +10,6 @@
 [submodule "ThirdParty/assimp"]
 	path = ThirdParty/assimp
 	url = git@github.com:assimp/assimp.git
+[submodule "ThirdParty/GSL"]
+	path = ThirdParty/GSL
+	url = git@github.com:microsoft/GSL.git

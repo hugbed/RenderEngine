@@ -4,46 +4,38 @@ TexturedQuad::TexturedQuad(
 	CombinedImageSampler combinedImageSampler,
 	const RenderPass& renderPass,
 	vk::Extent2D swapchainExtent,
+	GraphicsPipelineSystem& graphicsPipelineSystem,
 	vk::ImageLayout imageLayout
 )
 	: m_combinedImageSampler(combinedImageSampler)
 	, m_imageLayout(imageLayout)
+	, m_graphicsPipelineSystem(&graphicsPipelineSystem)
 {
-	ShaderID vertexShaderID = m_shaderSystem.CreateShader("textured_quad_vert.spv", "main");
-	ShaderID fragmentShaderID = m_shaderSystem.CreateShader("textured_quad_frag.spv", "main");
+	ShaderSystem& shaderSystem = m_graphicsPipelineSystem->GetShaderSystem();
+	ShaderID vertexShaderID = shaderSystem.CreateShader("textured_quad_vert.spv", "main");
+	ShaderID fragmentShaderID = shaderSystem.CreateShader("textured_quad_frag.spv", "main");
 
 	uint32_t isGrayscale = 1;
-	m_vertexShader = m_shaderSystem.CreateShaderInstance(vertexShaderID);
-	m_fragmentShader = m_shaderSystem.CreateShaderInstance(
+	m_vertexShader = shaderSystem.CreateShaderInstance(vertexShaderID);
+	m_fragmentShader = shaderSystem.CreateShaderInstance(
 		fragmentShaderID,
 		imageLayout == vk::ImageLayout::eDepthStencilReadOnlyOptimal ? 
 			SpecializationConstant::Create(isGrayscale) :
 			SpecializationConstant{}
 	);
 
-	GraphicsPipelineInfo info;
-	info.primitiveTopology = vk::PrimitiveTopology::eTriangleStrip;
-	m_graphicsPipeline = std::make_unique<GraphicsPipeline>(
-		renderPass.Get(),
-		swapchainExtent,
-		m_shaderSystem, m_vertexShader, m_fragmentShader,
-		info
-	);
-
-	CreateDescriptorPool();
-	CreateDescriptorSets();
-	UpdateDescriptorSets();
+	Reset(combinedImageSampler, renderPass, swapchainExtent);
 }
 
 void TexturedQuad::Reset(CombinedImageSampler combinedImageSampler, const RenderPass& renderPass, vk::Extent2D swapchainExtent)
 {
 	m_combinedImageSampler = combinedImageSampler;
 
-	GraphicsPipelineInfo info;
+	GraphicsPipelineInfo info(renderPass.Get(), swapchainExtent);
 	info.primitiveTopology = vk::PrimitiveTopology::eTriangleStrip;
-	m_graphicsPipeline = std::make_unique<GraphicsPipeline>(
-		renderPass.Get(), swapchainExtent,
-		m_shaderSystem, m_vertexShader, m_fragmentShader,
+	m_graphicsPipelineID = m_graphicsPipelineSystem->CreateGraphicsPipeline(
+		m_vertexShader,
+		m_fragmentShader,
 		info
 	);
 
@@ -54,9 +46,9 @@ void TexturedQuad::Reset(CombinedImageSampler combinedImageSampler, const Render
 
 void TexturedQuad::Draw(vk::CommandBuffer& commandBuffer)
 {
-	commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, m_graphicsPipeline->Get());
+	commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, m_graphicsPipelineSystem->GetPipeline(m_graphicsPipelineID));
 
-	vk::PipelineLayout layout = m_graphicsPipeline->GetPipelineLayout(0);
+	vk::PipelineLayout layout = m_graphicsPipelineSystem->GetPipelineLayout(m_graphicsPipelineID, 0);
 
 	commandBuffer.bindDescriptorSets(
 		vk::PipelineBindPoint::eGraphics,
@@ -80,7 +72,7 @@ void TexturedQuad::CreateDescriptorPool()
 
 	// Count descriptors per type for pipeline
 	std::map<vk::DescriptorType, uint32_t> descriptorCount;
-	const auto& bindings = m_graphicsPipeline->GetDescriptorSetLayoutBindings(0);
+	const auto& bindings = m_graphicsPipelineSystem->GetDescriptorSetLayoutBindings(m_graphicsPipelineID, 0);
 	for (const auto& binding : bindings)
 		descriptorCount[binding.descriptorType] += binding.descriptorCount;
 
@@ -99,7 +91,7 @@ void TexturedQuad::CreateDescriptorPool()
 
 void TexturedQuad::CreateDescriptorSets()
 {
-	vk::DescriptorSetLayout viewSetLayouts = m_graphicsPipeline->GetDescriptorSetLayout(0);
+	vk::DescriptorSetLayout viewSetLayouts = m_graphicsPipelineSystem->GetDescriptorSetLayout(m_graphicsPipelineID, 0);
 	std::vector<vk::DescriptorSetLayout> layouts(1, viewSetLayouts);
 	auto descriptorSets = g_device->Get().allocateDescriptorSetsUnique(vk::DescriptorSetAllocateInfo(
 		m_descriptorPool.get(), static_cast<uint32_t>(layouts.size()), layouts.data()

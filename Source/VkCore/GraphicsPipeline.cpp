@@ -12,8 +12,8 @@
 namespace
 {
 	uint64_t HashPipelineLayout(
-		const std::vector<vk::DescriptorSetLayoutBinding>& bindings,
-		const std::vector<vk::PushConstantRange>& pushConstants)
+		const VectorView<vk::DescriptorSetLayoutBinding>& bindings,
+		const VectorView<vk::PushConstantRange>& pushConstants)
 	{
 		size_t bindingsSize = bindings.size() * sizeof(vk::DescriptorSetLayoutBinding);
 		size_t pushConstantsSize = pushConstants.size() * sizeof(vk::PushConstantRange);
@@ -33,42 +33,12 @@ namespace
 
 		return fnv_hash(buffer.data(), buffer.size());
 	}
-}
 
-GraphicsPipelineInfo::GraphicsPipelineInfo()
-	: sampleCount(g_physicalDevice->GetMsaaSamples())
-{
-}
-
-GraphicsPipeline::GraphicsPipeline(
-	vk::RenderPass renderPass,
-	vk::Extent2D viewportExtent,
-	const ShaderSystem& shaderSystem,
-	ShaderID vertexShaderID, ShaderID fragmentShaderID,
-	const GraphicsPipelineInfo& info)
-	: m_shaderSystem(&shaderSystem)
-{
-	Init(renderPass, viewportExtent, vertexShaderID, fragmentShaderID, info);
-}
-
-GraphicsPipeline::GraphicsPipeline(
-	vk::RenderPass renderPass,
-	vk::Extent2D viewportExtent,
-	const ShaderSystem& shaderSystem,
-	ShaderID vertexShaderID, ShaderID fragmentShaderID)
-	: m_shaderSystem(&shaderSystem)
-{
-	GraphicsPipelineInfo info = {};
-	Init(renderPass, viewportExtent, vertexShaderID, fragmentShaderID, info);
-}
-
-namespace
-{
-	[[nodiscard]] std::vector<std::vector<vk::DescriptorSetLayoutBinding>> CombineDescriptorSetLayoutBindings(
-		const std::vector<std::vector<vk::DescriptorSetLayoutBinding>>& bindings1, // bindings[set][binding]
-		const std::vector<std::vector<vk::DescriptorSetLayoutBinding>>& bindings2)
+	[[nodiscard]] SetVector<SmallVector<vk::DescriptorSetLayoutBinding>> CombineDescriptorSetLayoutBindings(
+		const SetVector<SmallVector<vk::DescriptorSetLayoutBinding>>& bindings1, // bindings[set][binding]
+		const SetVector<SmallVector<vk::DescriptorSetLayoutBinding>>& bindings2)
 	{
-		std::vector<std::vector<vk::DescriptorSetLayoutBinding>> descriptorSetLayoutBindings((std::max)(bindings1.size(), bindings2.size()));
+		SetVector<SmallVector<vk::DescriptorSetLayoutBinding>> descriptorSetLayoutBindings((std::max)(bindings1.size(), bindings2.size()));
 
 		for (size_t set = 0; set < descriptorSetLayoutBindings.size(); ++set)
 		{
@@ -94,10 +64,10 @@ namespace
 		return descriptorSetLayoutBindings;
 	}
 
-	[[nodiscard]] std::vector<vk::UniqueDescriptorSetLayout> CreateDescriptorSetLayoutsFromBindings(
-		const std::vector<std::vector<vk::DescriptorSetLayoutBinding>>& descriptorSetLayoutBindings)
+	[[nodiscard]] SetVector<vk::UniqueDescriptorSetLayout> CreateDescriptorSetLayoutsFromBindings(
+		const SetVector<SmallVector<vk::DescriptorSetLayoutBinding>>& descriptorSetLayoutBindings)
 	{
-		std::vector<vk::UniqueDescriptorSetLayout> descriptorSetLayouts;
+		SetVector<vk::UniqueDescriptorSetLayout> descriptorSetLayouts;
 
 		for (size_t set = 0; set < descriptorSetLayoutBindings.size(); ++set)
 		{
@@ -111,15 +81,15 @@ namespace
 		return descriptorSetLayouts;
 	}
 
-	[[nodiscard]] std::vector<vk::UniquePipelineLayout> CreatePipelineLayoutsFromDescriptorSetLayouts(
-		const std::vector<vk::UniqueDescriptorSetLayout>& descriptorSetLayouts,
-		std::vector<vk::PushConstantRange> pushConstantRanges)
+	[[nodiscard]] SetVector<vk::UniquePipelineLayout> CreatePipelineLayoutsFromDescriptorSetLayouts(
+		const SetVector<vk::UniqueDescriptorSetLayout>& descriptorSetLayouts,
+		SmallVector<vk::PushConstantRange> pushConstantRanges)
 	{
-		std::vector<vk::UniquePipelineLayout> pipelineLayouts;
+		SetVector<vk::UniquePipelineLayout> pipelineLayouts;
 
 		// Each pipeline layout includes descriptor set layout from previous set:
 		// E.g. for sets 1, 2, 3, we have { set1 }, { set1, set2 }, { set1, set2, set3 }
-		std::vector<vk::DescriptorSetLayout> pipelineDescriptorSetLayouts;
+		SetVector<vk::DescriptorSetLayout> pipelineDescriptorSetLayouts;
 		for (size_t set = 0; set < descriptorSetLayouts.size(); ++set)
 		{
 			pipelineDescriptorSetLayouts.push_back(descriptorSetLayouts[set].get());
@@ -134,24 +104,53 @@ namespace
 		return pipelineLayouts;
 	}
 
-	[[nodiscard]] std::vector<vk::PushConstantRange> CombinePushConstantRanges(
-		const std::vector<vk::PushConstantRange>& pushConstantRange1,
-		const std::vector<vk::PushConstantRange>& pushConstantRange2)
+	[[nodiscard]] SmallVector<vk::PushConstantRange> CombinePushConstantRanges(
+		const SmallVector<vk::PushConstantRange>& pushConstantRange1,
+		const SmallVector<vk::PushConstantRange>& pushConstantRange2)
 	{
-		std::vector<vk::PushConstantRange> pushConstantRanges(pushConstantRange1.size() + pushConstantRange2.size());
+		SmallVector<vk::PushConstantRange> pushConstantRanges(pushConstantRange1.size() + pushConstantRange2.size());
 		pushConstantRanges.insert(pushConstantRanges.end(), pushConstantRange1.begin(), pushConstantRange1.end());
 		pushConstantRanges.insert(pushConstantRanges.end(), pushConstantRange2.begin(), pushConstantRange2.end());
 		return pushConstantRanges;
 	}
+
+	template <class T>
+	void ReserveIndex(GraphicsPipelineID id, std::vector<T>& v)
+	{
+		v.resize((std::max)((size_t)id + 1, v.size()));
+	}
 }
 
-void GraphicsPipeline::Init(
-	vk::RenderPass renderPass,
-	vk::Extent2D viewportExtent,
-	ShaderInstanceID vertexShaderID, ShaderInstanceID fragmentShaderID,
+GraphicsPipelineInfo::GraphicsPipelineInfo(vk::RenderPass renderPass, vk::Extent2D viewportExtent)
+	: sampleCount(g_physicalDevice->GetMsaaSamples())
+	, viewportExtent(viewportExtent)
+	, renderPass(renderPass)
+{
+}
+
+GraphicsPipelineSystem::GraphicsPipelineSystem(ShaderSystem& shaderSystem)
+	: m_shaderSystem(&shaderSystem)
+{}
+
+GraphicsPipelineID GraphicsPipelineSystem::CreateGraphicsPipeline(
+	ShaderInstanceID vertexShaderID,
+	ShaderInstanceID fragmentShaderID,
 	const GraphicsPipelineInfo& info)
 {
-	std::vector<vk::VertexInputAttributeDescription> attributeDescriptions;
+	GraphicsPipelineID id = m_nextID;
+	m_shaders.push_back({ vertexShaderID, fragmentShaderID });
+	ResetGraphicsPipeline(id, info);
+	m_nextID++;
+	return id;
+}
+
+void GraphicsPipelineSystem::ResetGraphicsPipeline(
+	GraphicsPipelineID id, const GraphicsPipelineInfo& info)
+{
+	const ShaderInstanceID vertexShaderID = m_shaders[id].vertexShader;
+	const ShaderInstanceID fragmentShaderID = m_shaders[id].fragmentShader;
+
+	SmallVector<vk::VertexInputAttributeDescription> attributeDescriptions;
 	vk::VertexInputBindingDescription bindingDescription;
 	vk::PipelineVertexInputStateCreateInfo vertexInputInfo = m_shaderSystem->GetVertexInputStateInfo(
 		vertexShaderID,
@@ -171,10 +170,10 @@ void GraphicsPipeline::Init(
 
 	vk::Viewport viewport(
 		0.0f, 0.0f, // x, y
-		static_cast<float>(viewportExtent.width), static_cast<float>(viewportExtent.height),
+		static_cast<float>(info.viewportExtent.width), static_cast<float>(info.viewportExtent.height),
 		0.0f, 1.0f // depth (min, max)
 	);
-	vk::Rect2D scissor(vk::Offset2D(0, 0), viewportExtent);
+	vk::Rect2D scissor(vk::Offset2D(0, 0), info.viewportExtent);
 	vk::PipelineViewportStateCreateInfo viewportState(
 		vk::PipelineViewportStateCreateFlags(),
 		1, &viewport,
@@ -219,13 +218,15 @@ void GraphicsPipeline::Init(
 	);
 
 	// Combine descriptor set layout bindings from vertex and fragment shader
-	m_descriptorSetLayoutBindings = ::CombineDescriptorSetLayoutBindings(
-		m_shaderSystem->GetDescriptorSetLayoutBindings(vertexShaderID),
-		m_shaderSystem->GetDescriptorSetLayoutBindings(fragmentShaderID)
-	);
+	auto fragmentBindings = m_shaderSystem->GetDescriptorSetLayoutBindings(vertexShaderID);
+	auto vertexBindings = m_shaderSystem->GetDescriptorSetLayoutBindings(fragmentShaderID);
+
+	::ReserveIndex(id, m_descriptorSetLayoutBindings);
+	m_descriptorSetLayoutBindings[id] = ::CombineDescriptorSetLayoutBindings(fragmentBindings, vertexBindings);
 
 	// Create descriptor set layouts
-	m_descriptorSetLayouts = ::CreateDescriptorSetLayoutsFromBindings(m_descriptorSetLayoutBindings);
+	::ReserveIndex(id, m_descriptorSetLayouts);
+	m_descriptorSetLayouts[id] = ::CreateDescriptorSetLayoutsFromBindings(m_descriptorSetLayoutBindings[id]);
 
 	// Combine push constants from vertex and fragment shader
 	auto pushConstantRanges = ::CombinePushConstantRanges(
@@ -234,14 +235,17 @@ void GraphicsPipeline::Init(
 	);
 
 	// Build pipeline layouts for each set
-	m_pipelineLayouts = ::CreatePipelineLayoutsFromDescriptorSetLayouts(m_descriptorSetLayouts, pushConstantRanges);
+	::ReserveIndex(id, m_pipelineLayouts);
+	m_pipelineLayouts[id] = ::CreatePipelineLayoutsFromDescriptorSetLayouts(m_descriptorSetLayouts[id], pushConstantRanges);
 
 	// Compute hash pipeline descriptor bindings and push constants
 	// If two Graphics Pipelien have the same hash for a set,
 	// it means their pipeline layout for this set is compatible
-	for (size_t set = 0; set < m_descriptorSetLayoutBindings.size(); ++set)
+	::ReserveIndex(id, m_pipelineCompatibility);
+	m_pipelineCompatibility[id].resize(m_descriptorSetLayoutBindings[id].size());
+	for (size_t set = 0; set < m_descriptorSetLayoutBindings[id].size(); ++set)
 	{
-		m_pipelineCompatibility.push_back(::HashPipelineLayout(m_descriptorSetLayoutBindings[set], pushConstantRanges));
+		m_pipelineCompatibility[id][set] = ::HashPipelineLayout(m_descriptorSetLayoutBindings[id][set], pushConstantRanges);
 	}
 
 	vk::PipelineDepthStencilStateCreateInfo depthStencilState(
@@ -268,9 +272,10 @@ void GraphicsPipeline::Init(
 		&depthStencilState,
 		&colorBlending,
 		nullptr, // dynamicState
-		m_pipelineLayouts.back().get(), // the last one contains all sets
-		renderPass
+		m_pipelineLayouts[id].back().get(), // the last one contains all sets
+		info.renderPass
 	);
 
-	m_graphicsPipeline = g_device->Get().createGraphicsPipelineUnique({}, graphicsPipelineCreateInfo);
+	::ReserveIndex(id, m_pipelines);
+	m_pipelines[id] = g_device->Get().createGraphicsPipelineUnique({}, graphicsPipelineCreateInfo);
 }

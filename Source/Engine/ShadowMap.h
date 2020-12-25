@@ -19,10 +19,17 @@
 
 #include <vulkan/vulkan.hpp>
 
+#include <gsl/pointers>
+
 class ShadowMap
 {
 public:
-	ShadowMap(vk::Extent2D extent, const Light& light, ShaderCache& shaderCache, const Scene& scene);
+	ShadowMap(
+		vk::Extent2D extent,
+		const Light& light, 
+		GraphicsPipelineSystem& graphicsPipelineSystem,
+		const Scene& scene
+	);
 
 	void Reset(vk::Extent2D extent);
 
@@ -64,7 +71,6 @@ private:
 	const char* fragmentShaderFile = "shadow_map_frag.spv";
 
 	vk::Extent2D m_extent;
-	ShaderCache* m_shaderCache{ nullptr }; // usually shared by all shadow maps
 	const Scene* m_scene{ nullptr };
 	Light m_light;
 
@@ -72,7 +78,9 @@ private:
 	vk::UniqueSampler m_sampler;
 	vk::UniqueRenderPass m_renderPass;
 	vk::UniqueFramebuffer m_framebuffer;
-	std::unique_ptr<GraphicsPipeline> m_graphicsPipeline;
+
+	gsl::not_null<GraphicsPipelineSystem*> m_graphicsPipelineSystem;
+	GraphicsPipelineID m_graphicsPipelineID;
 
 	ViewUniforms m_viewUniforms;
 	vk::UniqueDescriptorPool m_descriptorPool; // todo: group descriptor pools

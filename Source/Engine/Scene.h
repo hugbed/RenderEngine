@@ -14,6 +14,8 @@
 
 #include "glm_includes.h"
 
+#include <gsl/pointers>
+
 #include <iostream>
 
 class ShadowMap;
@@ -79,6 +81,7 @@ public:
 		std::string basePath,
 		std::string sceneFilename,
 		CommandBufferPool& commandBufferPool,
+		GraphicsPipelineSystem& graphicsPipelineSystem,
 		const RenderPass& renderPass, vk::Extent2D imageExtent
 	);
 
@@ -140,6 +143,7 @@ private:
 
 private:
 	CommandBufferPool* m_commandBufferPool{ nullptr };
+	gsl::not_null<GraphicsPipelineSystem*> m_graphicsPipelineSystem;
 
 	vk::UniqueDescriptorPool m_descriptorPool;
 

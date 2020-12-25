@@ -24,4 +24,5 @@ target_link_libraries(
     glfw
     spirv-cross-core
     spirv-cross-glsl
-    spirv-cross-reflect)
+    spirv-cross-reflect
+    Microsoft.GSL::GSL)

@@ -56,13 +56,15 @@ public:
 		: RenderLoop(surface, extent, window)
 		, m_renderPass(std::make_unique<RenderPass>(m_swapchain->GetImageDescription().format))
 		, m_framebuffers(Framebuffer::FromSwapchain(*m_swapchain, m_renderPass->Get()))
+		, m_graphicsPipelineSystem(m_shaderSystem)
 		, m_scene(std::make_unique<Scene>(
 			std::move(basePath), std::move(sceneFile),
 			m_commandBufferPool,
+			m_graphicsPipelineSystem,
 			*m_renderPass,
 			m_swapchain->GetImageDescription().extent)
 		)
-		, m_grid(std::make_unique<Grid>(*m_renderPass, m_swapchain->GetImageDescription().extent))
+		, m_grid(std::make_unique<Grid>(*m_renderPass, m_swapchain->GetImageDescription().extent, m_graphicsPipelineSystem))
 	{
 		window.SetMouseButtonCallback(reinterpret_cast<void*>(this), OnMouseButton);
 		window.SetMouseScrollCallback(reinterpret_cast<void*>(this), OnMouseScroll);
@@ -144,7 +146,7 @@ protected:
 		);
 		commandBuffer->begin({ vk::CommandBufferUsageFlagBits::eRenderPassContinue, &info });
 		{
-			RenderState state;
+			RenderState state(m_graphicsPipelineSystem);
 
 			// Draw opaque materials first
 			m_scene->DrawOpaqueObjects(commandBuffer.get(), frameIndex, state);
@@ -214,7 +216,6 @@ protected:
 	}
 
 	// For shadow map shaders
-	ShaderCache m_shaderCache;
 	const vk::Extent2D kShadowMapExtent = vk::Extent2D(2*2048, 2*2048);
 
 	void UpdateShadowMaps(vk::CommandBuffer& commandBuffer)
@@ -232,7 +233,7 @@ protected:
 				if (light.type == aiLightSource_DIRECTIONAL)
 				{
 					m_shadowMaps.emplace_back(
-						kShadowMapExtent, light, m_shaderCache, *m_scene
+						kShadowMapExtent, light, m_graphicsPipelineSystem, *m_scene
 					);
 				}
 			}
@@ -256,8 +257,9 @@ protected:
 						m_shadowMaps[0].GetCombinedImageSampler(),
 						*m_renderPass,
 						m_swapchain->GetImageDescription().extent,
+						m_graphicsPipelineSystem,
 						vk::ImageLayout::eDepthStencilReadOnlyOptimal
-						);
+					);
 				}
 				else
 				{
@@ -457,6 +459,9 @@ protected:
 private:
 	std::unique_ptr<RenderPass> m_renderPass;
 	std::vector<Framebuffer> m_framebuffers;
+
+	ShaderSystem m_shaderSystem;
+	GraphicsPipelineSystem m_graphicsPipelineSystem;
 
 	// Secondary command buffers
 	vk::UniqueCommandPool m_secondaryCommandPool;

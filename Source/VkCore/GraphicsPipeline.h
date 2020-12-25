@@ -3,6 +3,10 @@
 #include "Buffers.h"
 #include "Shader.h" // move to cpp
 
+#include "SmallVector.h"
+
+#include <gsl/pointers>
+
 #include <vulkan/vulkan.hpp>
 
 #include <vector>
@@ -13,80 +17,99 @@ struct ImageDescription;
 
 struct GraphicsPipelineInfo
 {
-	GraphicsPipelineInfo();
+	GraphicsPipelineInfo(vk::RenderPass renderPass, vk::Extent2D viewportExtent);
 
 	vk::PrimitiveTopology primitiveTopology = vk::PrimitiveTopology::eTriangleList;
+	vk::SampleCountFlagBits sampleCount;
+	vk::CullModeFlagBits cullMode = vk::CullModeFlagBits::eBack;
+	vk::Extent2D viewportExtent;
+	vk::RenderPass renderPass; // could be an internal RenderPassID
 	bool blendEnable = false;
 	bool depthTestEnable = true;
 	bool depthWriteEnable = true;
-	vk::SampleCountFlagBits sampleCount;
-	vk::CullModeFlagBits cullMode = vk::CullModeFlagBits::eBack;
 };
 
-class GraphicsPipeline
+using GraphicsPipelineID = uint32_t;
+
+class GraphicsPipelineSystem
 {
 public:
-	using value_type = vk::Pipeline;
+	GraphicsPipelineSystem(ShaderSystem& shaderSystem);
 
-	GraphicsPipeline(
-		vk::RenderPass renderPass,
-		vk::Extent2D viewportExtent,
-		const ShaderSystem& shaderSystem,
-		ShaderInstanceID vertexShaderID, ShaderInstanceID fragmentShaderID,
+	ShaderSystem& GetShaderSystem() const { return *m_shaderSystem; }
+
+	auto CreateGraphicsPipeline(
+		ShaderInstanceID vertexShaderID,
+		ShaderInstanceID fragmentShaderID,
+		const GraphicsPipelineInfo& info
+	) -> GraphicsPipelineID;
+
+	void ResetGraphicsPipeline(
+		GraphicsPipelineID graphicsPipelineID,
 		const GraphicsPipelineInfo& info
 	);
 
-	GraphicsPipeline(
-		vk::RenderPass renderPass,
-		vk::Extent2D viewportExtent,
-		const ShaderSystem& shaderSystem,
-		ShaderInstanceID vertexShaderID, ShaderInstanceID fragmentShaderID
-	);
-
-	const ShaderSystem* m_shaderSystem = nullptr;
-
-	const vk::DescriptorSetLayout& GetDescriptorSetLayout(size_t set) const
+	auto GetDescriptorSetLayoutBindings(
+	) const -> const std::vector<SetVector<SmallVector<vk::DescriptorSetLayoutBinding>>>&
 	{
-		return m_descriptorSetLayouts[set].get();
+		return m_descriptorSetLayoutBindings;
 	}
 
-	const std::vector<vk::DescriptorSetLayoutBinding>& GetDescriptorSetLayoutBindings(size_t set) const 
+	auto GetDescriptorSetLayoutBindings(
+		GraphicsPipelineID id
+	) const -> const SetVector<SmallVector<vk::DescriptorSetLayoutBinding>>&
 	{
-		return m_descriptorSetLayoutBindings[set];
+		return m_descriptorSetLayoutBindings[id];
 	}
 
-	vk::PipelineLayout GetPipelineLayout(size_t set) const
+	auto GetDescriptorSetLayoutBindings(
+		GraphicsPipelineID id,
+		uint8_t set
+	) const -> const SmallVector<vk::DescriptorSetLayoutBinding>&
 	{
-		if (set >= m_pipelineLayouts.size())
-			return {};
-
-		return m_pipelineLayouts[set].get();
+		return m_descriptorSetLayoutBindings[id][set];
 	}
 
-	bool IsLayoutCompatible(const GraphicsPipeline& other, size_t set) const
+	auto GetDescriptorSetLayout(
+		GraphicsPipelineID id,
+		uint8_t set
+	) const -> vk::DescriptorSetLayout
 	{
-		if (set >= m_pipelineCompatibility.size() || set >= other.m_pipelineCompatibility.size())
+		return m_descriptorSetLayouts[id][set].get();
+	}
+
+	// --- todo: reorganize calls to navigate the arrays instead --- //
+
+	bool IsSetLayoutCompatible(GraphicsPipelineID a, GraphicsPipelineID b, uint8_t set) const
+	{
+		const auto& compatibility = m_pipelineCompatibility[a];
+		const auto& otherCompatibility = m_pipelineCompatibility[b];
+		if (set >= compatibility.size() || set >= otherCompatibility.size())
 			return false;
 
-		return m_pipelineCompatibility[set] == other.m_pipelineCompatibility[set];
+		return compatibility[set] == otherCompatibility[set];
 	}
 
-	const value_type& Get() const { return m_graphicsPipeline.get(); }
+	vk::Pipeline GetPipeline(GraphicsPipelineID id) const { return m_pipelines[id].get(); }
+
+	vk::PipelineLayout GetPipelineLayout(GraphicsPipelineID id, uint8_t set) const { return m_pipelineLayouts[id][set].get(); }
 
 private:
-	void Init(
-		vk::RenderPass renderPass,
-		vk::Extent2D viewportExtent,
-		ShaderInstanceID vertexShaderID, ShaderInstanceID fragmentShaderID,
-		const GraphicsPipelineInfo& info
-	);
+	gsl::not_null<ShaderSystem*> m_shaderSystem;
 
-	vk::UniquePipeline m_graphicsPipeline;
+	struct GraphicsPipelineShaders
+	{
+		ShaderInstanceID vertexShader;
+		ShaderInstanceID fragmentShader;
+	};
 
-	// A list of DescriptorSetLayoutBinding per descriptor set
-	std::vector<uint64_t> m_pipelineCompatibility; // for each set, hash of bindings and constants
-	std::vector<std::vector<vk::DescriptorSetLayoutBinding>> m_descriptorSetLayoutBindings;
-	std::vector<vk::UniquePipelineLayout> m_pipelineLayouts; // i is for sets 0..i
-	std::vector<vk::UniqueDescriptorSetLayout> m_descriptorSetLayouts;
-};
+	// GrapicsPipelineID -> Array Index
+	std::vector<GraphicsPipelineShaders> m_shaders; // [id]
+	std::vector<SetVector<SmallVector<vk::DescriptorSetLayoutBinding>>> m_descriptorSetLayoutBindings; // [id][set][binding]
+	std::vector<SetVector<uint64_t>> m_pipelineCompatibility; // [id][set] (for each set, hash of bindings and constants)
+	std::vector<SetVector<vk::UniqueDescriptorSetLayout>> m_descriptorSetLayouts; // [id][set]
+	std::vector<SetVector<vk::UniquePipelineLayout>> m_pipelineLayouts; // [id][set]
+	std::vector<vk::UniquePipeline> m_pipelines; // [id]
+
+	GraphicsPipelineID m_nextID = 0;
 };

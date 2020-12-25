@@ -3,14 +3,18 @@
 #include "Shader.h"
 #include "GraphicsPipeline.h"
 
-MaterialCache::MaterialCache(vk::RenderPass renderPass, vk::Extent2D swapchainExtent)
+MaterialCache::MaterialCache(
+	vk::RenderPass renderPass,
+	vk::Extent2D swapchainExtent,
+	GraphicsPipelineSystem& graphicsPipelineSystem
+)
 	: m_renderPass(renderPass)
 	, m_imageExtent(swapchainExtent)
+	, m_graphicsPipelineSystem(&graphicsPipelineSystem)
 {
 	// All materials are based on the same "base materials"
 	// Create a material description for each one of them.
 
-	GraphicsPipelineInfo pipelineInfo;
 	m_baseMaterialsInfo.reserve((size_t)BaseMaterialID::Count);
 
 	// MaterialIndex::Textured
@@ -29,12 +33,14 @@ void MaterialCache::Reset(vk::RenderPass renderPass, vk::Extent2D extent)
 	m_renderPass = renderPass;
 	m_imageExtent = extent;
 
-	m_graphicsPipelines.clear();
-
-	ASSERT(m_materials.size() == m_materialsInfo.size());
 	for (size_t i = 0; i < m_materials.size(); ++i)
 	{
-		m_materials[i]->pipeline = LoadGraphicsPipeline(m_materialsInfo[i]);
+		// Assume that each material uses a different pipeline
+		GraphicsPipelineInfo info(m_renderPass, m_imageExtent);
+		info.blendEnable = m_materials[i]->isTransparent;
+		m_graphicsPipelineSystem->ResetGraphicsPipeline(
+			m_materials[i]->pipelineID, info
+		);
 	}
 }
 
@@ -45,47 +51,37 @@ Material* MaterialCache::CreateMaterial(const MaterialInfo& materialInfo)
 	auto material = std::make_unique<Material>();
 	material->shadingModel = materialDescription.shadingModel;
 	material->isTransparent = materialInfo.isTransparent;
-	material->pipeline = LoadGraphicsPipeline(materialInfo);
+	material->pipelineID = LoadGraphicsPipeline(materialInfo);
 
 	m_materials.push_back(std::move(material));
 	m_materialsInfo.push_back(materialInfo);
 	return m_materials.back().get();
 }
 
-GraphicsPipeline* MaterialCache::LoadGraphicsPipeline(const MaterialInfo& materialInfo)
+GraphicsPipelineID MaterialCache::LoadGraphicsPipeline(const MaterialInfo& materialInfo)
 {
-	auto pipelineIt = m_graphicsPipelines.find(materialInfo.Hash());
-	if (pipelineIt != m_graphicsPipelines.end())
-		return pipelineIt->second.get();
+	auto pipelineIndexIt = m_materialHashToPipelineIndex.find(materialInfo.Hash());
+	if (pipelineIndexIt != m_materialHashToPipelineIndex.end())
+		return m_graphicsPipelineIDs[pipelineIndexIt->second];
 
 	const auto& materialDescription = m_baseMaterialsInfo[(size_t)materialInfo.baseMaterial];
 
-	ShaderID vertexShaderID = m_shaderSystem.CreateShader(materialDescription.vertexShader, "main");
-	ShaderID fragmentShaderID = m_shaderSystem.CreateShader(materialDescription.fragmentShader, "main");
-	ShaderInstanceID vertexInstanceID = m_shaderSystem.CreateShaderInstance(vertexShaderID);
+	ShaderSystem& shaderSystem = m_graphicsPipelineSystem->GetShaderSystem();
+	ShaderID vertexShaderID = shaderSystem.CreateShader(materialDescription.vertexShader, "main");
+	ShaderID fragmentShaderID = shaderSystem.CreateShader(materialDescription.fragmentShader, "main");
+	ShaderInstanceID vertexInstanceID = shaderSystem.CreateShaderInstance(vertexShaderID);
 	ShaderInstanceID fragmentInstanceID = 0;
 	if (materialDescription.shadingModel == ShadingModel::Lit)
-		fragmentInstanceID = m_shaderSystem.CreateShaderInstance(fragmentShaderID, SpecializationConstant::Create(materialInfo.constants));
+		fragmentInstanceID = shaderSystem.CreateShaderInstance(fragmentShaderID, SpecializationConstant::Create(materialInfo.constants));
 	else
-		fragmentInstanceID = m_shaderSystem.CreateShaderInstance(fragmentShaderID);
+		fragmentInstanceID = shaderSystem.CreateShaderInstance(fragmentShaderID);
 
-	GraphicsPipelineInfo info;
+	uint32_t pipelineIndex = m_graphicsPipelineIDs.size();
+	GraphicsPipelineInfo info(m_renderPass, m_imageExtent);
 	info.blendEnable = materialInfo.isTransparent;
-	auto [it, wasAdded] = m_graphicsPipelines.emplace(materialInfo.Hash(),
-		std::make_unique<GraphicsPipeline>(
-			m_renderPass, m_imageExtent,
-			m_shaderSystem, vertexInstanceID, fragmentInstanceID,
-			info
-		));
-
-	return it->second.get();
-}
-
-std::vector<const GraphicsPipeline*> MaterialCache::GetGraphicsPipelines() const
-{
-	std::vector<const GraphicsPipeline*> pipelines;
-	pipelines.reserve(m_graphicsPipelines.size());
-	for (const auto& pipelineItem : m_graphicsPipelines)
-		pipelines.push_back(pipelineItem.second.get());
-	return pipelines;
+	m_graphicsPipelineIDs.push_back(m_graphicsPipelineSystem->CreateGraphicsPipeline(
+		vertexInstanceID, fragmentInstanceID, info
+	));
+	auto [it, wasAdded] = m_materialHashToPipelineIndex.emplace(materialInfo.Hash(), pipelineIndex);
+	return m_graphicsPipelineIDs[it->second];
 }

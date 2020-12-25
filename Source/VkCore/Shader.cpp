@@ -9,7 +9,7 @@ namespace
 	void PopulateVertexInputDescriptions(
 		const spirv_cross::CompilerReflection& comp,
 		const spirv_cross::VectorView<spirv_cross::Resource>& stageInputs,
-		std::vector<vk::VertexInputAttributeDescription>& attributeDescriptions,
+		SmallVector<vk::VertexInputAttributeDescription>& attributeDescriptions,
 		vk::VertexInputBindingDescription& bindingDescription)
 	{
 		attributeDescriptions.reserve(stageInputs.size());
@@ -47,7 +47,7 @@ namespace
 	void PopulateUniformBufferDescriptorSetLayouts(
 		const spirv_cross::CompilerReflection& comp,
 		const spirv_cross::VectorView<spirv_cross::Resource>& uniformBuffers,
-		std::vector<std::vector<vk::DescriptorSetLayoutBinding>>& descriptorSetLayouts)
+		SetVector<SmallVector<vk::DescriptorSetLayoutBinding>>& descriptorSetLayouts)
 	{
 		for (const auto& ubo : uniformBuffers)
 		{
@@ -76,7 +76,7 @@ namespace
 	void PopulateSampledImagesDescriptorSetLayouts(
 		const spirv_cross::CompilerReflection& comp,
 		const spirv_cross::VectorView<spirv_cross::Resource>& sampledImages,
-		std::vector<std::vector<vk::DescriptorSetLayoutBinding>>& descriptorSetLayouts)
+		SetVector<SmallVector<vk::DescriptorSetLayoutBinding>>& descriptorSetLayouts)
 	{
 		for (const auto& sampler : sampledImages)
 		{
@@ -103,11 +103,11 @@ namespace
 		}
 	}
 
-	std::vector<SpecializationConstantRef> PopulateSampledImagesSpecializationRefs(
+	SmallVector<ShaderReflection::SpecializationConstantRef> PopulateSampledImagesSpecializationRefs(
 		const spirv_cross::CompilerReflection& comp,
 		const spirv_cross::VectorView<spirv_cross::Resource>& sampledImages)
 	{
-		std::vector<SpecializationConstantRef> specializationRefs;
+		SmallVector<ShaderReflection::SpecializationConstantRef> specializationRefs;
 
 		for (const auto& sampler : sampledImages)
 		{
@@ -134,10 +134,10 @@ namespace
 		return specializationRefs;
 	}
 
-	std::vector<vk::SpecializationMapEntry> PopulateSpecializationMapEntries(const spirv_cross::CompilerReflection& comp)
+	SmallVector<vk::SpecializationMapEntry> PopulateSpecializationMapEntries(const spirv_cross::CompilerReflection& comp)
 	{
 		auto constants = comp.get_specialization_constants();
-		std::vector<vk::SpecializationMapEntry> specializationMapEntries(constants.size());
+		SmallVector<vk::SpecializationMapEntry> specializationMapEntries(constants.size());
 		for (auto& c : constants)
 		{
 			const auto& constant = comp.get_constant(c.id);
@@ -168,7 +168,7 @@ namespace
 	void PopulatePushConstantRanges(
 		const spirv_cross::CompilerReflection& comp,
 		const spirv_cross::VectorView<spirv_cross::Resource>& pushConstantBuffers,
-		std::vector<vk::PushConstantRange>& pushConstantRanges)
+		SmallVector<vk::PushConstantRange>& pushConstantRanges)
 	{
 		uint32_t rangeSize = 0;
 		uint32_t rangeOffset = (std::numeric_limits<uint32_t>::max)();
@@ -199,9 +199,9 @@ namespace
 
 	void ReplaceSpecializationConstants(
 		const void* data, size_t dataSize,
-		const std::vector<SpecializationConstantRef>& specializationRefs,
-		const std::vector<vk::SpecializationMapEntry>& specializationMapEntries,
-		std::vector<std::vector<vk::DescriptorSetLayoutBinding>>& descriptorSetLayouts
+		const SmallVector<ShaderReflection::SpecializationConstantRef>& specializationRefs,
+		const SmallVector<vk::SpecializationMapEntry>& specializationMapEntries,
+		SetVector<SmallVector<vk::DescriptorSetLayoutBinding>>& descriptorSetLayouts
 	)
 	{
 		// Replace placeholder array sizes with real values
@@ -232,6 +232,11 @@ namespace
 			)
 		);
 	}
+}
+
+ShaderID ShaderSystem::CreateShader(const std::string& filename)
+{
+	return CreateShader(filename, "main");
 }
 
 ShaderID ShaderSystem::CreateShader(const std::string& filename, std::string entryPoint)
@@ -268,12 +273,10 @@ ShaderInstanceID ShaderSystem::CreateShaderInstance(ShaderID shaderID, Specializ
 	m_instanceIDToShaderID.push_back(shaderID);
 	m_nextInstanceID++;
 	{
-		Entry entry;
-		entry.offset = m_specializationBlock.size();
-		entry.size = specialization.size;
-		const size_t writeIndex = m_specializationBlock.size();
-		m_specializationBlock.resize(writeIndex + specialization.size);
-		std::copy(specialization.data, specialization.data + specialization.size, &m_specializationBlock[writeIndex]);
+		Entry entry = Entry::AppendToOutput(
+			{ specialization.data, specialization.data + specialization.size },
+			m_specializationBlock
+		);
 		m_specializations.push_back(std::move(entry));
 	}
 	return id;
@@ -311,7 +314,7 @@ vk::PipelineShaderStageCreateInfo ShaderSystem::GetShaderStageInfo(ShaderInstanc
 
 vk::PipelineVertexInputStateCreateInfo ShaderSystem::GetVertexInputStateInfo(
 	ShaderInstanceID id,
-	std::vector<vk::VertexInputAttributeDescription>& attributeDescriptions,
+	SmallVector<vk::VertexInputAttributeDescription>& attributeDescriptions,
 	vk::VertexInputBindingDescription& bindingDescription) const
 {
 	ShaderID shaderID = m_instanceIDToShaderID[id];
@@ -344,12 +347,12 @@ vk::PipelineVertexInputStateCreateInfo ShaderSystem::GetVertexInputStateInfo(
 	}
 }
 
-std::vector<vk::PushConstantRange> ShaderSystem::GetPushConstantRanges(ShaderInstanceID id) const
+SmallVector<vk::PushConstantRange> ShaderSystem::GetPushConstantRanges(ShaderInstanceID id) const
 {
 	ShaderID shaderID = m_instanceIDToShaderID[id];
 	const ShaderReflection& reflection = *m_reflections[shaderID];
 
-	std::vector<vk::PushConstantRange> pushConstantRanges;
+	SmallVector<vk::PushConstantRange> pushConstantRanges;
 
 	::PopulatePushConstantRanges(
 		reflection.comp,
@@ -360,13 +363,13 @@ std::vector<vk::PushConstantRange> ShaderSystem::GetPushConstantRanges(ShaderIns
 	return pushConstantRanges;
 }
 
-std::vector<std::vector<vk::DescriptorSetLayoutBinding>> ShaderSystem::GetDescriptorSetLayoutBindings(ShaderInstanceID id) const
+SetVector<SmallVector<vk::DescriptorSetLayoutBinding>> ShaderSystem::GetDescriptorSetLayoutBindings(ShaderInstanceID id) const
 {
 	ShaderID shaderID = m_instanceIDToShaderID[id];
 	const ShaderReflection& reflection = *m_reflections[shaderID];
 	const Entry& specialization = m_specializations[id];
 
-	std::vector<std::vector<vk::DescriptorSetLayoutBinding>> descriptorSetLayouts;
+	SetVector<SmallVector<vk::DescriptorSetLayoutBinding>> descriptorSetLayouts;
 
 	::PopulateUniformBufferDescriptorSetLayouts(
 		reflection.comp,

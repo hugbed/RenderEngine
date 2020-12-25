@@ -1,8 +1,8 @@
 #include "ShadowMap.h"
 
-ShadowMap::ShadowMap(vk::Extent2D extent, const Light& light, ShaderCache& shaderCache, const Scene& scene)
+ShadowMap::ShadowMap(vk::Extent2D extent, const Light& light, GraphicsPipelineSystem& graphicsPipelineSystem, const Scene& scene)
 	: m_extent(extent)
-	, m_shaderCache(&shaderCache)
+	, m_graphicsPipelineSystem(&graphicsPipelineSystem)
 	, m_scene(&scene)
 	, m_light(light)
 {
@@ -45,9 +45,9 @@ void ShadowMap::Render(vk::CommandBuffer& commandBuffer, uint32_t frameIndex) co
 	);
 	commandBuffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
 	{
-		RenderState renderState;
+		RenderState renderState(*m_graphicsPipelineSystem);
 
-		renderState.BindPipeline(commandBuffer, m_graphicsPipeline.get());
+		renderState.BindPipeline(commandBuffer, m_graphicsPipelineID);
 
 		renderState.BindView(commandBuffer, ShadingModel::Unlit, m_viewDescriptorSet.get());
 
@@ -151,13 +151,13 @@ void ShadowMap::CreateFramebuffer()
 
 void ShadowMap::CreateGraphicsPipeline()
 {
-	ShaderID vertexShaderID = m_shaderCache->LoadShader(vertexShaderFile);
-	ShaderID fragmentShaderID = m_shaderCache->LoadShader(fragmentShaderFile);
+	ShaderSystem& shaderSystem = m_graphicsPipelineSystem->GetShaderSystem();
+	ShaderID vertexShaderID = shaderSystem.CreateShader(vertexShaderFile);
+	ShaderID fragmentShaderID = shaderSystem.CreateShader(fragmentShaderFile);
+	ShaderInstanceID vertexShaderInstanceID = shaderSystem.CreateShaderInstance(vertexShaderID);
+	ShaderInstanceID fragmentShaderInstanceID = shaderSystem.CreateShaderInstance(fragmentShaderID);
 
-	ShaderInstanceID vertexShaderInstanceID = m_shaderCache->CreateShaderInstance(vertexShaderID);
-	ShaderInstanceID fragmentShaderInstanceID = m_shaderCache->CreateShaderInstance(fragmentShaderID);
-
-	GraphicsPipelineInfo info;
+	GraphicsPipelineInfo info(*m_renderPass, m_extent);
 	info.sampleCount = vk::SampleCountFlagBits::e1;
 
 	// Use front culling to prevent peter-panning
@@ -165,12 +165,8 @@ void ShadowMap::CreateGraphicsPipeline()
 	// for meshes that don't have a back face (e.g. a plane)
 	// eBack could be used in this case.
 	info.cullMode = vk::CullModeFlagBits::eFront;
-
-	m_graphicsPipeline = std::make_unique<GraphicsPipeline>(
-		*m_renderPass, m_extent,
-		m_shaderCache->GetShaderSystem(),
-		vertexShaderInstanceID, fragmentShaderInstanceID,
-		info
+	m_graphicsPipelineID = m_graphicsPipelineSystem->CreateGraphicsPipeline(
+		vertexShaderInstanceID, fragmentShaderInstanceID, info
 	);
 }
 
@@ -180,7 +176,7 @@ void ShadowMap::CreateDescriptorPool()
 	m_descriptorPool.reset();
 
 	std::map<vk::DescriptorType, uint32_t> descriptorCount;
-	const auto& bindings = m_graphicsPipeline->GetDescriptorSetLayoutBindings((size_t)DescriptorSetIndices::View);
+	const auto& bindings = m_graphicsPipelineSystem->GetDescriptorSetLayoutBindings(m_graphicsPipelineID, (size_t)DescriptorSetIndices::View);
 	for (const auto& binding : bindings)
 		descriptorCount[binding.descriptorType] += binding.descriptorCount;
 
@@ -203,7 +199,7 @@ void ShadowMap::CreateDescriptorPool()
 void ShadowMap::CreateDescriptorSets()
 {
 	size_t set = (size_t)DescriptorSetIndices::View;
-	vk::DescriptorSetLayout viewSetLayouts = m_graphicsPipeline->GetDescriptorSetLayout(set);
+	vk::DescriptorSetLayout viewSetLayouts = m_graphicsPipelineSystem->GetDescriptorSetLayout(m_graphicsPipelineID, set);
 	std::vector<vk::DescriptorSetLayout> layouts(1, viewSetLayouts);
 	auto descriptorSets = g_device->Get().allocateDescriptorSetsUnique(vk::DescriptorSetAllocateInfo(
 		m_descriptorPool.get(), static_cast<uint32_t>(layouts.size()), layouts.data()

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "SmallVector.h"
+
 #include "spirv_vk.h"
 
 #include <vulkan/vulkan.hpp>
@@ -9,8 +11,32 @@
 #include <vector>
 #include <map>
 
+struct Entry
+{
+	template <class T>
+	static Entry AppendToOutput(const std::vector<T>& input, std::vector<T>& output)
+	{
+		Entry entry;
+		entry.offset = output.size();
+		entry.size = input.size();
+		const size_t writeIndex = output.size();
+		output.resize(writeIndex + input.size());
+		std::copy(input.begin(), input.end(), &output[writeIndex]);
+		return entry;
+	}
+
+	uint32_t offset = 0;
+	uint32_t size = 0;
+};
+
 using ShaderID = uint32_t;
 using ShaderInstanceID = uint32_t;
+
+// We don't expect more than 4 sets bound for a shader
+constexpr size_t kMaxNumSets = 4;
+
+template <class T>
+using SetVector = SmallVector<T, kMaxNumSets>;
 
 struct SpecializationConstant
 {
@@ -27,13 +53,6 @@ struct SpecializationConstant
 	size_t size = 0;
 };
 
-struct SpecializationConstantRef
-{
-	uint32_t set;
-	uint32_t binding;
-	uint32_t constantID;
-};
-
 // Used to automatically generate vulkan structures for building graphics pipelines.
 struct ShaderReflection
 {
@@ -45,9 +64,16 @@ struct ShaderReflection
 	spirv_cross::CompilerReflection comp;
 	spirv_cross::ShaderResources shaderResources;
 
+	struct SpecializationConstantRef
+	{
+		uint32_t set;
+		uint32_t binding;
+		uint32_t constantID;
+	};
+
 	// Extracted info
-	std::vector<SpecializationConstantRef> specializationRefs;
-	std::vector<vk::SpecializationMapEntry> specializationMapEntries;
+	SmallVector<SpecializationConstantRef> specializationRefs;
+	SmallVector<vk::SpecializationMapEntry> specializationMapEntries;
 };
 
 class ShaderSystem
@@ -55,6 +81,7 @@ class ShaderSystem
 public:
 	// --- Shader Creation --- //
 
+	ShaderID CreateShader(const std::string& filename); // entryPoint defaults to main
 	ShaderID CreateShader(const std::string& filename, std::string entryPoint);
 	ShaderID CreateShader(const char* data, size_t size, std::string entryPoint);
 	ShaderInstanceID CreateShaderInstance(ShaderID shaderID);
@@ -70,17 +97,17 @@ public:
 
 	auto GetVertexInputStateInfo(
 		ShaderInstanceID id,
-		std::vector<vk::VertexInputAttributeDescription>& attributeDescriptions, // will be populated
+		SmallVector<vk::VertexInputAttributeDescription>& attributeDescriptions, // will be populated
 		vk::VertexInputBindingDescription& bindingDescription // will be populated
 	) const -> vk::PipelineVertexInputStateCreateInfo;
 	
 	auto GetDescriptorSetLayoutBindings(
 		ShaderInstanceID id
-	) const -> std::vector<std::vector<vk::DescriptorSetLayoutBinding>>; // todo: use SmallVector or similar for those temporary vectors
+	) const -> SetVector<SmallVector<vk::DescriptorSetLayoutBinding>>; // [set][binding]
 
 	auto GetPushConstantRanges(
 		ShaderInstanceID id
-	) const -> std::vector<vk::PushConstantRange>;
+	) const -> SmallVector<vk::PushConstantRange>;
 
 private:
 	// --- Base Shader --- //
@@ -96,11 +123,6 @@ private:
 
 	// --- Shader Instance (base shader with specific specialization constants) --- //
 
-	struct Entry
-	{
-		uint32_t offset = 0;
-		uint32_t size = 0;
-	};
 	std::vector<char> m_specializationBlock; // specialization constants data block
 
 	// ShaderInstanceID -> Array Index

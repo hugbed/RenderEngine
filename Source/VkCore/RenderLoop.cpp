@@ -1,7 +1,6 @@
 #include "RenderLoop.h"
 
 #include "Swapchain.h"
-#include "GraphicsPipeline.h"
 #include "Device.h"
 #include "PhysicalDevice.h"
 

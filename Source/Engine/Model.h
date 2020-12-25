@@ -1,7 +1,7 @@
 #pragma once
 
 #include "DescriptorSetLayouts.h"
-#include "Material.h"
+#include "MaterialCache.h"
 #include "BoundingBox.h"
 
 #include "Buffers.h"
@@ -45,16 +45,6 @@ struct Model
 	}
 
 	glm::mat4& GetTransform() { return transform; }
-
-	void Bind(vk::CommandBuffer& commandBuffer, const GraphicsPipeline& pipeline) const
-	{
-		uint32_t set = (uint32_t)DescriptorSetIndices::Model;
-		commandBuffer.bindDescriptorSets(
-			vk::PipelineBindPoint::eGraphics,
-			pipeline.GetPipelineLayout(set), set,
-			1, &descriptorSet.get(), 0, nullptr
-		);
-	}
 
 	std::unique_ptr<UniqueBuffer> uniformBuffer;
 

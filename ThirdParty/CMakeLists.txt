@@ -2,6 +2,9 @@ cmake_minimum_required(VERSION 3.16)
 
 project(ThirdParty)
 
+# GSL
+add_subdirectory(GSL)
+
 # GLFW
 set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "GLFW_BUILD_EXAMPLES" FORCE)
 set(GLFW_BUILD_TESTS OFF CACHE BOOL "GLFW_BUILD_TESTS" FORCE)

@@ -51,8 +51,14 @@ const std::vector<float> vertices = {
 	 1.0f, -1.0f,  1.0f
 };
 
-Skybox::Skybox(const RenderPass& renderPass, TextureCache* textureCache, vk::Extent2D swapchainExtent)
-	: m_textureCache(textureCache)
+Skybox::Skybox(
+	const RenderPass& renderPass,
+	vk::Extent2D swapchainExtent,
+	TextureCache& textureCache,
+	GraphicsPipelineSystem& graphicsPipelineSystem
+)
+	: m_textureCache(&textureCache)
+	, m_graphicsPipelineSystem(&graphicsPipelineSystem)
 {
 	// Load textures
 	std::vector<std::string> cubeFacesFiles = {
@@ -63,19 +69,18 @@ Skybox::Skybox(const RenderPass& renderPass, TextureCache* textureCache, vk::Ext
 		"skybox/front.jpg",
 		"skybox/back.jpg"
 	};
-	cubeMap = m_textureCache->LoadCubeMapFaces(cubeFacesFiles);
+	m_cubeMap = m_textureCache->LoadCubeMapFaces(cubeFacesFiles);
 
 	// Create graphics pipeline
+	ShaderSystem& shaderSystem = m_graphicsPipelineSystem->GetShaderSystem();
 	ShaderID vertexShaderID = shaderSystem.CreateShader("skybox_vert.spv", "main");
 	ShaderID fragmentShaderID = shaderSystem.CreateShader("skybox_frag.spv", "main");
+	m_vertexShader = shaderSystem.CreateShaderInstance(vertexShaderID);
+	m_fragmentShader = shaderSystem.CreateShaderInstance(fragmentShaderID);
 
-	vertexShader = shaderSystem.CreateShaderInstance(vertexShaderID);
-	fragmentShader = shaderSystem.CreateShaderInstance(fragmentShaderID);
-
-	pipeline = std::make_unique<GraphicsPipeline>(
-		renderPass.Get(),
-		swapchainExtent,
-		shaderSystem, vertexShader, fragmentShader
+	GraphicsPipelineInfo info(renderPass.Get(), swapchainExtent);
+	m_graphicsPipelineID = m_graphicsPipelineSystem->CreateGraphicsPipeline(
+		m_vertexShader, m_fragmentShader, info
 	);
 
 	CreateDescriptors();
@@ -83,20 +88,16 @@ Skybox::Skybox(const RenderPass& renderPass, TextureCache* textureCache, vk::Ext
 
 void Skybox::Reset(const RenderPass& renderPass, vk::Extent2D swapchainExtent)
 {
-	pipeline = std::make_unique<GraphicsPipeline>(
-		renderPass.Get(),
-		swapchainExtent,
-		shaderSystem, vertexShader, fragmentShader
-	);
-
+	GraphicsPipelineInfo info(renderPass.Get(), swapchainExtent);
+	m_graphicsPipelineSystem->ResetGraphicsPipeline(m_graphicsPipelineID, info);
 	CreateDescriptors();
 	UpdateDescriptors();
 }
 
 void Skybox::CreateDescriptors()
 {
-	cubeDescriptorSets.clear();
-	descriptorPool.reset();
+	m_cubeDescriptorSets.clear();
+	m_descriptorPool.reset();
 
 	// Descriptor pool
 	uint32_t nbSamplers = 1;
@@ -105,26 +106,26 @@ void Skybox::CreateDescriptors()
 		vk::DescriptorType::eCombinedImageSampler,
 		nbSamplers
 	));
-	descriptorPool = g_device->Get().createDescriptorPoolUnique(vk::DescriptorPoolCreateInfo(
+	m_descriptorPool = g_device->Get().createDescriptorPoolUnique(vk::DescriptorPoolCreateInfo(
 		vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
 		nbSamplers,
 		static_cast<uint32_t>(poolSizes.size()), poolSizes.data()
 	));
 
 	// Descriptor and Pipeline Layouts
-	vk::DescriptorSetLayout cubeSetLayout(pipeline->GetDescriptorSetLayout(1));
-	cubeDescriptorSets = g_device->Get().allocateDescriptorSetsUnique(vk::DescriptorSetAllocateInfo(
-		descriptorPool.get(), 1, &cubeSetLayout
+	vk::DescriptorSetLayout cubeSetLayout(m_graphicsPipelineSystem->GetDescriptorSetLayout(m_graphicsPipelineID, 1));
+	m_cubeDescriptorSets = g_device->Get().allocateDescriptorSetsUnique(vk::DescriptorSetAllocateInfo(
+		m_descriptorPool.get(), 1, &cubeSetLayout
 	));
 }
 
 void Skybox::UpdateDescriptors()
 {
 	uint32_t binding = 0;
-	vk::DescriptorImageInfo imageInfo(cubeMap.sampler, cubeMap.texture->GetImageView(), vk::ImageLayout::eShaderReadOnlyOptimal);
+	vk::DescriptorImageInfo imageInfo(m_cubeMap.sampler, m_cubeMap.texture->GetImageView(), vk::ImageLayout::eShaderReadOnlyOptimal);
 	std::vector<vk::WriteDescriptorSet> writeDescriptorSets = {
 		vk::WriteDescriptorSet(
-			cubeDescriptorSets[0].get(), binding++, {},
+			m_cubeDescriptorSets[0].get(), binding++, {},
 			1, vk::DescriptorType::eCombinedImageSampler, &imageInfo, nullptr
 		) // binding = 0
 	};
@@ -135,10 +136,10 @@ void Skybox::UploadToGPU(vk::CommandBuffer& commandBuffer, CommandBufferPool& co
 {
 	// Create and upload vertex buffer
 	vk::DeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
-	vertexBuffer = std::make_unique<UniqueBufferWithStaging>(bufferSize, vk::BufferUsageFlagBits::eVertexBuffer);
-	memcpy(vertexBuffer->GetStagingMappedData(), reinterpret_cast<const void*>(vertices.data()), bufferSize);
-	vertexBuffer->CopyStagingToGPU(commandBuffer);
-	commandBufferPool.DestroyAfterSubmit(vertexBuffer->ReleaseStagingBuffer());
+	m_vertexBuffer = std::make_unique<UniqueBufferWithStaging>(bufferSize, vk::BufferUsageFlagBits::eVertexBuffer);
+	memcpy(m_vertexBuffer->GetStagingMappedData(), reinterpret_cast<const void*>(vertices.data()), bufferSize);
+	m_vertexBuffer->CopyStagingToGPU(commandBuffer);
+	commandBufferPool.DestroyAfterSubmit(m_vertexBuffer->ReleaseStagingBuffer());
 
 	m_textureCache->UploadTextures(commandBuffer, commandBufferPool);
 
@@ -152,15 +153,15 @@ void Skybox::Draw(vk::CommandBuffer& commandBuffer, uint32_t frameIndex)
 
 	// Bind vertex buffer
 	vk::DeviceSize offsets[] = { 0 };
-	vk::Buffer vertexBuffers[] = { vertexBuffer->Get() };
+	vk::Buffer vertexBuffers[] = { m_vertexBuffer->Get() };
 	commandBuffer.bindVertexBuffers(0, 1, vertexBuffers, offsets);
 
 	// Bind cube sampler
 	uint32_t set = 1;
 	commandBuffer.bindDescriptorSets(
 		vk::PipelineBindPoint::eGraphics,
-		pipeline->GetPipelineLayout(set), set,
-		1, &cubeDescriptorSets[0].get(), 0, nullptr
+		m_graphicsPipelineSystem->GetPipelineLayout(m_graphicsPipelineID, set), set,
+		1, &m_cubeDescriptorSets[0].get(), 0, nullptr
 	);
 
 	commandBuffer.draw(vertices.size() / 3, 1, 0, 0);
