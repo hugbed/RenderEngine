@@ -22,7 +22,7 @@
 
 #include "Camera.h"
 #include "TextureCache.h"
-#include "MaterialCache.h"
+#include "Material.h"
 #include "DescriptorSetLayouts.h"
 #include "Model.h"
 #include "RenderState.h"

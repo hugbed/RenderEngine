@@ -50,7 +50,7 @@ Scene::Scene(
 	, m_renderPass(&renderPass)
 	, m_imageExtent(imageExtent)
 	, m_textureCache(std::make_unique<TextureCache>(m_basePath))
-	, m_materialCache(std::make_unique<MaterialCache>(renderPass.Get(), imageExtent, graphicsPipelineSystem))
+	, m_materialSystem(std::make_unique<MaterialSystem>(renderPass.Get(), imageExtent, graphicsPipelineSystem))
 	, m_camera(
 		1.0f * glm::vec3(1.0f, 1.0f, 1.0f),
 		glm::vec3(0.0f, 0.0f, 0.0f),
@@ -67,7 +67,7 @@ void Scene::Reset(vk::CommandBuffer& commandBuffer, const RenderPass& renderPass
 
 	m_camera.SetImageExtent(m_imageExtent.width, m_imageExtent.height);
 
-	m_materialCache->Reset(m_renderPass->Get(), m_imageExtent);
+	m_materialSystem->Reset(m_renderPass->Get(), m_imageExtent);
 	m_skybox->Reset(*m_renderPass, m_imageExtent);
 
 	CreateDescriptorLayouts();
@@ -108,10 +108,10 @@ void Scene::DrawOpaqueObjects(vk::CommandBuffer commandBuffer, uint32_t frameInd
 	{
 		uint32_t concurrentFrameIndex = frameIndex % m_commandBufferPool->GetNbConcurrentSubmits();
 
-		auto shadingModel = ShadingModel::Unlit;
+		auto shadingModel = Material::ShadingModel::Unlit;
 		auto& viewDescriptorSet = m_viewDescriptorSets[(size_t)shadingModel][concurrentFrameIndex].get();
 		renderState.BindPipeline(commandBuffer, m_skybox->GetGraphicsPipelineID());
-		renderState.BindView(commandBuffer, ShadingModel::Unlit, viewDescriptorSet);
+		renderState.BindView(commandBuffer, Material::ShadingModel::Unlit, viewDescriptorSet);
 		m_skybox->Draw(commandBuffer, frameIndex);
 	}
 }
@@ -142,12 +142,12 @@ void Scene::DrawSceneObjects(vk::CommandBuffer commandBuffer, uint32_t frameInde
 
 	for (const auto& drawItem : drawCalls)
 	{
-		auto shadingModel = drawItem.mesh->material->shadingModel;
+		auto shadingModel = drawItem.mesh->shadingModel;
 		auto& viewDescriptorSet = m_viewDescriptorSets[(size_t)shadingModel][currentFrameIndex].get();
-		state.BindPipeline(commandBuffer, drawItem.mesh->material->pipelineID);
+		state.BindPipeline(commandBuffer, drawItem.mesh->graphicsPipelineID);
 		state.BindView(commandBuffer, shadingModel, viewDescriptorSet);
 		state.BindModel(commandBuffer, drawItem.model);
-		state.BindMaterial(commandBuffer, drawItem.mesh->material);
+		state.BindMaterial(commandBuffer, drawItem.mesh->materialInstanceID);
 
 		// Draw
 		commandBuffer.drawIndexed(drawItem.mesh->nbIndices, 1, drawItem.mesh->indexOffset, 0, 0);
@@ -167,7 +167,7 @@ void Scene::DrawWithoutShading(vk::CommandBuffer& commandBuffer, uint32_t frameI
 		commandBuffer.bindIndexBuffer(m_indexBuffer->Get(), 0, vk::IndexType::eUint32);
 	}
 
-	auto shadingModel = ShadingModel::Unlit;
+	auto shadingModel = Material::ShadingModel::Unlit;
 	for (const auto& drawItem : drawCalls)
 	{
 		state.BindModel(commandBuffer, drawItem.model);
@@ -290,7 +290,7 @@ void Scene::LoadSceneNodes(vk::CommandBuffer commandBuffer)
 	{
 		for (auto& mesh : model.meshes)
 		{
-			if (mesh.material->isTransparent == false)
+			if (m_materialSystem->IsMaterialInstanceTransparent(mesh.materialInstanceID) == false)
 				m_opaqueDrawCache.push_back(MeshDrawInfo{ &model, &mesh });
 			else
 				m_transparentDrawCache.push_back(MeshDrawInfo{ &model, &mesh });
@@ -308,14 +308,14 @@ void Scene::LoadSceneNodes(vk::CommandBuffer commandBuffer)
 	std::sort(m_opaqueDrawCache.begin(), m_opaqueDrawCache.end(),
 		[](const MeshDrawInfo& a, const MeshDrawInfo& b) {
 			// Sort by material type
-			if (a.mesh->material->shadingModel != b.mesh->material->shadingModel)
-				return a.mesh->material->shadingModel < b.mesh->material->shadingModel;
+			if (a.mesh->shadingModel != b.mesh->shadingModel)
+				return a.mesh->shadingModel < b.mesh->shadingModel;
 			// Then by material pipeline
-			else if (a.mesh->material->pipelineID != b.mesh->material->pipelineID)
-				return a.mesh->material->pipelineID < b.mesh->material->pipelineID;
+			else if (a.mesh->graphicsPipelineID != b.mesh->graphicsPipelineID)
+				return a.mesh->graphicsPipelineID < b.mesh->graphicsPipelineID;
 			// Then material instance
-			else if (a.mesh->material != b.mesh->material)
-				return a.mesh->material < b.mesh->material;
+			else if (a.mesh->materialInstanceID != b.mesh->materialInstanceID)
+				return a.mesh->materialInstanceID < b.mesh->materialInstanceID;
 			// Then model
 			else
 				return a.model < b.model;
@@ -343,14 +343,14 @@ void Scene::SortTransparentObjects()
 			if (distA != distB)
 				return distA > distB; // back to front
 			// Then by material type
-			if (a.mesh->material->shadingModel != b.mesh->material->shadingModel)
-				return a.mesh->material->shadingModel < b.mesh->material->shadingModel;
+			if (a.mesh->shadingModel != b.mesh->shadingModel)
+				return a.mesh->shadingModel < b.mesh->shadingModel;
 			// Then by material
-			else if (a.mesh->material->pipelineID != b.mesh->material->pipelineID)
-				return a.mesh->material->pipelineID < b.mesh->material->pipelineID;
+			else if (a.mesh->graphicsPipelineID != b.mesh->graphicsPipelineID)
+				return a.mesh->graphicsPipelineID < b.mesh->graphicsPipelineID;
 			// Then material instance
-			else if (a.mesh->material != b.mesh->material)
-				return a.mesh->material < b.mesh->material;
+			else if (a.mesh->materialInstanceID != b.mesh->materialInstanceID)
+				return a.mesh->materialInstanceID < b.mesh->materialInstanceID;
 			// Then model
 			else
 				return a.model < b.model;
@@ -460,11 +460,11 @@ void Scene::LoadMaterials(vk::CommandBuffer commandBuffer)
 		assimpMaterial->Get(AI_MATKEY_OPACITY, opacity);
 
 		// todo: reuse same materials for materials with the same name
-		MaterialInfo materialInfo;
-		materialInfo.baseMaterial = BaseMaterialID::Phong;
+		MaterialInstanceInfo materialInfo;
+		materialInfo.materialID = Material::ID::Phong;
 		materialInfo.isTransparent = opacity < 1.0f;
 		materialInfo.constants.nbLights = m_lights.size();
-		auto* material = m_materialCache->CreateMaterial(materialInfo);
+		auto materialInstanceID = m_materialSystem->CreateMaterialInstance(materialInfo);
 
 #ifdef DEBUG_MODE
 		aiString name;
@@ -563,7 +563,7 @@ void Scene::CreateDescriptorPool()
 	// Need a set of descriptors per concurrent frame
 	std::map<vk::DescriptorType, uint32_t> descriptorCount;
 
-	const GraphicsPipelineSystem& pipelineSystem = m_materialCache->GetGraphicsPipelineSystem();
+	const GraphicsPipelineSystem& pipelineSystem = m_materialSystem->GetGraphicsPipelineSystem();
 
 	// todo: this triple loop is kind of sad, consider reorganizing data
 	const auto& allPipelineBindings = pipelineSystem.GetDescriptorSetLayoutBindings();
@@ -635,16 +635,16 @@ void Scene::CreateDescriptorLayouts()
 	size_t set = (size_t)DescriptorSetIndices::View;
 
 	std::vector<vk::DescriptorSetLayout> viewSetLayouts;
-	viewSetLayouts.resize((size_t)ShadingModel::Count);
+	viewSetLayouts.resize((size_t)Material::ShadingModel::Count);
 
 	// Unlit view layout for Grid and Skybox
-	viewSetLayouts[(size_t)ShadingModel::Unlit] = m_skybox->GetDescriptorSetLayout(set);
+	viewSetLayouts[(size_t)Material::ShadingModel::Unlit] = m_skybox->GetDescriptorSetLayout(set);
 
 	// Materials use only lit shading model (for now) todo: that might not always be the case
-	viewSetLayouts[(size_t)ShadingModel::Lit] = m_materialCache->GetGraphicsPipelineSystem().GetDescriptorSetLayout(m_materials.front()->pipelineID, set);
+	viewSetLayouts[(size_t)Material::ShadingModel::Lit] = m_materialSystem->GetGraphicsPipelineSystem().GetDescriptorSetLayout(m_materials.front()->pipelineID, set);
 
 	// View layout and descriptor sets
-	for (size_t materialType = 0; materialType < (size_t)ShadingModel::Count; ++materialType)
+	for (size_t materialType = 0; materialType < (size_t)Material::ShadingModel::Count; ++materialType)
 	{
 		auto& litViewSetLayout = viewSetLayouts[materialType];
 		std::vector<vk::DescriptorSetLayout> layouts(m_commandBufferPool->GetNbConcurrentSubmits(), litViewSetLayout);
@@ -659,7 +659,7 @@ void Scene::UpdateMaterialDescriptors()
 	// Create view descriptor set.
 	// Ask any graphics pipeline to provide the view layout
 	// since all surface materials should share this layout
-	for (size_t materialType = 0; materialType < (size_t)ShadingModel::Count; ++materialType)
+	for (size_t materialType = 0; materialType < (size_t)Material::ShadingModel::Count; ++materialType)
 	{
 		auto& viewDescriptorSets = m_viewDescriptorSets[materialType];
 
@@ -675,7 +675,7 @@ void Scene::UpdateMaterialDescriptors()
 				) // binding = 0
 			};
 
-			if ((ShadingModel)materialType == ShadingModel::Lit)
+			if ((Material::ShadingModel)materialType == Material::ShadingModel::Lit)
 			{
 				vk::DescriptorBufferInfo descriptorBufferInfoLights(m_lightsUniformBuffer->Get(), 0, sizeof(Light) * m_lights.size());
 				writeDescriptorSets.push_back(
@@ -696,7 +696,7 @@ void Scene::UpdateMaterialDescriptors()
 	{
 		// Then allocate one descriptor set per model
 		uint32_t set = (uint32_t)DescriptorSetIndices::Model;
-		auto modelSetLayout = m_materialCache->GetGraphicsPipelineSystem().GetDescriptorSetLayout(m_materials[0]->pipelineID, (uint16_t)DescriptorSetIndices::Model);
+		auto modelSetLayout = m_materialSystem->GetGraphicsPipelineSystem().GetDescriptorSetLayout(m_materials[0]->pipelineID, (uint16_t)DescriptorSetIndices::Model);
 		std::vector<vk::DescriptorSetLayout> layouts(m_models.size(), modelSetLayout);
 		auto modelDescriptorSets = g_device->Get().allocateDescriptorSetsUnique(vk::DescriptorSetAllocateInfo(
 			m_descriptorPool.get(), static_cast<uint32_t>(layouts.size()), layouts.data()
@@ -724,7 +724,7 @@ void Scene::UpdateMaterialDescriptors()
 	{
 		size_t set = (size_t)DescriptorSetIndices::Material;
 		auto descriptorSets = g_device->Get().allocateDescriptorSetsUnique(vk::DescriptorSetAllocateInfo(
-			m_descriptorPool.get(), 1, &m_materialCache->GetGraphicsPipelineSystem().GetDescriptorSetLayout(material->pipelineID, set)
+			m_descriptorPool.get(), 1, &m_materialSystem->GetGraphicsPipelineSystem().GetDescriptorSetLayout(material->pipelineID, set)
 		));
 		material->descriptorSet = std::move(descriptorSets[0]);
 
@@ -789,7 +789,7 @@ void Scene::InitShadowMaps(const std::vector<const ShadowMap*>& shadowMaps)
 
 	// Make sure we match the number of shadow maps from the pipeline
 	auto* material = m_materials[0];
-	const auto& bindings = m_materialCache->GetGraphicsPipelineSystem().GetDescriptorSetLayoutBindings(m_materials[0]->pipelineID, 0);
+	const auto& bindings = m_materialSystem->GetGraphicsPipelineSystem().GetDescriptorSetLayoutBindings(m_materials[0]->pipelineID, 0);
 	for (const auto& binding : bindings)
 	{
 		if (binding.binding == kShadowMapsBinding)
@@ -825,8 +825,8 @@ void Scene::InitShadowMaps(const std::vector<const ShadowMap*>& shadowMaps)
 
 	// mustdo: update descriptor sets only once
 	std::vector<vk::WriteDescriptorSet> writeDescriptorSets;
-	writeDescriptorSets.reserve(m_viewDescriptorSets[(size_t)ShadingModel::Lit].size());
-	for (auto& viewDescriptorSet : m_viewDescriptorSets[(size_t)ShadingModel::Lit])
+	writeDescriptorSets.reserve(m_viewDescriptorSets[(size_t)Material::ShadingModel::Lit].size());
+	for (auto& viewDescriptorSet : m_viewDescriptorSets[(size_t)Material::ShadingModel::Lit])
 	{
 		writeDescriptorSets.push_back(vk::WriteDescriptorSet(
 			viewDescriptorSet.get(), kShadowMapsBinding, {},

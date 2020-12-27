@@ -1,7 +1,7 @@
 #pragma once
 
 #include "GraphicsPipeline.h"
-#include "MaterialCache.h"
+#include "Material.h"
 #include "Model.h"
 #include "DescriptorSetLayouts.h"
 
@@ -12,8 +12,8 @@
 class RenderState
 {
 public:
-	RenderState(GraphicsPipelineSystem& pipelineSystem)
-		: m_graphicsPipelineSystem(&pipelineSystem)
+	RenderState(MaterialSystem& materialSystem)
+		: m_materialSystem(&materialSystem)
 	{}
 
 	void BindPipeline(vk::CommandBuffer& commandBuffer, GraphicsPipelineID newPipelineID)
@@ -21,16 +21,17 @@ public:
 		// Bind Graphics Pipeline
 		if (newPipelineID != pipelineID)
 		{
+			auto graphicsPipelineSystem = m_materialSystem->GetGraphicsPipelineSystem();
 			if (pipelineID != ~0U)
 			{
 				for (int i = 0; i < isSetCompatible.size(); ++i)
 				{
-					isSetCompatible[i] = m_graphicsPipelineSystem->IsSetLayoutCompatible(pipelineID, newPipelineID, i);
+					isSetCompatible[i] = graphicsPipelineSystem.IsSetLayoutCompatible(pipelineID, newPipelineID, i);
 				}
 			}
 			commandBuffer.bindPipeline(
 				vk::PipelineBindPoint::eGraphics,
-				m_graphicsPipelineSystem->GetPipeline(newPipelineID)
+				graphicsPipelineSystem.GetPipeline(newPipelineID)
 			);
 			pipelineID = newPipelineID;
 		}
@@ -41,7 +42,8 @@ public:
 		uint8_t set = (uint16_t)DescriptorSetIndices::View;
 		if (newShadingModel != shadingModel || isSetCompatible[set] == false)
 		{
-			vk::PipelineLayout pipelineLayout = m_graphicsPipelineSystem->GetPipelineLayout(pipelineID, set);
+			auto graphicsPipelineSystem = m_materialSystem->GetGraphicsPipelineSystem();
+			vk::PipelineLayout pipelineLayout = graphicsPipelineSystem.GetPipelineLayout(pipelineID, set);
 			commandBuffer.bindDescriptorSets(
 				vk::PipelineBindPoint::eGraphics,
 				pipelineLayout, set,
@@ -58,7 +60,8 @@ public:
 		uint8_t set = (uint16_t)DescriptorSetIndices::Model;
 		if (newModel != model || isSetCompatible[set] == false)
 		{
-			vk::PipelineLayout pipelineLayout = m_graphicsPipelineSystem->GetPipelineLayout(pipelineID, set);
+			auto graphicsPipelineSystem = m_materialSystem->GetGraphicsPipelineSystem();
+			vk::PipelineLayout pipelineLayout = graphicsPipelineSystem.GetPipelineLayout(pipelineID, set);
 			vk::DescriptorSet descriptorSet = newModel->descriptorSet.get();
 			commandBuffer.bindDescriptorSets(
 				vk::PipelineBindPoint::eGraphics,
@@ -71,16 +74,18 @@ public:
 		}
 	}
 
-	void BindMaterial(vk::CommandBuffer& commandBuffer, const Material* newMaterial)
+	void BindMaterial(vk::CommandBuffer& commandBuffer, MaterialInstanceID newMaterial)
 	{
 		uint8_t set = (uint16_t)DescriptorSetIndices::Material;
 		if (newMaterial != material || isSetCompatible[set] == false)
 		{
-			vk::PipelineLayout pipelineLayout = m_graphicsPipelineSystem->GetPipelineLayout(pipelineID, set);
+			auto graphicsPipelineSystem = m_materialSystem->GetGraphicsPipelineSystem();
+			vk::DescriptorSet descriptorSet = m_materialSystem->GetDescriptorSet(newMaterial);
+			vk::PipelineLayout pipelineLayout = graphicsPipelineSystem.GetPipelineLayout(pipelineID, set);
 			commandBuffer.bindDescriptorSets(
 				vk::PipelineBindPoint::eGraphics,
 				pipelineLayout, set,
-				1, &newMaterial->descriptorSet.get(), 0, nullptr
+				1, &descriptorSet, 0, nullptr
 			);
 			material = newMaterial;
 			isSetCompatible[set] = true;
@@ -90,10 +95,10 @@ public:
 private:
 	std::array<bool, (size_t)DescriptorSetIndices::Count> isSetCompatible = {}; // all false by default
 
-	gsl::not_null<GraphicsPipelineSystem*> m_graphicsPipelineSystem;
+	gsl::not_null<MaterialSystem*> m_materialSystem;
 
 	ShadingModel shadingModel = ShadingModel::Count;
 	const Model* model = nullptr;
 	GraphicsPipelineID pipelineID = ~0U;
-	const Material* material = nullptr;
+	MaterialInstanceID material = ~0;
 };

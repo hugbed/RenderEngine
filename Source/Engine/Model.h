@@ -1,7 +1,7 @@
 #pragma once
 
 #include "DescriptorSetLayouts.h"
-#include "MaterialCache.h"
+#include "Material.h"
 #include "BoundingBox.h"
 
 #include "Buffers.h"
@@ -16,7 +16,9 @@ struct Mesh
 {
 	vk::DeviceSize indexOffset;
 	vk::DeviceSize nbIndices;
-	const Material* material;
+	Material::ShadingModel shadingModel;
+	GraphicsPipelineID graphicsPipelineID;
+	MaterialInstanceID materialInstanceID;
 };
 
 struct ModelUniforms

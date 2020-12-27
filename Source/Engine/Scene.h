@@ -1,7 +1,7 @@
 #pragma once
 
 #include "TextureCache.h"
-#include "MaterialCache.h"
+#include "Material.h"
 #include "RenderState.h"
 #include "Camera.h"
 #include "Skybox.h"
@@ -176,7 +176,7 @@ private:
 
 	// --- View --- //
 
-	using ViewDescriptorSets = std::array<std::vector<vk::UniqueDescriptorSet>, (size_t)ShadingModel::Count>;
+	using ViewDescriptorSets = std::array<std::vector<vk::UniqueDescriptorSet>, (size_t)Material::ShadingModel::Count>;
 
 	ViewUniforms m_viewUniforms;
 	ViewDescriptorSets m_viewDescriptorSets;
@@ -198,7 +198,7 @@ private:
 	// --- Materials --- ///
 
 	std::unique_ptr<TextureCache> m_textureCache{ nullptr };
-	std::unique_ptr<MaterialCache> m_materialCache{ nullptr };
+	std::unique_ptr<MaterialSystem> m_materialSystem{ nullptr };
 	std::vector<Material*> m_materials;
 
 	// ---
