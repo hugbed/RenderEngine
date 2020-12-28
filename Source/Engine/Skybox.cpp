@@ -122,7 +122,7 @@ void Skybox::CreateDescriptors()
 void Skybox::UpdateDescriptors()
 {
 	uint32_t binding = 0;
-	vk::DescriptorImageInfo imageInfo(m_cubeMap.sampler, m_cubeMap.texture->GetImageView(), vk::ImageLayout::eShaderReadOnlyOptimal);
+	vk::DescriptorImageInfo imageInfo = m_textureCache->GetDescriptorImageInfo(ImageViewType::eCube, m_cubeMap);
 	std::vector<vk::WriteDescriptorSet> writeDescriptorSets = {
 		vk::WriteDescriptorSet(
 			m_cubeDescriptorSets[0].get(), binding++, {},

@@ -42,17 +42,25 @@ struct PhongMaterialProperties
 	glm::aligned_float32 shininess;
 };
 
+struct PhongMaterialTextures
+{
+	glm::aligned_int32 diffuse;
+	glm::aligned_int32 specular;
+};
+
 struct EnvironmentMaterialProperties
 {
 	glm::aligned_float32 ior;
 	glm::aligned_float32 metallic; // reflection {0, 1}
 	glm::aligned_float32 transmission; // refraction [0..1]
+	glm::aligned_int32 cubeMapTexture;
 };
 
 // todo: this is pretty much phong material properties?
 struct LitMaterialProperties
 {
 	PhongMaterialProperties phong;
+	PhongMaterialTextures phongTextures;
 	EnvironmentMaterialProperties env;
 };
 
@@ -115,6 +123,8 @@ public:
 
 	void UpdateShadowMapsTransforms(const std::vector<glm::mat4>& shadowMaps);
 
+	void UpdateMaterialDescriptors();
+
 private:
 	// Uses scene materials
 	void DrawSceneObjects(vk::CommandBuffer commandBuffer, uint32_t frameIndex, RenderState& state, const std::vector<MeshDrawInfo>& drawCalls) const;
@@ -135,7 +145,6 @@ private:
 	void CreateDescriptorPool();
 	void CreateDescriptorSets();
 	void CreateDescriptorLayouts();
-	void UpdateMaterialDescriptors();
 
 	void UploadToGPU(vk::CommandBuffer& commandBuffer);
 

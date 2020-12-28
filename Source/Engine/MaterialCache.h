@@ -44,8 +44,6 @@ struct Material
 	GraphicsPipelineID pipelineID;
 
 	// Per-material descriptors
-	std::vector<CombinedImageSampler> textures;
-	std::vector<CombinedImageSampler> cubeMaps;
 	std::unique_ptr<UniqueBufferWithStaging> uniformBuffer;
 	vk::UniqueDescriptorSet descriptorSet;
 };
@@ -60,6 +58,8 @@ struct BaseMaterialInfo
 struct MaterialConstants
 {
 	uint32_t nbLights = 1;
+	uint32_t nbTextures2D = 64;
+	uint32_t nbTexturesCube = 64;
 };
 
 struct MaterialInfo

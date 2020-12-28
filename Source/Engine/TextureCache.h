@@ -1,9 +1,11 @@
 #pragma once
 
 #include "Texture.h"
+#include "SmallVector.h"
 
 #include <vulkan/vulkan.hpp>
 
+#include <array>
 #include <map>
 #include <string>
 #include <memory>
@@ -16,8 +18,21 @@ struct CombinedImageSampler
 	vk::Sampler sampler = nullptr;
 };
 
-// todo: maybe keep references to texture that haven't been uploaded to GPU
-//       and expose a function to upload them all at once instead
+enum class ImageViewType
+{
+	e2D,   // vk::ImageViewType::e2D
+	eCube, // vk::ImageViewType::eCube
+	eCount
+};
+
+using TextureID = uint32_t;
+
+struct TextureKey
+{
+	ImageViewType type;
+	TextureID id;
+};
+
 class TextureCache
 {
 public:
@@ -27,19 +42,39 @@ public:
 
 	// todo: support loading as sRGB vs linear for different texture types
 
-	CombinedImageSampler LoadTexture(const std::string filename);
+	// ImageViewType::e2D
+	TextureID LoadTexture(const std::string filename);
 
-	CombinedImageSampler LoadCubeMapFaces(const std::vector<std::string>& filenames);
-
-	Texture* CreateAndUploadTextureImage(const std::string& filename);
+	// ImageViewType::eCube
+	TextureID LoadCubeMapFaces(const std::vector<std::string>& filenames); // todo, this is the same as LoadTexture but with vk::ImageViewType::eCube
 
 	vk::Sampler CreateSampler(uint32_t nbMipLevels);
 
 	void UploadTextures(vk::CommandBuffer& commandBuffer, CommandBufferPool& commandBufferPool);
 
+	SmallVector<vk::DescriptorImageInfo> GetDescriptorImageInfos(ImageViewType imageViewType) const;
+
+	vk::DescriptorImageInfo GetDescriptorImageInfo(ImageViewType imageViewType, TextureID id) const;
+
 private:
+	TextureID CreateAndUploadTextureImage(const std::string& filename);
+
+	// Internal ID for samplers
+	using SamplerID = uint32_t;
+
 	std::string m_basePath;
-	std::map<uint64_t, std::unique_ptr<Texture>> m_textures;
-	std::map<uint32_t, vk::UniqueSampler> m_samplers; // per mip level
-	std::vector<Texture*> m_texturesToUpload;
+	std::map<uint64_t, TextureKey> m_fileHashToTextureKey;
+	std::map<uint32_t, SamplerID> m_mipLevelToSamplerID;
+	std::vector<TextureKey> m_texturesToUpload;
+
+	template <class T>
+	using ImageViewTypeArray = std::array<T, (size_t)ImageViewType::eCount>;
+
+	// ImageViewType, TextureID -> Array Index
+	ImageViewTypeArray<std::vector<std::unique_ptr<Texture>>> m_textures; // todo: this can be std::vector<Texture> if we return a TextureID, also we only need the image view here
+	ImageViewTypeArray<std::vector<uint32_t>> m_mipLevels;
+	ImageViewTypeArray<std::vector<std::string>> m_names; // debugging only
+
+	// SamplerID -> Array Index
+	std::vector<vk::UniqueSampler> m_samplers;
 };

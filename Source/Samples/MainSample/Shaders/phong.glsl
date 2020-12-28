@@ -1,13 +1,14 @@
-// Phong material
-struct PhongMaterial {
+// Phong properties
+struct PhongProperties {
     vec4 diffuse;
     vec4 specular;
     float shininess;
 };
 
-const uint PHONG_TEX_DIFFUSE = 0;
-const uint PHONG_TEX_SPECULAR = 1;
-const uint PHONG_TEX_COUNT = 2;
+struct PhongTextures {
+    int diffuse;
+    int specular;
+};
 
 // Lights
 
@@ -36,7 +37,7 @@ struct Light {
 
 vec4 PhongLighting(
     Light light,
-    PhongMaterial material,
+    PhongProperties props,
     vec3 normal, vec3 fragPos, vec3 viewPos,
     float shadow
 ) {
@@ -48,16 +49,16 @@ vec4 PhongLighting(
     lightDir /= lightDistance;
 
     // ambient
-    vec4 ambient = light.ambient * material.diffuse;
+    vec4 ambient = light.ambient * props.diffuse;
 
     // diffuse
     float k_d = max(dot(lightDir, normal), 0.0);
-    vec4 diffuse = k_d * light.diffuse * material.diffuse;
+    vec4 diffuse = k_d * light.diffuse * props.diffuse;
 
     // specular
     vec3 h = normalize(lightDir + viewDir); // blinn-phong specular
-    float k_s = pow(max(dot(normal, h), 0.0), material.shininess);
-    vec4 specular = k_s * light.specular * material.specular;
+    float k_s = pow(max(dot(normal, h), 0.0), props.shininess);
+    vec4 specular = k_s * light.specular * props.specular;
 
     // distance attenuation
     float attenuation = 1.0;

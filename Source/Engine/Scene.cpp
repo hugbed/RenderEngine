@@ -240,14 +240,19 @@ void Scene::LoadLights(vk::CommandBuffer buffer)
 		m_lights.push_back(std::move(light));
 	}
 
-	// Reserve shadow data for each light
-	m_shadowDataBuffer = std::make_unique<UniqueBuffer>(
-		vk::BufferCreateInfo(
-			{},
-			nbShadowCastingLights * sizeof(ShadowData),
-			vk::BufferUsageFlagBits::eUniformBuffer
-		), VmaAllocationCreateInfo{ VMA_ALLOCATION_CREATE_MAPPED_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU }
-	);
+	// todo: support no shadow casting lights
+
+	if (nbShadowCastingLights > 0)
+	{
+		// Reserve shadow data for each light
+		m_shadowDataBuffer = std::make_unique<UniqueBuffer>(
+			vk::BufferCreateInfo(
+				{},
+				nbShadowCastingLights * sizeof(ShadowData),
+				vk::BufferUsageFlagBits::eUniformBuffer
+			), VmaAllocationCreateInfo{ VMA_ALLOCATION_CREATE_MAPPED_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU }
+		);
+	}
 }
 
 void Scene::LoadCamera()
@@ -468,44 +473,34 @@ void Scene::LoadMaterials(vk::CommandBuffer commandBuffer)
 #endif
 
 		// Create default textures
-		const auto& bindings = m_materialCache->GetGraphicsPipelineSystem().GetDescriptorSetLayoutBindings(material->pipelineID, (uint16_t)DescriptorSetIndices::Material);
-		for (const auto& binding : bindings)
-		{
-			if (binding.descriptorType == vk::DescriptorType::eCombinedImageSampler)
-			{
-				for (int i = 0; i < binding.descriptorCount; ++i)
-				{
-					CombinedImageSampler texture = m_textureCache->LoadTexture("dummy_texture.png");
-					material->textures.push_back(std::move(texture));
-				}
-			}
-		}
+		TextureID dummyTexture = m_textureCache->LoadTexture("dummy_texture.png");
+		properties.phongTextures.diffuse = dummyTexture;
+		properties.phongTextures.specular = dummyTexture;
 
 		// Load textures
-		auto loadTexture = [this, &assimpMaterial, &material, &commandBuffer](aiTextureType type, uint32_t binding) { // todo: move this to a function
-			int textureCount = assimpMaterial->GetTextureCount(type);
-			if (textureCount > 0 && binding < material->textures.size())
+		auto loadTexture = [this, &assimpMaterial, &commandBuffer](aiTextureType type, glm::aligned_int32& textureID) { // todo: move this to a function
+			if (assimpMaterial->GetTextureCount(type) > 0)
 			{
 				aiString textureFile;
 				assimpMaterial->GetTexture(type, 0, &textureFile);
-				auto texture = m_textureCache->LoadTexture(textureFile.C_Str());
-				material->textures[binding] = std::move(texture); // replace dummy with real texture
+				textureID = m_textureCache->LoadTexture(textureFile.C_Str()); // replace dummy with real texture
 			}
 		};
+
 		// todo: use sRGB format for color textures if necessary
 		// it looks like gamma correction is OK for now but it might
 		// not be the case for all textures
-		loadTexture(aiTextureType_DIFFUSE, 0);
-		loadTexture(aiTextureType_SPECULAR, 1);
+		loadTexture(aiTextureType_DIFFUSE, properties.phongTextures.diffuse);
+		loadTexture(aiTextureType_SPECULAR, properties.phongTextures.specular);
 
 		// Environment mapping
 		assimpMaterial->Get(AI_MATKEY_REFRACTI, properties.env.ior);
 		properties.env.metallic = 0.0f;
 		properties.env.transmission = 0.0f;
 
-		CombinedImageSampler skyboxCubeMap = m_skybox->GetCubeMap();
-		if (skyboxCubeMap.texture != nullptr)
-			material->cubeMaps.push_back(std::move(skyboxCubeMap));
+		TextureID skyboxCubeMap = m_skybox->GetCubeMap();
+		if (skyboxCubeMap != ~0)
+			properties.env.cubeMapTexture = skyboxCubeMap;
 
 		// Upload properties to uniform buffer
 		material->uniformBuffer = std::make_unique<UniqueBufferWithStaging>(sizeof(LitMaterialProperties), vk::BufferUsageFlagBits::eUniformBuffer);
@@ -746,44 +741,22 @@ void Scene::UpdateMaterialDescriptors()
 		);
 
 		// Material's textures
-		std::vector<vk::DescriptorImageInfo> imageInfos;
-		if (material->textures.empty() == false)
-		{
-			for (const auto& materialTexture : material->textures)
-			{
-				imageInfos.emplace_back(
-					materialTexture.sampler,
-					materialTexture.texture->GetImageView(),
-					vk::ImageLayout::eShaderReadOnlyOptimal
-				);
-			}
-			writeDescriptorSets.push_back(
-				vk::WriteDescriptorSet(
-					material->descriptorSet.get(), binding++, {},
-					static_cast<uint32_t>(imageInfos.size()), vk::DescriptorType::eCombinedImageSampler, imageInfos.data(), nullptr
-				) // binding = 1
-			);
-		}
+		SmallVector<vk::DescriptorImageInfo> descriptorImageInfoTwo2D = m_textureCache->GetDescriptorImageInfos(ImageViewType::e2D);
+		writeDescriptorSets.push_back(
+			vk::WriteDescriptorSet(
+				material->descriptorSet.get(), binding++, {},
+				static_cast<uint32_t>(descriptorImageInfoTwo2D.size()), vk::DescriptorType::eCombinedImageSampler, descriptorImageInfoTwo2D.data(), nullptr
+			) // binding = 1
+		);
 
-		// Material's cubemaps on a separate binding
-		std::vector<vk::DescriptorImageInfo> cubemapsInfo;
-		if (material->cubeMaps.empty() == false)
-		{
-			for (const auto& materialTexture : material->cubeMaps)
-			{
-				cubemapsInfo.emplace_back(
-					materialTexture.sampler,
-					materialTexture.texture->GetImageView(),
-					vk::ImageLayout::eShaderReadOnlyOptimal
-				);
-			}
-			writeDescriptorSets.push_back(
-				vk::WriteDescriptorSet(
-					material->descriptorSet.get(), binding++, {},
-					static_cast<uint32_t>(cubemapsInfo.size()), vk::DescriptorType::eCombinedImageSampler, cubemapsInfo.data(), nullptr
-				) // binding = 2
-			);
-		}
+		// Material's cube maps
+		SmallVector<vk::DescriptorImageInfo> descriptorImageInfoCube = m_textureCache->GetDescriptorImageInfos(ImageViewType::eCube);
+		writeDescriptorSets.push_back(
+			vk::WriteDescriptorSet(
+				material->descriptorSet.get(), binding++, {},
+				static_cast<uint32_t>(descriptorImageInfoCube.size()), vk::DescriptorType::eCombinedImageSampler, descriptorImageInfoCube.data(), nullptr
+			) // binding = 2
+		);
 
 		g_device->Get().updateDescriptorSets(static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
 	}
@@ -791,6 +764,9 @@ void Scene::UpdateMaterialDescriptors()
 
 void Scene::UpdateShadowMapsTransforms(const std::vector<glm::mat4>& transforms)
 {
+	if (m_shadowDataBuffer == nullptr)
+		return;
+
 	auto* transformData = m_shadowDataBuffer->GetMappedData();
 	ASSERT(transforms.size() * sizeof(ShadowData) <= m_shadowDataBuffer->Size());
 	for (int i = 0; i < transforms.size(); ++i)
@@ -803,6 +779,9 @@ void Scene::UpdateShadowMapsTransforms(const std::vector<glm::mat4>& transforms)
 
 void Scene::InitShadowMaps(const std::vector<const ShadowMap*>& shadowMaps)
 {
+	if (m_shadowDataBuffer == nullptr)
+		return;
+
 	const uint32_t kShadowMapsBinding = 2;
 	const uint32_t kShadowDataBinding = 3;
 

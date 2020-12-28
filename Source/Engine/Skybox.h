@@ -30,7 +30,7 @@ public:
 
 	void Draw(vk::CommandBuffer& commandBuffer, uint32_t frameIndex);
 
-	CombinedImageSampler GetCubeMap() const { return m_cubeMap; }
+	TextureID GetCubeMap() const { return m_cubeMap; }
 
 	GraphicsPipelineID GetGraphicsPipelineID() const { return m_graphicsPipelineID; }
 
@@ -51,7 +51,7 @@ private:
 	// todo: add m_ to each member
 
 	gsl::not_null<TextureCache*> m_textureCache;
-	CombinedImageSampler m_cubeMap;
+	TextureID m_cubeMap = ~0;
 
 	gsl::not_null<GraphicsPipelineSystem*> m_graphicsPipelineSystem;
 	ShaderInstanceID m_vertexShader;
