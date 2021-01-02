@@ -1,6 +1,6 @@
 #pragma once
 
-enum class DescriptorSetIndices
+enum class DescriptorSetIndex
 {
 	View = 0,
 	Model = 1,

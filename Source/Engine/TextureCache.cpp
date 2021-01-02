@@ -11,14 +11,14 @@
 #include <algorithm>
 #include <iostream>
 
-TextureID TextureCache::LoadTexture(const std::string filename)
+TextureID TextureCache::LoadTexture(std::string_view filename)
 {
 	TextureID id = CreateAndUploadTextureImage(filename);
 	vk::Sampler sampler = CreateSampler(m_textures[(size_t)ImageViewType::e2D][id]->GetMipLevels());
 	return id;
 }
 
-TextureID TextureCache::CreateAndUploadTextureImage(const std::string& filename)
+TextureID TextureCache::CreateAndUploadTextureImage(std::string_view filename)
 {
 	// Check if we already loaded this texture
 	uint64_t fileHash = fnv_hash((uint8_t*)filename.data(), filename.size());
@@ -28,7 +28,7 @@ TextureID TextureCache::CreateAndUploadTextureImage(const std::string& filename)
 
 	// Read image from file
 	int texWidth = 0, texHeight = 0, texChannels = 0;
-	stbi_uc* pixels = stbi_load((m_basePath + "/" + filename).c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+	stbi_uc* pixels = stbi_load((m_basePath + "/" + filename.data()).c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
 	if (pixels == nullptr || texWidth == 0 || texHeight == 0 || texChannels == 0) {
 		throw std::runtime_error("failed to load texture image!");
 	}
@@ -57,7 +57,7 @@ TextureID TextureCache::CreateAndUploadTextureImage(const std::string& filename)
 	m_texturesToUpload.push_back(key);
 	m_mipLevels[imageViewTypeIndex].push_back(texture->GetMipLevels());
 	m_fileHashToTextureKey.emplace(fileHash, std::move(key));
-	m_names[imageViewTypeIndex].push_back(filename);
+	m_names[imageViewTypeIndex].push_back(filename.data());
 
 	memcpy(texture->GetStagingMappedData(), reinterpret_cast<const void*>(pixels), (size_t)texWidth* texHeight * 4);
 	stbi_image_free(pixels);
@@ -97,7 +97,7 @@ vk::Sampler TextureCache::CreateSampler(uint32_t nbMipLevels)
 	return m_samplers[samplerID].get();
 }
 
-TextureID TextureCache::LoadCubeMapFaces(const std::vector<std::string>& filenames)
+TextureID TextureCache::LoadCubeMapFaces(gsl::span<std::string> filenames)
 {
 	if (filenames.size() != 6)
 		return {};
@@ -105,7 +105,7 @@ TextureID TextureCache::LoadCubeMapFaces(const std::vector<std::string>& filenam
 	// Check if we already loaded this texture
 	std::string filename;
 	for (const auto& file : filenames)
-		filename += file + ";"; // use hash of ";".join(filenames) as id
+		filename += std::string(file) + ";"; // use hash of ";".join(filenames) as id
 	uint64_t fileHash = fnv_hash((uint8_t*)filename.data(), filename.size());
 	auto cachedTextureIt = m_fileHashToTextureKey.find(fileHash); // todo: use better ID
 	if (cachedTextureIt != m_fileHashToTextureKey.end())
@@ -128,11 +128,11 @@ TextureID TextureCache::LoadCubeMapFaces(const std::vector<std::string>& filenam
 		const auto& faceFile = filenames[i];
 		int texWidth = 0, texHeight = 0, texChannels = 0;
 
-		stbi_uc* pixels = stbi_load(faceFile.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+		stbi_uc* pixels = stbi_load(faceFile.data(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
 		if (pixels == nullptr || texWidth == 0 || texHeight == 0 || texChannels == 0)
 		{
 #ifdef _DEBUG
-			std::cout << "failed to load cubemape face: " << faceFile.c_str() << std::endl;
+			std::cout << "failed to load cubemape face: " << faceFile.data() << std::endl;
 #endif
 			success = false;
 		}
@@ -189,8 +189,10 @@ TextureID TextureCache::LoadCubeMapFaces(const std::vector<std::string>& filenam
 	return id;
 }
 
-void TextureCache::UploadTextures(vk::CommandBuffer& commandBuffer, CommandBufferPool& commandBufferPool)
+void TextureCache::UploadTextures(CommandBufferPool& commandBufferPool)
 {
+	vk::CommandBuffer& commandBuffer = commandBufferPool.GetCommandBuffer();
+
 	for (const TextureKey& key : m_texturesToUpload)
 	{
 		const auto& texture = m_textures[(size_t)key.type][key.id];

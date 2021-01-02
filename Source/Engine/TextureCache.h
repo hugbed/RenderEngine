@@ -5,9 +5,12 @@
 
 #include <vulkan/vulkan.hpp>
 
+#include <gsl/span>
+
 #include <array>
 #include <map>
 #include <string>
+#include <string_view>
 #include <memory>
 
 class CommandBufferPool;
@@ -43,21 +46,21 @@ public:
 	// todo: support loading as sRGB vs linear for different texture types
 
 	// ImageViewType::e2D
-	TextureID LoadTexture(const std::string filename);
+	TextureID LoadTexture(std::string_view filename);
 
 	// ImageViewType::eCube
-	TextureID LoadCubeMapFaces(const std::vector<std::string>& filenames); // todo, this is the same as LoadTexture but with vk::ImageViewType::eCube
+	TextureID LoadCubeMapFaces(gsl::span<std::string> filenames); // todo, this is the same as LoadTexture but with vk::ImageViewType::eCube
 
 	vk::Sampler CreateSampler(uint32_t nbMipLevels);
 
-	void UploadTextures(vk::CommandBuffer& commandBuffer, CommandBufferPool& commandBufferPool);
+	void UploadTextures(CommandBufferPool& commandBufferPool);
 
 	SmallVector<vk::DescriptorImageInfo> GetDescriptorImageInfos(ImageViewType imageViewType) const;
 
 	vk::DescriptorImageInfo GetDescriptorImageInfo(ImageViewType imageViewType, TextureID id) const;
 
 private:
-	TextureID CreateAndUploadTextureImage(const std::string& filename);
+	TextureID CreateAndUploadTextureImage(std::string_view filename);
 
 	// Internal ID for samplers
 	using SamplerID = uint32_t;

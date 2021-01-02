@@ -5,18 +5,48 @@
 #include "TextureCache.h"
 #include "DescriptorSetLayouts.h"
 #include "hash.h"
+#include "glm_includes.h"
 
 #include <vulkan/vulkan.hpp>
 
 #include <gsl/pointers>
+#include <gsl/span>
 
 #include <vector>
 #include <map>
 #include <memory>
+#include <string_view>
 
-class Shader;
-class GraphicsPipeline;
 class RenderPass;
+
+struct PhongMaterialProperties
+{
+	glm::aligned_vec4 diffuse;
+	glm::aligned_vec4 specular;
+	glm::aligned_float32 shininess;
+};
+
+struct EnvironmentMaterialProperties
+{
+	glm::aligned_float32 ior;
+	glm::aligned_float32 metallic; // reflection {0, 1}
+	glm::aligned_float32 transmission; // refraction [0..1]
+	glm::aligned_int32 cubeMapTexture;
+};
+
+enum class PhongMaterialTextures : uint8_t
+{
+	eDiffuse = 0,
+	eSpecular,
+	eCount
+};
+
+struct LitMaterialProperties
+{
+	PhongMaterialProperties phong;
+	EnvironmentMaterialProperties env;
+	glm::aligned_int32 textures[(uint8_t)PhongMaterialTextures::eCount];
+};
 
 struct Material
 {
@@ -28,7 +58,7 @@ struct Material
 		Count
 	};
 
-	enum class ID
+	enum class Type
 	{
 		Textured = 0,
 		Phong = 1,
@@ -39,30 +69,25 @@ struct Material
 		ShadingModel::Unlit,
 		ShadingModel::Lit
 	};
-
-	static constexpr const char* kVertexShader[] = {
-		"primitive_vert.spv",
-		"primitive_vert.spv"
-	};
-
-	static constexpr const char* kFragmentShader[] = {
-		"surface_unlit_frag.spv",
-		"surface_frag.spv"
-	};
 };
 
-struct MaterialConstants
+struct LitMaterialConstants
 {
 	uint32_t nbLights = 1;
+	uint32_t nbSamplers2D = 64;
+	uint32_t nbSamplersCube = 64;
 };
 
-struct MaterialInstanceInfo
+struct LitMaterialPipelineProperties
 {
-	Material::ID materialID;
-	MaterialConstants constants;
 	bool isTransparent = false;
+};
 
-	uint64_t Hash() const { return fnv_hash(this); }
+struct LitMaterialInstanceInfo
+{
+	LitMaterialConstants constants;
+	LitMaterialProperties properties;
+	LitMaterialPipelineProperties pipelineProperties;
 };
 
 using MaterialInstanceID = uint32_t;
@@ -74,47 +99,65 @@ using MaterialInstanceID = uint32_t;
 class MaterialSystem
 {
 public:
+	static constexpr Material::ShadingModel kShadingModel = Material::ShadingModel::Lit; // todo: template by ConstantType, PropertiesType
+	static constexpr char* kVertexShader = "primitive_vert.spv";
+	static constexpr char* kFragmentShader = "surface_frag.spv";
+
+	using TextureNamesView = gsl::span<std::string, (uint8_t)PhongMaterialTextures::eCount>;
+
 	MaterialSystem(
 		vk::RenderPass renderPass,
 		vk::Extent2D swapchainExtent,
-		GraphicsPipelineSystem& graphicsPipelineSystem
+		GraphicsPipelineSystem& graphicsPipelineSystem,
+		TextureCache& textureCache
 	);
 
 	void Reset(vk::RenderPass renderPass, vk::Extent2D extent);
 	
-	MaterialInstanceID CreateMaterialInstance(const MaterialInstanceInfo& materialInfo);
+	MaterialInstanceID CreateMaterialInstance(const LitMaterialInstanceInfo& materialInfo);
 
-	const std::vector<GraphicsPipelineID>& GetGraphicsPipelinesIDs() const { return m_graphicsPipelineIDs; }
+	void UploadToGPU(CommandBufferPool& commandBufferPool);
+
+	// -- Getters -- //
 
 	const GraphicsPipelineSystem& GetGraphicsPipelineSystem() const { return *m_graphicsPipelineSystem; }
 
-	// todo: reorganize to navigate arrays instead of fetching these values one by one
-
+	const std::vector<GraphicsPipelineID>& GetGraphicsPipelinesIDs() const { return m_graphicsPipelineIDs; }
+	
 	GraphicsPipelineID GetGraphicsPipelineID(MaterialInstanceID materialInstanceID) const { return m_graphicsPipelineIDs[materialInstanceID]; }
+	
+	vk::DescriptorSetLayout GetDescriptorSetLayout(DescriptorSetIndex setIndex) const;
 
-	vk::DescriptorSet GetDescriptorSet(MaterialInstanceID materialInstanceID) const { return m_descriptorSets[materialInstanceID].get(); }
+	vk::DescriptorSet GetDescriptorSet(DescriptorSetIndex setIndex, uint8_t imageIndex = 0) const { return m_descriptorSets[(size_t)setIndex][imageIndex].get(); }
+	
+	const UniqueBufferWithStaging& GetUniformBuffer() { return *m_uniformBuffer; }
 
-	bool IsMaterialInstanceTransparent(MaterialInstanceID materialInstanceID) const { return m_isTransparent[materialInstanceID]; }
+	bool IsTransparent(MaterialInstanceID materialInstanceID) const { return m_pipelineProperties[materialInstanceID].isTransparent; }
 
 private:
-	GraphicsPipelineID LoadGraphicsPipeline(const MaterialInstanceInfo& materialInfo);
+	GraphicsPipelineID LoadGraphicsPipeline(const LitMaterialInstanceInfo& materialInfo);
+
+	void UploadUniformBuffer(CommandBufferPool& commandBufferPool);
+	
+	void CreateDescriptorSets(CommandBufferPool& commandBufferPool);
+	void CreateDescriptorPool(uint8_t numConcurrentFrames);
+	void UpdateDescriptorSets();
 
 	vk::RenderPass m_renderPass; // light/color pass, there could be others
 	vk::Extent2D m_imageExtent;
 
+	gsl::not_null<TextureCache*> m_textureCache;
 	gsl::not_null<GraphicsPipelineSystem*> m_graphicsPipelineSystem;
 	std::map<uint64_t, MaterialInstanceID> m_materialHashToInstanceID;
 
 	// MaterialInstanceID -> Array Index
-	std::vector<MaterialConstants> m_materialConstants;
-	std::vector<Material::ShadingModel> m_shadingModels;
 	std::vector<GraphicsPipelineID> m_graphicsPipelineIDs;
-	std::vector<bool> m_isTransparent;
+	std::vector<LitMaterialConstants> m_constants;
+	std::vector<LitMaterialProperties> m_properties;
+	std::vector<LitMaterialPipelineProperties> m_pipelineProperties;
 
-	std::vector<std::vector<CombinedImageSampler>> m_textures;
-	std::vector<std::vector<CombinedImageSampler>> m_cubeMaps;
-	std::vector<UniqueBufferWithStaging> m_uniformBuffers;
-	std::vector<vk::UniqueDescriptorSet> m_descriptorSets;
-
-	MaterialInstanceID m_nextID = 0;
+	// GPU resources
+	std::unique_ptr<UniqueBufferWithStaging> m_uniformBuffer; // containing all LitMaterialProperties
+	std::array<std::vector<vk::UniqueDescriptorSet>, (size_t)DescriptorSetIndex::Count> m_descriptorSets; // [descriptorSetIndex][frame]
+	vk::UniqueDescriptorPool m_descriptorPool;
 };

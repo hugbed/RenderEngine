@@ -57,10 +57,15 @@ public:
 		, m_renderPass(std::make_unique<RenderPass>(m_swapchain->GetImageDescription().format))
 		, m_framebuffers(Framebuffer::FromSwapchain(*m_swapchain, m_renderPass->Get()))
 		, m_graphicsPipelineSystem(m_shaderSystem)
+		, m_textureCache(basePath)
+		, m_materialSystem(m_renderPass->Get(), m_swapchain->GetImageDescription().extent, m_graphicsPipelineSystem, m_textureCache)
 		, m_scene(std::make_unique<Scene>(
 			std::move(basePath), std::move(sceneFile),
 			m_commandBufferPool,
 			m_graphicsPipelineSystem,
+			m_textureCache,
+			m_modelSystem,
+			m_materialSystem,
 			*m_renderPass,
 			m_swapchain->GetImageDescription().extent)
 		)
@@ -146,7 +151,7 @@ protected:
 		);
 		commandBuffer->begin({ vk::CommandBufferUsageFlagBits::eRenderPassContinue, &info });
 		{
-			RenderState state(m_graphicsPipelineSystem);
+			RenderState state(m_graphicsPipelineSystem, m_materialSystem, m_modelSystem);
 
 			// Draw opaque materials first
 			m_scene->DrawOpaqueObjects(commandBuffer.get(), frameIndex, state);
@@ -462,6 +467,9 @@ private:
 
 	ShaderSystem m_shaderSystem;
 	GraphicsPipelineSystem m_graphicsPipelineSystem;
+	TextureCache m_textureCache;
+	MaterialSystem m_materialSystem;
+	ModelSystem m_modelSystem;
 
 	// Secondary command buffers
 	vk::UniqueCommandPool m_secondaryCommandPool;

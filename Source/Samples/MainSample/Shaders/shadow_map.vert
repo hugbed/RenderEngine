@@ -9,11 +9,21 @@ layout(location = 2) in vec3 inNormal;
 #include "view_set.glsl"
 
 // --- Set 1 (Model Uniforms) --- //
-layout(set = 1, binding = 0) uniform ModelUniforms {
-    mat4 transform;
-} model;
+
+layout(constant_id = CONSTANT_NB_MODELS)
+    const uint NB_MODELS = 64;
+
+layout(push_constant)
+    uniform ModelIndex {
+	    layout(offset = 0) uint modelIndex; // index into model.transforms
+    } pc;
+
+layout(set = SET_MODEL, binding = BINDING_MODEL_UNIFORMS)
+    uniform ModelUniforms {
+        mat4 transforms[NB_MODELS];
+    } model;
 
 void main() {
-    vec3 fragPos = vec3(model.transform * vec4(inPosition, 1.0));
+    vec3 fragPos = vec3(model.transforms[pc.modelIndex] * vec4(inPosition, 1.0));
     gl_Position = view.proj * view.view * vec4(fragPos, 1.0);
 }

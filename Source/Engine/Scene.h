@@ -34,42 +34,6 @@ struct ShadowData
 
 enum class CameraMode { OrbitCamera, FreeCamera };
 
-// todo: these should be somewhere else
-struct PhongMaterialProperties
-{
-	glm::aligned_vec4 diffuse;
-	glm::aligned_vec4 specular;
-	glm::aligned_float32 shininess;
-};
-
-struct PhongMaterialTextures
-{
-	glm::aligned_int32 diffuse;
-	glm::aligned_int32 specular;
-};
-
-struct EnvironmentMaterialProperties
-{
-	glm::aligned_float32 ior;
-	glm::aligned_float32 metallic; // reflection {0, 1}
-	glm::aligned_float32 transmission; // refraction [0..1]
-	glm::aligned_int32 cubeMapTexture;
-};
-
-// todo: this is pretty much phong material properties?
-struct LitMaterialProperties
-{
-	PhongMaterialProperties phong;
-	PhongMaterialTextures phongTextures;
-	EnvironmentMaterialProperties env;
-};
-
-struct MeshDrawInfo
-{
-	Model* model;
-	Mesh* mesh;
-};
-
 struct Vertex
 {
 	glm::vec3 pos;
@@ -90,6 +54,9 @@ public:
 		std::string sceneFilename,
 		CommandBufferPool& commandBufferPool,
 		GraphicsPipelineSystem& graphicsPipelineSystem,
+		TextureCache& textureCache,
+		ModelSystem& modelSystem,
+		MaterialSystem& materialSystem,
 		const RenderPass& renderPass, vk::Extent2D imageExtent
 	);
 
@@ -107,7 +74,7 @@ public:
 
 	// Assumes external pipeline is already bound.
 	// Binds vertices + view + model descriptors and calls draw for each mesh
-	void DrawAllWithoutShading(vk::CommandBuffer& commandBuffer, uint32_t frameIndex, RenderState& renderState) const;
+	void DrawAllWithoutShading(vk::CommandBuffer& commandBuffer, uint32_t frameIndex, vk::PipelineLayout pipelineLayout) const;
 
 	Camera& GetCamera() { return m_camera; } // todo: there should be a camera control or something
 
@@ -129,22 +96,18 @@ private:
 	// Uses scene materials
 	void DrawSceneObjects(vk::CommandBuffer commandBuffer, uint32_t frameIndex, RenderState& state, const std::vector<MeshDrawInfo>& drawCalls) const;
 
-	void DrawWithoutShading(vk::CommandBuffer& commandBuffer, uint32_t frameIndex, RenderState& state, const std::vector<MeshDrawInfo>& drawCalls) const;
+	void DrawWithoutShading(vk::CommandBuffer& commandBuffer, uint32_t frameIndex, vk::PipelineLayout pipelineLayout, const std::vector<MeshDrawInfo>& drawCalls) const;
 
 	void LoadScene(vk::CommandBuffer commandBuffer);
 	void LoadLights(vk::CommandBuffer buffer);
 	void LoadCamera();
 	void LoadSceneNodes(vk::CommandBuffer commandBuffer);
 	void LoadNodeAndChildren(aiNode* node, glm::mat4 transform);
-	void LoadMeshes(const aiNode& fileNode, Model& model);
+	ModelID LoadModel(const aiNode& fileNode, glm::mat4 transform);
 	void LoadMaterials(vk::CommandBuffer commandBuffer);
 
 	void CreateLightsUniformBuffers(vk::CommandBuffer commandBuffer);
 	void CreateViewUniformBuffers();
-
-	void CreateDescriptorPool();
-	void CreateDescriptorSets();
-	void CreateDescriptorLayouts();
 
 	void UploadToGPU(vk::CommandBuffer& commandBuffer);
 
@@ -176,10 +139,8 @@ private:
 
 	// --- View --- //
 
-	using ViewDescriptorSets = std::array<std::vector<vk::UniqueDescriptorSet>, (size_t)Material::ShadingModel::Count>;
-
 	ViewUniforms m_viewUniforms;
-	ViewDescriptorSets m_viewDescriptorSets;
+	std::vector<vk::UniqueDescriptorSet> m_unlitViewDescriptorSets;
 	std::vector<UniqueBuffer> m_viewUniformBuffers; // one per in flight frame since these change every frame
 	std::unique_ptr<UniqueBufferWithStaging> m_lightsUniformBuffer;
 
@@ -187,19 +148,20 @@ private:
 	
 	BoundingBox m_boundingBox;
 
+	// Should be in model system?
 	float m_maxVertexDist = 0.0f;
 	std::vector<Vertex> m_vertices;
 	std::vector<uint32_t> m_indices;
 	std::unique_ptr<UniqueBufferWithStaging> m_vertexBuffer{ nullptr };
 	std::unique_ptr<UniqueBufferWithStaging> m_indexBuffer{ nullptr };
 
-	std::vector<Model> m_models;
+	gsl::not_null<ModelSystem*> m_modelSystem;
 
 	// --- Materials --- ///
 
-	std::unique_ptr<TextureCache> m_textureCache{ nullptr };
-	std::unique_ptr<MaterialSystem> m_materialSystem{ nullptr };
-	std::vector<Material*> m_materials;
+	gsl::not_null<TextureCache*> m_textureCache;
+	gsl::not_null<MaterialSystem*> m_materialSystem;
+	std::vector<MaterialInstanceID> m_materials; // todo: don't need that
 
 	// ---
 

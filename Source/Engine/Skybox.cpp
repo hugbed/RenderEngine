@@ -141,7 +141,7 @@ void Skybox::UploadToGPU(vk::CommandBuffer& commandBuffer, CommandBufferPool& co
 	m_vertexBuffer->CopyStagingToGPU(commandBuffer);
 	commandBufferPool.DestroyAfterSubmit(m_vertexBuffer->ReleaseStagingBuffer());
 
-	m_textureCache->UploadTextures(commandBuffer, commandBufferPool);
+	m_textureCache->UploadTextures(commandBufferPool);
 
 	UpdateDescriptors();
 }

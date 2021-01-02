@@ -254,13 +254,12 @@ ShaderID ShaderSystem::CreateShader(const std::string& filename, std::string ent
 
 ShaderID ShaderSystem::CreateShader(const char* data, size_t size, std::string entryPoint)
 {
-	ShaderID id = m_nextShaderID;
+	ShaderID id = (ShaderID)m_modules.size();
 	{
 		m_modules.push_back(::CreateShaderModule(data, size));
 		m_entryPoints.push_back(std::move(entryPoint));
 		m_reflections.emplace_back(std::make_unique<ShaderReflection>((uint32_t*)data, size / sizeof(uint32_t)));
 	}
-	m_nextShaderID++;
 	return id;
 }
 
@@ -269,24 +268,20 @@ ShaderInstanceID ShaderSystem::CreateShaderInstance(ShaderID shaderID, Specializ
 	if (specialization.size == 0)
 		return CreateShaderInstance(shaderID);
 
-	ShaderInstanceID id = m_nextInstanceID;
+	ShaderInstanceID id = m_instanceIDToShaderID.size();
 	m_instanceIDToShaderID.push_back(shaderID);
-	m_nextInstanceID++;
-	{
-		Entry entry = Entry::AppendToOutput(
-			{ specialization.data, specialization.data + specialization.size },
-			m_specializationBlock
-		);
-		m_specializations.push_back(std::move(entry));
-	}
+	Entry entry = Entry::AppendToOutput(
+		{ specialization.data, specialization.data + specialization.size },
+		m_specializationBlock
+	);
+	m_specializations.push_back(std::move(entry));
 	return id;
 }
 
 ShaderInstanceID ShaderSystem::CreateShaderInstance(ShaderID shaderID)
 {
-	ShaderInstanceID id = m_nextInstanceID;
+	ShaderInstanceID id = m_instanceIDToShaderID.size();
 	m_instanceIDToShaderID.push_back(shaderID);
-	m_nextInstanceID++;
 	m_specializations.push_back({}); // it's possible that the shader doesn't need specialiation constants
 	return id;
 }

@@ -45,13 +45,22 @@ void ShadowMap::Render(vk::CommandBuffer& commandBuffer, uint32_t frameIndex) co
 	);
 	commandBuffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
 	{
-		RenderState renderState(*m_graphicsPipelineSystem);
+		// Bind Pipeline
+		commandBuffer.bindPipeline(
+			vk::PipelineBindPoint::eGraphics,
+			m_graphicsPipelineSystem->GetPipeline(m_graphicsPipelineID)
+		);
 
-		renderState.BindPipeline(commandBuffer, m_graphicsPipelineID);
+		// Bind View
+		vk::PipelineLayout pipelineLayout = m_graphicsPipelineSystem->GetPipelineLayout(m_graphicsPipelineID, (uint8_t)DescriptorSetIndex::View);
+		commandBuffer.bindDescriptorSets(
+			vk::PipelineBindPoint::eGraphics,
+			pipelineLayout, (uint32_t)DescriptorSetIndex::View,
+			1, &m_viewDescriptorSet.get(),
+			0, nullptr
+		);
 
-		renderState.BindView(commandBuffer, ShadingModel::Unlit, m_viewDescriptorSet.get());
-
-		m_scene->DrawAllWithoutShading(commandBuffer, frameIndex, renderState);
+		m_scene->DrawAllWithoutShading(commandBuffer, frameIndex, pipelineLayout);
 	}
 	commandBuffer.endRenderPass();
 }
@@ -176,7 +185,7 @@ void ShadowMap::CreateDescriptorPool()
 	m_descriptorPool.reset();
 
 	std::map<vk::DescriptorType, uint32_t> descriptorCount;
-	const auto& bindings = m_graphicsPipelineSystem->GetDescriptorSetLayoutBindings(m_graphicsPipelineID, (size_t)DescriptorSetIndices::View);
+	const auto& bindings = m_graphicsPipelineSystem->GetDescriptorSetLayoutBindings(m_graphicsPipelineID, (size_t)DescriptorSetIndex::View);
 	for (const auto& binding : bindings)
 		descriptorCount[binding.descriptorType] += binding.descriptorCount;
 
@@ -198,7 +207,7 @@ void ShadowMap::CreateDescriptorPool()
 
 void ShadowMap::CreateDescriptorSets()
 {
-	size_t set = (size_t)DescriptorSetIndices::View;
+	size_t set = (size_t)DescriptorSetIndex::View;
 	vk::DescriptorSetLayout viewSetLayouts = m_graphicsPipelineSystem->GetDescriptorSetLayout(m_graphicsPipelineID, set);
 	std::vector<vk::DescriptorSetLayout> layouts(1, viewSetLayouts);
 	auto descriptorSets = g_device->Get().allocateDescriptorSetsUnique(vk::DescriptorSetAllocateInfo(

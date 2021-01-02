@@ -116,7 +116,6 @@ private:
 	std::vector<vk::UniqueShaderModule> m_modules;
 	std::vector<std::string> m_entryPoints; // usually "main", could be standardized to remove this vector
 	std::vector<std::unique_ptr<ShaderReflection>> m_reflections;
-	ShaderID m_nextShaderID = 0;
 
 	// To know if a shader for this file already exists
 	std::map<uint64_t, ShaderID> m_filenameHashToShaderID;
@@ -128,5 +127,4 @@ private:
 	// ShaderInstanceID -> Array Index
 	std::vector<ShaderID> m_instanceIDToShaderID;
 	std::vector<Entry> m_specializations;
-	ShaderInstanceID m_nextInstanceID = 0;
 };

@@ -108,7 +108,7 @@ namespace
 		const SmallVector<vk::PushConstantRange>& pushConstantRange1,
 		const SmallVector<vk::PushConstantRange>& pushConstantRange2)
 	{
-		SmallVector<vk::PushConstantRange> pushConstantRanges(pushConstantRange1.size() + pushConstantRange2.size());
+		SmallVector<vk::PushConstantRange> pushConstantRanges;
 		pushConstantRanges.insert(pushConstantRanges.end(), pushConstantRange1.begin(), pushConstantRange1.end());
 		pushConstantRanges.insert(pushConstantRanges.end(), pushConstantRange2.begin(), pushConstantRange2.end());
 		return pushConstantRanges;
@@ -229,10 +229,9 @@ void GraphicsPipelineSystem::ResetGraphicsPipeline(
 	m_descriptorSetLayouts[id] = ::CreateDescriptorSetLayoutsFromBindings(m_descriptorSetLayoutBindings[id]);
 
 	// Combine push constants from vertex and fragment shader
-	auto pushConstantRanges = ::CombinePushConstantRanges(
-		m_shaderSystem->GetPushConstantRanges(vertexShaderID),
-		m_shaderSystem->GetPushConstantRanges(fragmentShaderID)
-	);
+	auto vertexPushConstantRanges = m_shaderSystem->GetPushConstantRanges(vertexShaderID);
+	auto fragmentPushConstantRanges = m_shaderSystem->GetPushConstantRanges(fragmentShaderID);
+	auto pushConstantRanges = ::CombinePushConstantRanges(vertexPushConstantRanges, fragmentPushConstantRanges);
 
 	// Build pipeline layouts for each set
 	::ReserveIndex(id, m_pipelineLayouts);

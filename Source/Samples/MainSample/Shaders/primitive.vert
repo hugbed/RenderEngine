@@ -14,14 +14,25 @@ layout(location = 3) out vec3 viewPos;
 #include "view_set.glsl"
 
 // --- Set 1 (Model Uniforms) --- //
-layout(set = SET_MODEL, binding = BINDING_MODEL_UNIFORMS) uniform ModelUniforms {
-    mat4 transform;
-} model;
+
+layout(constant_id = CONSTANT_NB_MODELS)
+    const uint NB_MODELS = 64;
+
+layout(push_constant)
+    uniform ModelIndex {
+	    layout(offset = 0) uint modelIndex; // index into model.transforms
+    } pc;
+
+layout(set = SET_MODEL, binding = BINDING_MODEL_UNIFORMS)
+    uniform ModelUniforms {
+        mat4 transforms[NB_MODELS];
+    } model;
 
 void main() {
-    fragPos = vec3(model.transform * vec4(inPosition, 1.0));
+    mat4 transform = model.transforms[pc.modelIndex];
+    fragPos = vec3(transform * vec4(inPosition, 1.0));
     gl_Position = view.proj * view.view * vec4(fragPos, 1.0);
     fragTexCoord = inTexCoord;
-    fragNormal = mat3(model.transform) * inNormal; // assumes afine transform
+    fragNormal = mat3(transform) * inNormal; // assumes afine transform
     viewPos = view.pos;
 }

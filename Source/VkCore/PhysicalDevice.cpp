@@ -119,8 +119,9 @@ PhysicalDevice::SwapChainSupportDetails PhysicalDevice::QuerySwapchainSupport(vk
 
 std::vector<const char*> PhysicalDevice::GetDeviceExtensions() const
 {
-	return {
-		VK_KHR_SWAPCHAIN_EXTENSION_NAME
+	return std::vector<const char*>{
+		VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+		VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME
 	};
 }
 

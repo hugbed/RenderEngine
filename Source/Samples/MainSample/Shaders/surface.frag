@@ -23,7 +23,15 @@ layout(constant_id = CONSTANT_NB_MATERIAL_SAMPLERS_2D)
 layout(constant_id = CONSTANT_NB_MATERIAL_SAMPLERS_CUBE)
     const uint NB_MATERIAL_SAMPLERS_CUBE = 64;
 
-layout(set = SET_VIEW, binding = VIEW_BINDINGS_LIGHTS)
+layout(constant_id = CONSTANT_NB_MATERIAL_PROPERTIES)
+    const uint NB_MATERIAL_PROPERTIES = 64;
+
+layout(push_constant)
+    uniform MaterialIndex {
+	    layout(offset = 4) uint materialIndex; // index into material.properties
+    } pc;
+
+layout(set = SET_VIEW, binding = BINDING_VIEW_LIGHTS)
     uniform Lights {
         Light light[NB_LIGHTS];
     } lights;
@@ -37,11 +45,15 @@ struct EnvironmentProperties {
     int cubeMapTexture; // index into textures_cube
 };
 
+struct MaterialProperties {
+    PhongProperties phong;
+    EnvironmentProperties env;
+    PhongTextures phongTextures;
+};
+
 layout(set = SET_MATERIAL, binding = BINDING_MATERIAL_PROPERTIES)
-    uniform MaterialProperties {
-        PhongProperties phong;
-        PhongTextures phongTextures;
-        EnvironmentProperties env;
+    uniform MaterialPropertiesUBO {
+        MaterialProperties properties[NB_MATERIAL_PROPERTIES];
     } material;
 
 layout(set = SET_MATERIAL, binding = BINDING_MATERIAL_SAMPLERS_2D)
@@ -57,11 +69,13 @@ void main() {
 
     // --- Shading --- //
 
+    MaterialProperties props = material.properties[pc.materialIndex];
+
     // todo: have #define to choose either rgba or texture instead of using both
-    vec4 diffuse = material.phong.diffuse * texture(textures_2d[material.phongTextures.diffuse], fragTexCoord);
-    vec4 specular = material.phong.specular * texture(textures_2d[material.phongTextures.specular], fragTexCoord);
-    // vec4 shininess = material.phong.shininess * texture(textures_2d[material.phongTextures.shininess], fragTexCoord);
-    PhongProperties phongProperties = PhongProperties(diffuse, specular, material.phong.shininess);
+    vec4 diffuse = props.phong.diffuse * texture(textures_2d[props.phongTextures.diffuse], fragTexCoord);
+    vec4 specular = props.phong.specular * texture(textures_2d[props.phongTextures.specular], fragTexCoord);
+    // vec4 shininess = props.phong.shininess * texture(textures_2d[props.phongTextures.shininess], fragTexCoord);
+    PhongProperties phongProperties = PhongProperties(diffuse, specular, props.phong.shininess);
     
     vec3 shadedColor = vec3(0.0, 0.0, 0.0);
     for (int i = 0; i < NB_LIGHTS; ++i)
@@ -76,19 +90,19 @@ void main() {
     vec3 dir; // cubeMap sampling vector
 
     // reflection
-    if (material.env.metallic > 0.0) // todo: have 
+    if (props.env.metallic > 0.0) // todo: have 
     {
-        // float metallic = min(0.0, material.env.metallic);
+        // float metallic = min(0.0, props.env.metallic);
         dir = -reflect(viewDir, normal);
-        shadedColor = mix(shadedColor, texture(textures_cube[material.env.cubeMapTexture], dir).rgb, vec3(material.env.metallic));
+        shadedColor = mix(shadedColor, texture(textures_cube[props.env.cubeMapTexture], dir).rgb, vec3(props.env.metallic));
     }
 
     // refraction
-    if (material.env.transmission > 0.0)
+    if (props.env.transmission > 0.0)
     {
-        // float transmission = min(0.0, material.env.transmission);
-        dir = refract(viewDir, normal, 1.0 / material.env.ior);
-        shadedColor = mix(shadedColor, texture(textures_cube[material.env.cubeMapTexture], dir).rgb, vec3(material.env.transmission));
+        // float transmission = min(0.0, props.env.transmission);
+        dir = refract(viewDir, normal, 1.0 / props.env.ior);
+        shadedColor = mix(shadedColor, texture(textures_cube[props.env.cubeMapTexture], dir).rgb, vec3(props.env.transmission));
     }
 
     // output + transparency
