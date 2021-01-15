@@ -4,6 +4,8 @@
 #include "file_utils.h"
 #include "hash.h"
 
+#include <gsl/span>
+
 namespace
 {
 	void PopulateVertexInputDescriptions(
@@ -47,21 +49,21 @@ namespace
 	void PopulateUniformBufferDescriptorSetLayouts(
 		const spirv_cross::CompilerReflection& comp,
 		const spirv_cross::VectorView<spirv_cross::Resource>& uniformBuffers,
-		SetVector<SmallVector<vk::DescriptorSetLayoutBinding>>& descriptorSetLayouts)
+		SetVector<SmallVector<vk::DescriptorSetLayoutBinding>>& descriptorSetLayoutsBindings)
 	{
 		for (const auto& ubo : uniformBuffers)
 		{
 			uint32_t set = comp.get_decoration(ubo.id, spv::Decoration::DecorationDescriptorSet);
-			if (set >= descriptorSetLayouts.size())
-				descriptorSetLayouts.resize(set + 1ULL);
+			if (set >= descriptorSetLayoutsBindings.size())
+				descriptorSetLayoutsBindings.resize(set + 1ULL);
 
-			auto& descriptorSetLayout = descriptorSetLayouts[set];
+			auto& bindings = descriptorSetLayoutsBindings[set];
 
 			auto binding = comp.get_decoration(ubo.id, spv::Decoration::DecorationBinding);
 
 			const auto& type = comp.get_type(ubo.type_id);
 
-			descriptorSetLayout.emplace_back(
+			bindings.emplace_back(
 				binding, // binding
 				vk::DescriptorType::eUniformBuffer,
 				type.array.empty() ? 1U : type.array[0], // descriptorCount
@@ -76,22 +78,22 @@ namespace
 	void PopulateSampledImagesDescriptorSetLayouts(
 		const spirv_cross::CompilerReflection& comp,
 		const spirv_cross::VectorView<spirv_cross::Resource>& sampledImages,
-		SetVector<SmallVector<vk::DescriptorSetLayoutBinding>>& descriptorSetLayouts)
+		SetVector<SmallVector<vk::DescriptorSetLayoutBinding>>& descriptorSetLayoutBindings)
 	{
 		for (const auto& sampler : sampledImages)
 		{
 			auto set = comp.get_decoration(sampler.id, spv::Decoration::DecorationDescriptorSet);
-			if (descriptorSetLayouts.size() <= set)
-				descriptorSetLayouts.resize(set + 1ULL);
+			if (descriptorSetLayoutBindings.size() <= set)
+				descriptorSetLayoutBindings.resize(set + 1ULL);
 
-			auto& descriptorSetLayout = descriptorSetLayouts[set];
+			auto& bindings = descriptorSetLayoutBindings[set];
 
 			auto binding = comp.get_decoration(sampler.id, spv::Decoration::DecorationBinding);
 
 			// to check if it's an array, e.g.: uniform sampler2D uSampler[10];
 			const auto& type = comp.get_type(sampler.type_id);
 
-			descriptorSetLayout.emplace_back(
+			bindings.emplace_back(
 				binding, // binding
 				vk::DescriptorType::eCombinedImageSampler,
 				type.array.empty() ? 1UL : type.array[0],
@@ -106,6 +108,7 @@ namespace
 	SmallVector<ShaderReflection::SpecializationConstantRef> PopulateSampledImagesSpecializationRefs(
 		const spirv_cross::CompilerReflection& comp,
 		const spirv_cross::VectorView<spirv_cross::Resource>& sampledImages)
+
 	{
 		SmallVector<ShaderReflection::SpecializationConstantRef> specializationRefs;
 
@@ -117,11 +120,11 @@ namespace
 
 			// Remember that this binding is a specialization constant
 			// to replace it with the actual descriptor count when its known
-			if ((bool)type.array_size_literal[0])
+			if (!type.array_size_literal.empty() && (bool)type.array_size_literal[0] == false)
 			{
 				for (const auto& c : comp.get_specialization_constants())
 				{
-					if (c.constant_id == (spirv_cross::ConstantID)type.array[0])
+					if (c.id == (spirv_cross::ConstantID)type.array[0])
 					{
 						// keep set, binding, constant_id
 						specializationRefs.push_back({ set, binding, c.constant_id });
@@ -197,27 +200,75 @@ namespace
 		}
 	}
 
+	[[nodiscard]] size_t GetSpecializationEntriesTotalSize(
+		const SmallVector<vk::SpecializationMapEntry>& specializationEntries)
+	{
+		if (specializationEntries.empty())
+			return 0;
+
+		uint32_t lastOffset = specializationEntries[0].offset;
+		size_t lastSize = specializationEntries[0].size;
+		for (int i = 1; i < specializationEntries.size(); ++i)
+		{
+			const auto& entry = specializationEntries[i];
+			if (entry.offset > lastOffset)
+			{
+				lastOffset = entry.offset;
+				lastSize = entry.size;
+			}
+		}
+		return lastOffset + lastSize;
+	}
+
+	// Copy specialization entries from data into output buffer
+	// Adjust entries offsets to illustrate the offsets in the output buffer.
+	void CopySpecializationEntries(
+		const void* data,
+		SmallVector<vk::SpecializationMapEntry>& entries,
+		std::vector<char>& outputBuffer)
+	{
+		// Prepare data block for specialization constants
+		size_t totalSize = GetSpecializationEntriesTotalSize(entries);
+		uint32_t baseOffset = outputBuffer.size();
+		outputBuffer.resize((size_t)baseOffset + totalSize);
+
+		// Copy data to local data block and adjust offsets
+		for (vk::SpecializationMapEntry& entry : entries)
+		{
+			memcpy(outputBuffer.data() + baseOffset + entry.offset, (const char*)data + entry.offset, entry.size);
+			entry.offset += baseOffset;
+		}
+	}
+
 	void ReplaceSpecializationConstants(
-		const void* data, size_t dataSize,
-		const SmallVector<ShaderReflection::SpecializationConstantRef>& specializationRefs,
-		const SmallVector<vk::SpecializationMapEntry>& specializationMapEntries,
-		SetVector<SmallVector<vk::DescriptorSetLayoutBinding>>& descriptorSetLayouts
-	)
+		gsl::span<const char> specializationData, // block of specialization data
+		const SmallVector<vk::SpecializationMapEntry>& specializationEntries, // specialization entries in that block
+		const SmallVector<ShaderReflection::SpecializationConstantRef>& specializationRefs, // references to specialization constants in bindings
+		SetVector<SmallVector<vk::DescriptorSetLayoutBinding>>& descriptorSetLayoutBindings)
 	{
 		// Replace placeholder array sizes with real values
 		for (const auto& specRef : specializationRefs)
 		{
 			// Find matching specialization constant
-			for (const auto& spec : specializationMapEntries)
+			for (const auto& spec : specializationEntries)
 			{
 				if (spec.constantID == specRef.constantID)
 				{
-					ASSERT(spec.size == sizeof(uint32_t));
+					ASSERT(spec.size == spec.size);
 
-					// update descriptor count
-					void* src = (char*)data + spec.offset;
-					void* dest = &descriptorSetLayouts[specRef.set][specRef.binding].descriptorCount;
-					memcpy(dest, src, sizeof(uint32_t));
+					// Update descriptor count
+					for (auto& binding : descriptorSetLayoutBindings[specRef.set])
+					{
+						if (binding.binding == specRef.binding)
+						{
+							void* src = (char*)specializationData.data() + spec.offset;
+							void* dest = &binding.descriptorCount;
+							memcpy(dest, src, spec.size);
+							break;
+						}
+					}
+
+					break; // found this constant
 				}
 			}
 		}
@@ -232,6 +283,14 @@ namespace
 			)
 		);
 	}
+}
+
+ShaderReflection::ShaderReflection(uint32_t* code, size_t codeSize) /* how many uint32_t */
+	: comp(code, codeSize)
+	, shaderResources(comp.get_shader_resources())
+{
+	specializationRefs = ::PopulateSampledImagesSpecializationRefs(comp, shaderResources.sampled_images);
+	specializationMapEntries = ::PopulateSpecializationMapEntries(comp);
 }
 
 ShaderID ShaderSystem::CreateShader(const std::string& filename)
@@ -263,18 +322,21 @@ ShaderID ShaderSystem::CreateShader(const char* data, size_t size, std::string e
 	return id;
 }
 
-ShaderInstanceID ShaderSystem::CreateShaderInstance(ShaderID shaderID, SpecializationConstant specialization)
+// todo: 
+ShaderInstanceID ShaderSystem::CreateShaderInstance(
+	ShaderID shaderID,
+	const void* specializationData,
+	SmallVector<vk::SpecializationMapEntry> specializationEntries)
 {
-	if (specialization.size == 0)
+	if (specializationEntries.size() == 0)
 		return CreateShaderInstance(shaderID);
 
 	ShaderInstanceID id = m_instanceIDToShaderID.size();
 	m_instanceIDToShaderID.push_back(shaderID);
-	Entry entry = Entry::AppendToOutput(
-		{ specialization.data, specialization.data + specialization.size },
-		m_specializationBlock
-	);
-	m_specializations.push_back(std::move(entry));
+	m_specializationBlocks.resize(id + 1);
+	CopySpecializationEntries(specializationData, specializationEntries, m_specializationBlocks[id]);
+	m_specializationEntries.push_back(std::move(specializationEntries));
+
 	return id;
 }
 
@@ -282,21 +344,23 @@ ShaderInstanceID ShaderSystem::CreateShaderInstance(ShaderID shaderID)
 {
 	ShaderInstanceID id = m_instanceIDToShaderID.size();
 	m_instanceIDToShaderID.push_back(shaderID);
-	m_specializations.push_back({}); // it's possible that the shader doesn't need specialiation constants
+	m_specializationEntries.resize(id + 1); // it's possible that the shader doesn't need specialiation constants
 	return id;
 }
 
 vk::PipelineShaderStageCreateInfo ShaderSystem::GetShaderStageInfo(ShaderInstanceID id, vk::SpecializationInfo& specializationInfo) const
 {
 	ShaderID shaderID = m_instanceIDToShaderID[id];
-	const Entry& specialization = m_specializations[id];
+	const SmallVector<vk::SpecializationMapEntry>& specializationEntries = m_specializationEntries[id];
 	const ShaderReflection& reflection = *m_reflections[shaderID];
 
-	specializationInfo = {};
-	specializationInfo.pData = specialization.size > 0 ? &m_specializationBlock[specialization.offset] : nullptr;
-	specializationInfo.dataSize = specialization.size;
-	specializationInfo.mapEntryCount = static_cast<uint32_t>(reflection.specializationMapEntries.size());
-	specializationInfo.pMapEntries = reflection.specializationMapEntries.data();
+	size_t dataSize = ::GetSpecializationEntriesTotalSize(specializationEntries);
+
+	specializationInfo = vk::SpecializationInfo();
+	specializationInfo.pData = specializationEntries.size() > 0 ? m_specializationBlocks[id].data() : nullptr;
+	specializationInfo.dataSize = dataSize;
+	specializationInfo.mapEntryCount = specializationEntries.size();
+	specializationInfo.pMapEntries = specializationEntries.data();
 
 	return vk::PipelineShaderStageCreateInfo(
 		vk::PipelineShaderStageCreateFlags(),
@@ -362,40 +426,40 @@ SetVector<SmallVector<vk::DescriptorSetLayoutBinding>> ShaderSystem::GetDescript
 {
 	ShaderID shaderID = m_instanceIDToShaderID[id];
 	const ShaderReflection& reflection = *m_reflections[shaderID];
-	const Entry& specialization = m_specializations[id];
+	const SmallVector<vk::SpecializationMapEntry>& specializationEntries = m_specializationEntries[id];
 
-	SetVector<SmallVector<vk::DescriptorSetLayoutBinding>> descriptorSetLayouts;
+	SetVector<SmallVector<vk::DescriptorSetLayoutBinding>> descriptorSetLayoutBindings;
 
 	::PopulateUniformBufferDescriptorSetLayouts(
 		reflection.comp,
 		reflection.shaderResources.uniform_buffers,
-		descriptorSetLayouts
+		descriptorSetLayoutBindings
 	);
 
 	::PopulateSampledImagesDescriptorSetLayouts(
 		reflection.comp,
 		reflection.shaderResources.sampled_images,
-		descriptorSetLayouts
+		descriptorSetLayoutBindings
 	);
 
 	// Sort each layout by binding
-	for (auto& descriptorSetLayout : descriptorSetLayouts)
+	for (auto& descriptorSetLayout : descriptorSetLayoutBindings)
 	{
 		std::sort(descriptorSetLayout.begin(), descriptorSetLayout.end(), [](const auto& a, const auto& b) {
 			return a.binding < b.binding;
 		});
 	}
 
-	if (specialization.size > 0)
+	if (specializationEntries.size() > 0)
 	{
+		const std::vector<char>& block = m_specializationBlocks[id];
 		::ReplaceSpecializationConstants(
-			&m_specializationBlock[specialization.offset],
-			specialization.size,
+			gsl::span<const char>(block.data(), block.size()),
+			m_specializationEntries[id],
 			reflection.specializationRefs,
-			reflection.specializationMapEntries,
-			descriptorSetLayouts
+			descriptorSetLayoutBindings
 		);
 	}
 
-	return descriptorSetLayouts;
+	return descriptorSetLayoutBindings;
 }

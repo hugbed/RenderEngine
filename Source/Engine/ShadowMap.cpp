@@ -1,10 +1,37 @@
 #include "ShadowMap.h"
 
-ShadowMap::ShadowMap(vk::Extent2D extent, const Light& light, GraphicsPipelineSystem& graphicsPipelineSystem, const Scene& scene)
+#include <utility>
+
+namespace
+{
+	enum class ConstantIDs
+	{
+		// Fragment
+		eNbModels = 0,
+	};
+
+	SmallVector<vk::SpecializationMapEntry> GetSpecializationMapEntries()
+	{
+		using VSConst = ShadowMap::VertexShaderConstants;
+
+		return SmallVector<vk::SpecializationMapEntry>{
+			vk::SpecializationMapEntry((uint32_t)ConstantIDs::eNbModels, offsetof(VSConst, nbModels), sizeof(VSConst::nbModels))
+		};
+	}
+}
+
+ShadowMap::ShadowMap(
+	vk::Extent2D extent,
+	const PhongLight& light,
+	GraphicsPipelineSystem& graphicsPipelineSystem,
+	const Scene& scene,
+	VertexShaderConstants constants
+)
 	: m_extent(extent)
 	, m_graphicsPipelineSystem(&graphicsPipelineSystem)
 	, m_scene(&scene)
 	, m_light(light)
+	, m_constants(constants)
 {
 	CreateDepthImage();
 	CreateSampler();
@@ -37,7 +64,7 @@ void ShadowMap::Reset(vk::Extent2D extent)
 void ShadowMap::Render(vk::CommandBuffer& commandBuffer, uint32_t frameIndex) const
 {
 	vk::ClearValue clearValues;
-	clearValues.depthStencil = { 1.0f, 0 };
+	clearValues.depthStencil = vk::ClearDepthStencilValue(1.0f, 0);
 	auto renderPassInfo = vk::RenderPassBeginInfo(
 		m_renderPass.get(), m_framebuffer.get(),
 		vk::Rect2D(vk::Offset2D(0, 0), m_extent),
@@ -52,15 +79,18 @@ void ShadowMap::Render(vk::CommandBuffer& commandBuffer, uint32_t frameIndex) co
 		);
 
 		// Bind View
-		vk::PipelineLayout pipelineLayout = m_graphicsPipelineSystem->GetPipelineLayout(m_graphicsPipelineID, (uint8_t)DescriptorSetIndex::View);
+		uint8_t viewSetIndex = (uint8_t)DescriptorSetIndex::View;
+		vk::PipelineLayout viewPipelineLayout = m_graphicsPipelineSystem->GetPipelineLayout(m_graphicsPipelineID, viewSetIndex);
 		commandBuffer.bindDescriptorSets(
 			vk::PipelineBindPoint::eGraphics,
-			pipelineLayout, (uint32_t)DescriptorSetIndex::View,
-			1, &m_viewDescriptorSet.get(),
+			viewPipelineLayout, (uint32_t)DescriptorSetIndex::View,
+			1, &m_descriptorSets[viewSetIndex].get(),
 			0, nullptr
 		);
 
-		m_scene->DrawAllWithoutShading(commandBuffer, frameIndex, pipelineLayout);
+		uint8_t modelSetIndex = (uint8_t)DescriptorSetIndex::Model;
+		vk::PipelineLayout modelPipelineLayout = m_graphicsPipelineSystem->GetPipelineLayout(m_graphicsPipelineID, modelSetIndex);
+		m_scene->DrawAllWithoutShading(commandBuffer, frameIndex, modelPipelineLayout, m_descriptorSets[modelSetIndex].get());
 	}
 	commandBuffer.endRenderPass();
 }
@@ -161,10 +191,16 @@ void ShadowMap::CreateFramebuffer()
 void ShadowMap::CreateGraphicsPipeline()
 {
 	ShaderSystem& shaderSystem = m_graphicsPipelineSystem->GetShaderSystem();
+	
 	ShaderID vertexShaderID = shaderSystem.CreateShader(vertexShaderFile);
 	ShaderID fragmentShaderID = shaderSystem.CreateShader(fragmentShaderFile);
-	ShaderInstanceID vertexShaderInstanceID = shaderSystem.CreateShaderInstance(vertexShaderID);
-	ShaderInstanceID fragmentShaderInstanceID = shaderSystem.CreateShaderInstance(fragmentShaderID);
+
+	ShaderInstanceID vertexShaderInstanceID = shaderSystem.CreateShaderInstance(
+		vertexShaderID, (const void*)&m_constants, GetSpecializationMapEntries()
+	);
+	ShaderInstanceID fragmentShaderInstanceID = shaderSystem.CreateShaderInstance(
+		fragmentShaderID
+	);
 
 	GraphicsPipelineInfo info(*m_renderPass, m_extent);
 	info.sampleCount = vk::SampleCountFlagBits::e1;
@@ -181,23 +217,24 @@ void ShadowMap::CreateGraphicsPipeline()
 
 void ShadowMap::CreateDescriptorPool()
 {
-	m_viewDescriptorSet.reset();
+	for (auto& descriptorSet : m_descriptorSets)
+		descriptorSet.reset();
+
 	m_descriptorPool.reset();
 
-	std::map<vk::DescriptorType, uint32_t> descriptorCount;
-	const auto& bindings = m_graphicsPipelineSystem->GetDescriptorSetLayoutBindings(m_graphicsPipelineID, (size_t)DescriptorSetIndex::View);
-	for (const auto& binding : bindings)
-		descriptorCount[binding.descriptorType] += binding.descriptorCount;
+	// Set 0 (view):     { 1 uniform buffer for view uniforms }
+	// Set 1 (model):    { 1 uniform buffer containing all models }
+	std::pair<vk::DescriptorType, uint16_t> descriptorCount[] = {
+		std::make_pair(vk::DescriptorType::eUniformBuffer, 2),
+	};
+	const uint32_t descriptorCountSize = sizeof(descriptorCount) / sizeof(descriptorCount[0]);
 
-	uint32_t maxNbSets = 0;
 	std::vector<vk::DescriptorPoolSize> poolSizes;
-	poolSizes.reserve(descriptorCount.size());
+	poolSizes.reserve(descriptorCountSize);
 	for (const auto& descriptor : descriptorCount)
-	{
 		poolSizes.emplace_back(descriptor.first, descriptor.second);
-		maxNbSets += descriptor.second;
-	}
 
+	uint32_t maxNbSets = 2; // View + Model
 	m_descriptorPool = g_device->Get().createDescriptorPoolUnique(vk::DescriptorPoolCreateInfo(
 		vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
 		maxNbSets,
@@ -207,13 +244,23 @@ void ShadowMap::CreateDescriptorPool()
 
 void ShadowMap::CreateDescriptorSets()
 {
-	size_t set = (size_t)DescriptorSetIndex::View;
-	vk::DescriptorSetLayout viewSetLayouts = m_graphicsPipelineSystem->GetDescriptorSetLayout(m_graphicsPipelineID, set);
-	std::vector<vk::DescriptorSetLayout> layouts(1, viewSetLayouts);
+	const int nbDescriptorSets = 2; // View + Model
+
+	std::vector<vk::DescriptorSetLayout> layouts;
+	layouts.reserve(nbDescriptorSets);
+	for (DescriptorSetIndex setIndex : { DescriptorSetIndex::View, DescriptorSetIndex::Model })
+	{
+		layouts.push_back(m_graphicsPipelineSystem->GetDescriptorSetLayout(
+			m_graphicsPipelineID, (uint8_t)setIndex
+		));
+	}
+
 	auto descriptorSets = g_device->Get().allocateDescriptorSetsUnique(vk::DescriptorSetAllocateInfo(
 		m_descriptorPool.get(), static_cast<uint32_t>(layouts.size()), layouts.data()
 	));
-	m_viewDescriptorSet = std::move(descriptorSets.front());
+
+	for (int i = 0; i < nbDescriptorSets; ++i)
+		m_descriptorSets[i] = std::move(descriptorSets[i]);
 }
 
 void ShadowMap::CreateViewUniformBuffers()
@@ -221,7 +268,7 @@ void ShadowMap::CreateViewUniformBuffers()
 	m_viewUniformBuffer = std::make_unique<UniqueBuffer>(
 		vk::BufferCreateInfo(
 			{},
-			sizeof(ViewUniforms),
+			sizeof(LitViewProperties),
 			vk::BufferUsageFlagBits::eUniformBuffer
 		), VmaAllocationCreateInfo{ VMA_ALLOCATION_CREATE_MAPPED_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU }
 	);
@@ -284,16 +331,18 @@ void ShadowMap::UpdateViewUniforms()
 	m_viewUniforms.proj = clip * proj;
 
 	// Write values to uniform buffer
-	memcpy(m_viewUniformBuffer->GetMappedData(), reinterpret_cast<const void*>(&m_viewUniforms), sizeof(ViewUniforms));
+	memcpy(m_viewUniformBuffer->GetMappedData(), reinterpret_cast<const void*>(&m_viewUniforms), sizeof(LitViewProperties));
+
+	m_viewUniformBuffer->Flush(0, sizeof(LitViewProperties));
 }
 
 void ShadowMap::UpdateDescriptorSets()
 {
 	uint32_t binding = 0;
-	vk::DescriptorBufferInfo descriptorBufferInfoView(m_viewUniformBuffer->Get(), 0, sizeof(ViewUniforms));
+	vk::DescriptorBufferInfo descriptorBufferInfoView(m_viewUniformBuffer->Get(), 0, sizeof(LitViewProperties));
 	std::vector<vk::WriteDescriptorSet> writeDescriptorSets = {
 		vk::WriteDescriptorSet(
-			m_viewDescriptorSet.get(), binding++, {},
+			m_descriptorSets[(size_t)DescriptorSetIndex::View].get(), binding++, {},
 			1, vk::DescriptorType::eUniformBuffer, nullptr, &descriptorBufferInfoView
 		) // binding = 0
 	};

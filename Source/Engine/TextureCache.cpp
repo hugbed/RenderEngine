@@ -58,6 +58,7 @@ TextureID TextureCache::CreateAndUploadTextureImage(std::string_view filename)
 	m_mipLevels[imageViewTypeIndex].push_back(texture->GetMipLevels());
 	m_fileHashToTextureKey.emplace(fileHash, std::move(key));
 	m_names[imageViewTypeIndex].push_back(filename.data());
+	m_imageTypeCount[(size_t)ImageViewType::e2D]++;
 
 	memcpy(texture->GetStagingMappedData(), reinterpret_cast<const void*>(pixels), (size_t)texWidth* texHeight * 4);
 	stbi_image_free(pixels);
@@ -114,7 +115,6 @@ TextureID TextureCache::LoadCubeMapFaces(gsl::span<std::string> filenames)
 		TextureID id = cachedTextureIt->second.id;
 		auto& cachedTexture = m_textures[samplerTypeIndex][id];
 		Texture* texture = cachedTexture.get();
-		CreateSampler(texture->GetMipLevels());
 		return cachedTextureIt->second.id;
 	}
 	std::vector<stbi_uc*> faces;
@@ -185,6 +185,8 @@ TextureID TextureCache::LoadCubeMapFaces(gsl::span<std::string> filenames)
 	m_mipLevels[samplerTypeIndex].push_back(texture->GetMipLevels());
 	m_fileHashToTextureKey.emplace(fileHash, std::move(key));
 	m_names[samplerTypeIndex].push_back(filename);
+	m_imageTypeCount[(size_t)ImageViewType::eCube]++;
+	CreateSampler(texture->GetMipLevels());
 
 	return id;
 }
@@ -218,15 +220,13 @@ SmallVector<vk::DescriptorImageInfo> TextureCache::GetDescriptorImageInfos(Image
 		);
 	}
 	
-	// todo: we'll need VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT to keep other textures unbound (Vulkan 1.2)
-
 	return imageInfos;
 }
 
 vk::DescriptorImageInfo TextureCache::GetDescriptorImageInfo(ImageViewType imageViewType, TextureID id) const
 {
 	return vk::DescriptorImageInfo(
-		m_samplers[m_mipLevels[(size_t)imageViewType][id]].get(),
+		m_samplers[m_mipLevelToSamplerID.at(m_mipLevels[(size_t)imageViewType][id])].get(),
 		m_textures[(size_t)imageViewType][id]->GetImageView(),
 		vk::ImageLayout::eShaderReadOnlyOptimal
 	);

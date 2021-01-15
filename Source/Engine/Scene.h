@@ -20,16 +20,9 @@
 
 class ShadowMap;
 
-struct ViewUniforms
-{
-	glm::aligned_mat4 view;
-	glm::aligned_mat4 proj;
-	glm::aligned_vec3 pos;
-};
-
 struct ShadowData
 {
-	glm::aligned_mat4 transform;
+	glm::mat4 transform;
 };
 
 enum class CameraMode { OrbitCamera, FreeCamera };
@@ -74,7 +67,7 @@ public:
 
 	// Assumes external pipeline is already bound.
 	// Binds vertices + view + model descriptors and calls draw for each mesh
-	void DrawAllWithoutShading(vk::CommandBuffer& commandBuffer, uint32_t frameIndex, vk::PipelineLayout pipelineLayout) const;
+	void DrawAllWithoutShading(vk::CommandBuffer& commandBuffer, uint32_t frameIndex, vk::PipelineLayout modelPipelineLayout, vk::DescriptorSet modelDescriptorSet) const;
 
 	Camera& GetCamera() { return m_camera; } // todo: there should be a camera control or something
 
@@ -84,7 +77,7 @@ public:
 
 	void ResetCamera();
 
-	const std::vector<Light>& GetLights() const { return m_lights; }
+	const std::vector<PhongLight>& GetLights() const { return m_lights; }
 
 	void InitShadowMaps(const std::vector<const ShadowMap*>& shadowMaps);
 
@@ -96,7 +89,7 @@ private:
 	// Uses scene materials
 	void DrawSceneObjects(vk::CommandBuffer commandBuffer, uint32_t frameIndex, RenderState& state, const std::vector<MeshDrawInfo>& drawCalls) const;
 
-	void DrawWithoutShading(vk::CommandBuffer& commandBuffer, uint32_t frameIndex, vk::PipelineLayout pipelineLayout, const std::vector<MeshDrawInfo>& drawCalls) const;
+	void DrawWithoutShading(vk::CommandBuffer& commandBuffer, uint32_t frameIndex, vk::PipelineLayout modelPipelineLayout, vk::DescriptorSet modelDescriptorSet, const std::vector<MeshDrawInfo>& drawCalls) const;
 
 	void LoadScene(vk::CommandBuffer commandBuffer);
 	void LoadLights(vk::CommandBuffer buffer);
@@ -133,13 +126,14 @@ private:
 	
 	// --- Lights --- //
 
-	std::vector<Light> m_lights;
+	std::vector<PhongLight> m_lights;
 
+	uint32_t m_nbShadowCastingLights = 0;
 	std::unique_ptr<UniqueBuffer> m_shadowDataBuffer;
 
 	// --- View --- //
 
-	ViewUniforms m_viewUniforms;
+	LitViewProperties m_viewUniforms;
 	std::vector<vk::UniqueDescriptorSet> m_unlitViewDescriptorSets;
 	std::vector<UniqueBuffer> m_viewUniformBuffers; // one per in flight frame since these change every frame
 	std::unique_ptr<UniqueBufferWithStaging> m_lightsUniformBuffer;

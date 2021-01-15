@@ -6,7 +6,7 @@
 
 #include <vector>
 
-class CommandBufferPool
+class CommandBufferPool // todo: rename this
 {
 public:
 	CommandBufferPool(size_t count, size_t nbConcurrentSubmit, uint32_t queueFamily, vk::CommandPoolCreateFlags flags = {});
@@ -51,11 +51,12 @@ public:
 	void WaitUntilSubmitComplete()
 	{
 		auto& frameFence = m_fences[m_fenceIndex].get();
-		g_device->Get().waitForFences(
+		vk::Result result = g_device->Get().waitForFences(
 			frameFence,
 			true, // wait for all fences (we only have 1 though)
 			UINT64_MAX // indefinitely
 		);
+		assert(result == vk::Result::eSuccess);
 
 		for (const auto& resource : m_resourcesToDestroy[m_fenceIndex])
 			delete resource;

@@ -10,7 +10,7 @@ layout(location = 2) in vec3 inNormal;
 
 // --- Set 1 (Model Uniforms) --- //
 
-layout(constant_id = CONSTANT_NB_MODELS)
+layout(constant_id = 0)
     const uint NB_MODELS = 64;
 
 layout(push_constant)
@@ -18,7 +18,7 @@ layout(push_constant)
 	    layout(offset = 0) uint modelIndex; // index into model.transforms
     } pc;
 
-layout(set = SET_MODEL, binding = BINDING_MODEL_UNIFORMS)
+layout(set = 1, binding = 0)
     uniform ModelUniforms {
         mat4 transforms[NB_MODELS];
     } model;

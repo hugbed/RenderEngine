@@ -38,28 +38,10 @@ constexpr size_t kMaxNumSets = 4;
 template <class T>
 using SetVector = SmallVector<T, kMaxNumSets>;
 
-struct SpecializationConstant
-{
-	template <class T>
-	static SpecializationConstant Create(const T& t)
-	{
-		SpecializationConstant c;
-		c.data = reinterpret_cast<const char*>(&t);
-		c.size = sizeof(T);
-		return c;
-	}
-
-	const char* data = nullptr;
-	size_t size = 0;
-};
-
 // Used to automatically generate vulkan structures for building graphics pipelines.
 struct ShaderReflection
 {
-	ShaderReflection(uint32_t* code, size_t codeSize) /* how many uint32_t */
-		: comp(code, codeSize)
-		, shaderResources(comp.get_shader_resources())
-	{}
+	ShaderReflection(uint32_t* code, size_t codeSize); /* how many uint32_t */
 
 	spirv_cross::CompilerReflection comp;
 	spirv_cross::ShaderResources shaderResources;
@@ -84,8 +66,13 @@ public:
 	ShaderID CreateShader(const std::string& filename); // entryPoint defaults to main
 	ShaderID CreateShader(const std::string& filename, std::string entryPoint);
 	ShaderID CreateShader(const char* data, size_t size, std::string entryPoint);
+
 	ShaderInstanceID CreateShaderInstance(ShaderID shaderID);
-	ShaderInstanceID CreateShaderInstance(ShaderID shaderID, SpecializationConstant specialization);
+	ShaderInstanceID CreateShaderInstance(
+		ShaderID shaderID,
+		const void* specializationData,
+		SmallVector<vk::SpecializationMapEntry> specializationConstants
+	);
 
 	// --- Helpers to create generate graphics pipeline creation info --- //
 
@@ -122,9 +109,9 @@ private:
 
 	// --- Shader Instance (base shader with specific specialization constants) --- //
 
-	std::vector<char> m_specializationBlock; // specialization constants data block
+	std::vector<std::vector<char>> m_specializationBlocks; // specialization constants data blocks
 
 	// ShaderInstanceID -> Array Index
 	std::vector<ShaderID> m_instanceIDToShaderID;
-	std::vector<Entry> m_specializations;
+	std::vector<SmallVector<vk::SpecializationMapEntry>> m_specializationEntries;
 };

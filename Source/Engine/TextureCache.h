@@ -59,6 +59,10 @@ public:
 
 	vk::DescriptorImageInfo GetDescriptorImageInfo(ImageViewType imageViewType, TextureID id) const;
 
+	size_t GetTextureCount() const { return m_textures.size(); }
+
+	size_t GetTextureCount(ImageViewType imageViewType) const { return m_imageTypeCount[(size_t)imageViewType]; }
+
 private:
 	TextureID CreateAndUploadTextureImage(std::string_view filename);
 
@@ -80,4 +84,5 @@ private:
 
 	// SamplerID -> Array Index
 	std::vector<vk::UniqueSampler> m_samplers;
+	std::array<uint32_t, (size_t)ImageViewType::eCount> m_imageTypeCount = {};
 };

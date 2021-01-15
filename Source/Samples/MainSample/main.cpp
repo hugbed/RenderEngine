@@ -58,7 +58,7 @@ public:
 		, m_framebuffers(Framebuffer::FromSwapchain(*m_swapchain, m_renderPass->Get()))
 		, m_graphicsPipelineSystem(m_shaderSystem)
 		, m_textureCache(basePath)
-		, m_materialSystem(m_renderPass->Get(), m_swapchain->GetImageDescription().extent, m_graphicsPipelineSystem, m_textureCache)
+		, m_materialSystem(m_renderPass->Get(), m_swapchain->GetImageDescription().extent, m_graphicsPipelineSystem, m_textureCache, m_modelSystem)
 		, m_scene(std::make_unique<Scene>(
 			std::move(basePath), std::move(sceneFile),
 			m_commandBufferPool,
@@ -225,6 +225,9 @@ protected:
 
 	void UpdateShadowMaps(vk::CommandBuffer& commandBuffer)
 	{
+		// At this point the scene is loaded and we know how many models we have
+		ShadowMap::VertexShaderConstants constants = { (uint32_t)m_modelSystem.GetModelCount() };
+
 		if (m_shadowMaps.empty() == false)
 		{
 			for (auto& shadowMap : m_shadowMaps)
@@ -237,9 +240,8 @@ protected:
 				// todo: support other light types for shadows
 				if (light.type == aiLightSource_DIRECTIONAL)
 				{
-					m_shadowMaps.emplace_back(
-						kShadowMapExtent, light, m_graphicsPipelineSystem, *m_scene
-					);
+					ShadowMap map(kShadowMapExtent, light, m_graphicsPipelineSystem, *m_scene, constants);
+					m_shadowMaps.push_back(std::move(map));
 				}
 			}
 		}
@@ -500,7 +502,7 @@ int main(int argc, char* argv[])
 	vk::UniqueSurfaceKHR surface(window.CreateSurface(instance.Get()));
 
 	PhysicalDevice::Init(instance.Get(), surface.get());
-	Device::Init(*g_physicalDevice);
+	Device::Init(instance, *g_physicalDevice);
 	{
 		App app(surface.get(), extent, window, std::move(basePath), std::move(sceneFile));
 		app.Init();

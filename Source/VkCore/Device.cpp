@@ -9,10 +9,10 @@
 
 Device* g_device;
 
-void Device::Init(const PhysicalDevice& physicalDevice)
+void Device::Init(const Instance& instance, const PhysicalDevice& physicalDevice)
 {
 	if (g_device == nullptr)
-		g_device = new Device(physicalDevice);
+		g_device = new Device(instance, physicalDevice);
 }
 
 void Device::Term()
@@ -21,7 +21,7 @@ void Device::Term()
 		delete g_device;
 }
 
-Device::Device(const PhysicalDevice& physicalDevice)
+Device::Device(const Instance& instance, const PhysicalDevice& physicalDevice)
 {
 	float queuePriority = 1.0f;
 
@@ -64,6 +64,7 @@ Device::Device(const PhysicalDevice& physicalDevice)
 
 	// Create memory allocator
 	VmaAllocatorCreateInfo allocatorInfo = {};
+	allocatorInfo.instance = static_cast<VkInstance>(instance.Get());
 	allocatorInfo.physicalDevice = static_cast<VkPhysicalDevice>(physicalDevice.Get());
 	allocatorInfo.device = static_cast<VkDevice>(m_device.get());
 	vmaCreateAllocator(&allocatorInfo, &m_allocator);

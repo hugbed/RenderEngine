@@ -26,6 +26,9 @@ struct UniqueBuffer : public DeferredDestructible
 
 	value_type Get() const { return value_type(m_buffer); }
 
+	// Required after writting to mapped data if memory is not HOST_COHERENT
+	void Flush(VkDeviceSize offset, VkDeviceSize size) const;
+
 private:
 	size_t m_size;
 	VkBuffer m_buffer;

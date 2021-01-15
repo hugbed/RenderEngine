@@ -15,14 +15,20 @@ TexturedQuad::TexturedQuad(
 	ShaderID vertexShaderID = shaderSystem.CreateShader("textured_quad_vert.spv", "main");
 	ShaderID fragmentShaderID = shaderSystem.CreateShader("textured_quad_frag.spv", "main");
 
-	uint32_t isGrayscale = 1;
 	m_vertexShader = shaderSystem.CreateShaderInstance(vertexShaderID);
-	m_fragmentShader = shaderSystem.CreateShaderInstance(
-		fragmentShaderID,
-		imageLayout == vk::ImageLayout::eDepthStencilReadOnlyOptimal ? 
-			SpecializationConstant::Create(isGrayscale) :
-			SpecializationConstant{}
-	);
+
+	if (imageLayout == vk::ImageLayout::eDepthStencilReadOnlyOptimal)
+	{
+		uint32_t isGrayscale = 1;
+		SmallVector<vk::SpecializationMapEntry> entries = { 
+			vk::SpecializationMapEntry(0, 0, sizeof(uint32_t)) // constant_id, offset, size
+		};
+		m_fragmentShader = shaderSystem.CreateShaderInstance(fragmentShaderID, (const void*)&isGrayscale, entries);
+	}
+	else
+	{
+		m_fragmentShader = shaderSystem.CreateShaderInstance(fragmentShaderID);
+	}
 
 	Reset(combinedImageSampler, renderPass, swapchainExtent);
 }

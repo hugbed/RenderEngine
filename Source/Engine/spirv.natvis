@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 
+    This will make GitHub and some editors recognize this code as XML: 
+    vim: syntax=xml
+-->
+<AutoVisualizer xmlns="http://schemas.microsoft.com/vstudio/debugger/natvis/2010">
+    <Type Name="spirv_cross::SmallVector&lt;*, *&gt;">
+        <DisplayString>{{ size = {buffer_size} }}</DisplayString>
+        <Expand>
+            <ArrayItems>
+                <Size>buffer_size</Size>
+                <ValuePointer>ptr</ValuePointer>
+            </ArrayItems>
+        </Expand>
+    </Type>
+    <Type Name="spirv_cross::VectorView&lt;*&gt;">
+      <DisplayString>{{ size = {buffer_size} }}</DisplayString>
+      <Expand>
+        <ArrayItems>
+          <Size>buffer_size</Size>
+          <ValuePointer>ptr</ValuePointer>
+        </ArrayItems>
+      </Expand>
+    </Type>
+</AutoVisualizer>

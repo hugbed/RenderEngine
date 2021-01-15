@@ -1,15 +1,13 @@
-#define MAX_NB_SHADOWS 128
-
 // todo: could have this instead:
-// layout(constant_id = CONSTANT_NB_SHADOWS)
-//     const uint kNbShadows = MAX_NB_SHADOWS;
+layout(constant_id = CONSTANT_NB_SHADOW_MAPS)
+    const uint NB_SHADOW_MAPS = 12;
 
 layout(set = SET_VIEW, binding = BINDING_VIEW_SHADOW_MAPS)
-    uniform sampler2D shadowMaps[MAX_NB_SHADOWS];
+    uniform sampler2D shadowMaps[NB_SHADOW_MAPS];
 
 layout(set = SET_VIEW, binding = BINDING_VIEW_SHADOW_DATA)
     uniform ShadowData {
-        mat4 transform[MAX_NB_SHADOWS];
+        mat4 transform[NB_SHADOW_MAPS];
     } shadowData;
 
 /// 1.0 means shadow, 0.0 no shadow

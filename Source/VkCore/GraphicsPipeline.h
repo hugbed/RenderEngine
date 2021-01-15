@@ -15,6 +15,28 @@
 
 struct ImageDescription;
 
+namespace GraphicsPipelineHelpers
+{
+	[[nodiscard]] uint64_t HashPipelineLayout(
+		const VectorView<vk::DescriptorSetLayoutBinding>& bindings,
+		const VectorView<vk::PushConstantRange>& pushConstants);
+
+	[[nodiscard]] SetVector<SmallVector<vk::DescriptorSetLayoutBinding>> CombineDescriptorSetLayoutBindings(
+		const SetVector<SmallVector<vk::DescriptorSetLayoutBinding>>& bindings1, // bindings[set][binding]
+		const SetVector<SmallVector<vk::DescriptorSetLayoutBinding>>& bindings2);
+
+	[[nodiscard]] SetVector<vk::UniqueDescriptorSetLayout> CreateDescriptorSetLayoutsFromBindings(
+		const SetVector<SmallVector<vk::DescriptorSetLayoutBinding>>& descriptorSetsLayoutBindings);
+
+	[[nodiscard]] SetVector<vk::UniquePipelineLayout> CreatePipelineLayoutsFromDescriptorSetLayouts(
+		const SetVector<vk::UniqueDescriptorSetLayout>& descriptorSetLayouts,
+		SmallVector<vk::PushConstantRange> pushConstantRanges);
+
+	[[nodiscard]] SmallVector<vk::PushConstantRange> CombinePushConstantRanges(
+		const SmallVector<vk::PushConstantRange>& pushConstantRange1,
+		const SmallVector<vk::PushConstantRange>& pushConstantRange2);
+}
+
 struct GraphicsPipelineInfo
 {
 	GraphicsPipelineInfo(vk::RenderPass renderPass, vk::Extent2D viewportExtent);
@@ -80,15 +102,7 @@ public:
 
 	// --- todo: reorganize calls to navigate the arrays instead --- //
 
-	bool IsSetLayoutCompatible(GraphicsPipelineID a, GraphicsPipelineID b, uint8_t set) const
-	{
-		const auto& compatibility = m_pipelineCompatibility[a];
-		const auto& otherCompatibility = m_pipelineCompatibility[b];
-		if (set >= compatibility.size() || set >= otherCompatibility.size())
-			return false;
-
-		return compatibility[set] == otherCompatibility[set];
-	}
+	bool IsSetLayoutCompatible(GraphicsPipelineID a, GraphicsPipelineID b, uint8_t set) const;
 
 	vk::Pipeline GetPipeline(GraphicsPipelineID id) const { return m_pipelines[id].get(); }
 

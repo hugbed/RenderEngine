@@ -22,7 +22,7 @@ public:
 
 	IMPLEMENT_MOVABLE_ONLY(Device);
 
-	static void Init(const PhysicalDevice& physicalDevice);
+	static void Init(const Instance& instance, const PhysicalDevice& physicalDevice);
 	static void Term();
 	
 	value_type Get() const { return value_type(m_device.get()); }
@@ -34,7 +34,7 @@ public:
 	VmaAllocator GetAllocator() const { return m_allocator; }
 
 private:
-	Device(const PhysicalDevice& physicalDevice);
+	Device(const Instance& instance, const PhysicalDevice& physicalDevice);
 
 	VmaAllocator m_allocator;
 	vk::UniqueDevice m_device;

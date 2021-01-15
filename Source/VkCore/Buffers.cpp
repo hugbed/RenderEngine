@@ -16,6 +16,11 @@ UniqueBuffer::~UniqueBuffer()
 	vmaDestroyBuffer(g_device->GetAllocator(), m_buffer, m_allocation);
 }
 
+void UniqueBuffer::Flush(VkDeviceSize offset, VkDeviceSize size) const
+{
+	vmaFlushAllocation(g_device->GetAllocator(), m_allocation, offset, size);
+}
+
 UniqueBufferWithStaging::UniqueBufferWithStaging(size_t size, vk::BufferUsageFlags bufferUsage)
 	: m_stagingBuffer(std::make_unique<UniqueBuffer>(
 		vk::BufferCreateInfo({}, size,  vk::BufferUsageFlagBits::eTransferSrc),

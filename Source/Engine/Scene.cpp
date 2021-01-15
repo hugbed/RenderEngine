@@ -100,7 +100,7 @@ void Scene::Update(uint32_t imageIndex)
 
 	// Upload to GPU
 	auto& uniformBuffer = GetViewUniformBuffer(imageIndex);
-	memcpy(uniformBuffer.GetMappedData(), reinterpret_cast<const void*>(&m_viewUniforms), sizeof(ViewUniforms));
+	memcpy(uniformBuffer.GetMappedData(), reinterpret_cast<const void*>(&m_viewUniforms), sizeof(LitViewProperties));
 }
 
 void Scene::DrawOpaqueObjects(vk::CommandBuffer commandBuffer, uint32_t frameIndex, RenderState& renderState) const
@@ -122,10 +122,10 @@ void Scene::DrawTransparentObjects(vk::CommandBuffer commandBuffer, uint32_t fra
 	DrawSceneObjects(commandBuffer, frameIndex, renderState, m_transparentDrawCache);
 }
 
-void Scene::DrawAllWithoutShading(vk::CommandBuffer& commandBuffer, uint32_t frameIndex, vk::PipelineLayout pipelineLayout) const
+void Scene::DrawAllWithoutShading(vk::CommandBuffer& commandBuffer, uint32_t frameIndex, vk::PipelineLayout modelPipelineLayout, vk::DescriptorSet modelDescriptorSet) const
 {
-	DrawWithoutShading(commandBuffer, frameIndex, pipelineLayout, m_opaqueDrawCache);
-	DrawWithoutShading(commandBuffer, frameIndex, pipelineLayout, m_transparentDrawCache);
+	DrawWithoutShading(commandBuffer, frameIndex, modelPipelineLayout, modelDescriptorSet, m_opaqueDrawCache);
+	DrawWithoutShading(commandBuffer, frameIndex, modelPipelineLayout, modelDescriptorSet, m_transparentDrawCache);
 }
 
 void Scene::DrawSceneObjects(vk::CommandBuffer commandBuffer, uint32_t frameIndex, RenderState& state, const std::vector<MeshDrawInfo>& drawCalls) const
@@ -145,7 +145,7 @@ void Scene::DrawSceneObjects(vk::CommandBuffer commandBuffer, uint32_t frameInde
 	{
 		auto shadingModel = drawItem.mesh.shadingModel;
 		vk::DescriptorSet viewDescriptorSet = m_materialSystem->GetDescriptorSet(DescriptorSetIndex::View, currentFrameIndex);
-		state.BindPipeline(commandBuffer, drawItem.mesh.graphicsPipelineID);
+		state.BindPipeline(commandBuffer, m_materialSystem->GetGraphicsPipelineID(drawItem.mesh.materialInstanceID));
 		state.BindView(commandBuffer, shadingModel, viewDescriptorSet);
 		state.BindModel(commandBuffer, drawItem.model);
 		state.BindMaterial(commandBuffer, drawItem.mesh.materialInstanceID);
@@ -155,10 +155,8 @@ void Scene::DrawSceneObjects(vk::CommandBuffer commandBuffer, uint32_t frameInde
 	}
 }
 
-void Scene::DrawWithoutShading(vk::CommandBuffer& commandBuffer, uint32_t frameIndex, vk::PipelineLayout pipelineLayout, const std::vector<MeshDrawInfo>& drawCalls) const
+void Scene::DrawWithoutShading(vk::CommandBuffer& commandBuffer, uint32_t frameIndex, vk::PipelineLayout modelPipelineLayout, vk::DescriptorSet modelDescriptorSet, const std::vector<MeshDrawInfo>& drawCalls) const
 {
-	return;
-
 	uint32_t currentFrameIndex = frameIndex % m_commandBufferPool->GetNbConcurrentSubmits();
 
 	if (drawCalls.empty() == false)
@@ -170,11 +168,10 @@ void Scene::DrawWithoutShading(vk::CommandBuffer& commandBuffer, uint32_t frameI
 		commandBuffer.bindIndexBuffer(m_indexBuffer->Get(), 0, vk::IndexType::eUint32);
 
 		// Bind the model transforms uniform buffer
-		vk::DescriptorSet descriptorSet = m_materialSystem->GetDescriptorSet(DescriptorSetIndex::Model);
 		commandBuffer.bindDescriptorSets(
 			vk::PipelineBindPoint::eGraphics,
-			pipelineLayout, (uint32_t)DescriptorSetIndex::Model,
-			1, &descriptorSet,
+			modelPipelineLayout, (uint32_t)DescriptorSetIndex::Model,
+			1, &modelDescriptorSet,
 			0, nullptr
 		);
 	}
@@ -185,8 +182,8 @@ void Scene::DrawWithoutShading(vk::CommandBuffer& commandBuffer, uint32_t frameI
 
 		// Set model index push constant
 		commandBuffer.pushConstants(
-			pipelineLayout,
-			vk::ShaderStageFlagBits::eFragment,
+			modelPipelineLayout,
+			vk::ShaderStageFlagBits::eVertex,
 			0, sizeof(uint32_t), &modelIndex
 		);
 
@@ -223,7 +220,7 @@ void Scene::LoadScene(vk::CommandBuffer commandBuffer)
 
 void Scene::LoadLights(vk::CommandBuffer buffer)
 {
-	int nbShadowCastingLights = 0;
+	m_nbShadowCastingLights = 0;
 	for (int i = 0; i < m_assimp.scene->mNumLights; ++i)
 	{
 		aiLight* aLight = m_assimp.scene->mLights[i];
@@ -231,7 +228,7 @@ void Scene::LoadLights(vk::CommandBuffer buffer)
 		aiNode* node = m_assimp.scene->mRootNode->FindNode(aLight->mName);
 		glm::mat4 transform = ::ComputeAiNodeGlobalTransform(node);
 
-		Light light;
+		PhongLight light;
 		light.type = (int)aLight->mType;
 		light.ambient = glm::vec4(0.2f, 0.2f, 0.2f, 1.0f); // add a little until we have global illumination
 		light.diffuse = ::ClampColor(glm::make_vec4(&aLight->mColorDiffuse.r));
@@ -254,20 +251,20 @@ void Scene::LoadLights(vk::CommandBuffer buffer)
 
 		// mustdo: different shadow types (2d, cascade, cube) will need a different index count
 		if (light.type == aiLightSource_DIRECTIONAL)
-			light.shadowIndex = nbShadowCastingLights++;
+			light.shadowIndex = m_nbShadowCastingLights++;
 
 		m_lights.push_back(std::move(light));
 	}
 
 	// todo: support no shadow casting lights
 
-	if (nbShadowCastingLights > 0)
+	if (m_nbShadowCastingLights > 0)
 	{
 		// Reserve shadow data for each light
 		m_shadowDataBuffer = std::make_unique<UniqueBuffer>(
 			vk::BufferCreateInfo(
 				{},
-				nbShadowCastingLights * sizeof(ShadowData),
+				m_nbShadowCastingLights * sizeof(ShadowData),
 				vk::BufferUsageFlagBits::eUniformBuffer
 			), VmaAllocationCreateInfo{ VMA_ALLOCATION_CREATE_MAPPED_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU }
 		);
@@ -328,9 +325,6 @@ void Scene::LoadSceneNodes(vk::CommandBuffer commandBuffer)
 			// Sort by material type
 			if (a.mesh.shadingModel != b.mesh.shadingModel)
 				return a.mesh.shadingModel < b.mesh.shadingModel;
-			// Then by material pipeline
-			else if (a.mesh.graphicsPipelineID != b.mesh.graphicsPipelineID)
-				return a.mesh.graphicsPipelineID < b.mesh.graphicsPipelineID;
 			// Then material instance
 			else if (a.mesh.materialInstanceID != b.mesh.materialInstanceID)
 				return a.mesh.materialInstanceID < b.mesh.materialInstanceID;
@@ -363,9 +357,6 @@ void Scene::SortTransparentObjects()
 			// Then by material type
 			if (a.mesh.shadingModel != b.mesh.shadingModel)
 				return a.mesh.shadingModel < b.mesh.shadingModel;
-			// Then by material
-			else if (a.mesh.graphicsPipelineID != b.mesh.graphicsPipelineID)
-				return a.mesh.graphicsPipelineID < b.mesh.graphicsPipelineID;
 			// Then material instance
 			else if (a.mesh.materialInstanceID != b.mesh.materialInstanceID)
 				return a.mesh.materialInstanceID < b.mesh.materialInstanceID;
@@ -385,10 +376,6 @@ void Scene::LoadNodeAndChildren(aiNode* node, glm::mat4 transform)
 
 	if (node->mNumMeshes > 0)
 	{
-		// Create a new model if it has mesh(es)
-		//ModelID model = m_modelSystem.CreateModel(
-		//	newTransform, {}, {}
-		//);
 		LoadModel(*node, newTransform);
 	}
 
@@ -414,7 +401,6 @@ ModelID Scene::LoadModel(const aiNode& fileNode, glm::mat4 transform)
 		mesh.nbIndices = (vk::DeviceSize)aMesh->mNumFaces * aMesh->mFaces->mNumIndices;
 		mesh.materialInstanceID = m_materials[aMesh->mMaterialIndex];
 		mesh.shadingModel = Material::ShadingModel::Lit;
-		mesh.graphicsPipelineID = m_materialSystem->GetGraphicsPipelineID(mesh.materialInstanceID);
 		size_t vertexIndexOffset = m_vertices.size();
 
 		bool hasUV = aMesh->HasTextureCoords(0);
@@ -446,7 +432,13 @@ ModelID Scene::LoadModel(const aiNode& fileNode, glm::mat4 transform)
 	}
 
 	ModelID id = m_modelSystem->CreateModel(transform, box, meshes);
+
+	// Transform the bounding box to world space
+	box.Transform(transform);
+
+	// Then add it to the global world bounding box
 	m_boundingBox = m_boundingBox.Union(box);
+
 	return id;
 }
 
@@ -482,7 +474,6 @@ void Scene::LoadMaterials(vk::CommandBuffer commandBuffer)
 		assimpMaterial->Get(AI_MATKEY_OPACITY, opacity);
 
 		// todo: reuse same materials for materials with the same name
-		materialInfo.constants.nbLights = m_lights.size();
 		materialInfo.pipelineProperties.isTransparent = opacity < 1.0f;
 
 //#ifdef DEBUG_MODE
@@ -527,7 +518,6 @@ void Scene::LoadMaterials(vk::CommandBuffer commandBuffer)
 		m_materials[i] = materialInstanceID;
 	}
 
-	m_materialSystem->UploadToGPU(*m_commandBufferPool);
 	m_textureCache->UploadTextures(*m_commandBufferPool);
 }
 
@@ -535,7 +525,7 @@ void Scene::CreateLightsUniformBuffers(vk::CommandBuffer commandBuffer)
 {
 	if (m_lights.empty() == false)
 	{
-		vk::DeviceSize bufferSize = m_lights.size() * sizeof(Light);
+		vk::DeviceSize bufferSize = m_lights.size() * sizeof(PhongLight);
 		m_lightsUniformBuffer = std::make_unique<UniqueBufferWithStaging>(bufferSize, vk::BufferUsageFlagBits::eUniformBuffer);
 		memcpy(m_lightsUniformBuffer->GetStagingMappedData(), reinterpret_cast<const void*>(m_lights.data()), bufferSize);
 		m_lightsUniformBuffer->CopyStagingToGPU(commandBuffer);
@@ -555,7 +545,7 @@ void Scene::CreateViewUniformBuffers()
 		m_viewUniformBuffers.emplace_back(
 			vk::BufferCreateInfo(
 				{},
-				sizeof(ViewUniforms),
+				sizeof(LitViewProperties),
 				vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eTransferSrc // needs TransferSrc?
 			), VmaAllocationCreateInfo{ VMA_ALLOCATION_CREATE_MAPPED_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU }
 		);
@@ -565,51 +555,45 @@ void Scene::CreateViewUniformBuffers()
 void Scene::UpdateMaterialDescriptors()
 {
 	// Create unlit view descriptor set (we don't have a material system for this yet)
+	// todo: this could be handled in skybox
 
-	// oh oh hhhhh m_descriptorPool
+	// Create descriptor sets if required (todo: do before this and skip the if)
 
-	if (!m_descriptorPool)
+	if (m_descriptorPool)
 	{
 		for (auto& set : m_unlitViewDescriptorSets)
 			set.reset();
 
-		m_descriptorPool.reset();
-
-		// Sum view descriptor set bindings for unlit shading
-		std::map<vk::DescriptorType, uint16_t> descriptorCount;
-		auto pipelineBindings = m_graphicsPipelineSystem->GetDescriptorSetLayoutBindings(m_skybox->GetGraphicsPipelineID());
-		for (auto& binding : pipelineBindings[(uint8_t)DescriptorSetIndex::View])
-			descriptorCount[binding.descriptorType] += binding.descriptorCount * m_commandBufferPool->GetNbConcurrentSubmits();
-
-		uint32_t maxNbSets = 0;
-		std::vector<vk::DescriptorPoolSize> poolSizes;
-		for (const auto& descriptor : descriptorCount)
-		{
-			poolSizes.emplace_back(descriptor.first, descriptor.second);
-			maxNbSets += descriptor.second;
-		}
-
-		m_descriptorPool = g_device->Get().createDescriptorPoolUnique(vk::DescriptorPoolCreateInfo(
-			vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-			maxNbSets,
-			static_cast<uint32_t>(poolSizes.size()), poolSizes.data()
-		));
+		g_device->Get().resetDescriptorPool(m_descriptorPool.get());
 	}
 
-	if (m_unlitViewDescriptorSets.empty())
-	{
-		vk::DescriptorSetLayout viewSetLayout = m_skybox->GetDescriptorSetLayout((uint8_t)DescriptorSetIndex::View);
-		std::vector<vk::DescriptorSetLayout> layouts(m_commandBufferPool->GetNbConcurrentSubmits(), viewSetLayout);
-		m_unlitViewDescriptorSets = g_device->Get().allocateDescriptorSetsUnique(vk::DescriptorSetAllocateInfo(
-			m_descriptorPool.get(), static_cast<uint32_t>(layouts.size()), layouts.data()
-		));
-	}
+	// Set 0 (view): { 1 uniform buffer for view uniforms per concurrentFrames }
+	std::array<std::pair<vk::DescriptorType, uint16_t>, 1ULL> descriptorCount = {
+		std::make_pair(vk::DescriptorType::eUniformBuffer, 1U),
+	};
+
+	SmallVector<vk::DescriptorPoolSize> poolSizes;
+	for (const auto& descriptor : descriptorCount)
+		poolSizes.emplace_back(descriptor.first, descriptor.second);
+
+	const uint32_t maxNbSets = m_commandBufferPool->GetNbConcurrentSubmits();
+	m_descriptorPool = g_device->Get().createDescriptorPoolUnique(vk::DescriptorPoolCreateInfo(
+		vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
+		maxNbSets,
+		static_cast<uint32_t>(poolSizes.size()), poolSizes.data()
+	));
+
+	vk::DescriptorSetLayout viewSetLayout = m_skybox->GetDescriptorSetLayout((uint8_t)DescriptorSetIndex::View);
+	std::vector<vk::DescriptorSetLayout> setLayouts(m_commandBufferPool->GetNbConcurrentSubmits(), viewSetLayout);
+	m_unlitViewDescriptorSets = g_device->Get().allocateDescriptorSetsUnique(vk::DescriptorSetAllocateInfo(
+		m_descriptorPool.get(), (uint32_t)setLayouts.size(), setLayouts.data()
+	));
 
 	for (int frameIndex = 0; frameIndex < m_commandBufferPool->GetNbConcurrentSubmits(); ++frameIndex)
 	{
 		auto& viewDescriptorSet = m_unlitViewDescriptorSets[frameIndex];
 
-		vk::DescriptorBufferInfo descriptorBufferInfoView(m_viewUniformBuffers[frameIndex].Get(), 0, sizeof(ViewUniforms));
+		vk::DescriptorBufferInfo descriptorBufferInfoView(m_viewUniformBuffers[frameIndex].Get(), 0, sizeof(LitViewProperties));
 		std::vector<vk::WriteDescriptorSet> writeDescriptorSets = {
 			vk::WriteDescriptorSet(
 				viewDescriptorSet.get(), 0, {},
@@ -620,35 +604,37 @@ void Scene::UpdateMaterialDescriptors()
 		g_device->Get().updateDescriptorSets(static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
 	}
 
-	// Bind view to lit material descriptor set
-	for (int frameIndex = 0; frameIndex < (int)m_commandBufferPool->GetNbConcurrentSubmits(); ++frameIndex)
-	{
-		vk::DescriptorSet viewDescriptorSet = m_materialSystem->GetDescriptorSet(DescriptorSetIndex::View, frameIndex);
+	MaterialSystem::ShaderConstants constants = {
+		MaterialSystem::VertexShaderConstants{
+			(uint32_t)m_modelSystem->GetModelCount()
+		},
+		MaterialSystem::FragmentShaderConstants{
+			(uint32_t)m_lights.size(),
+			(uint32_t)m_nbShadowCastingLights,
+			(uint32_t)m_textureCache->GetTextureCount(ImageViewType::e2D),
+			(uint32_t)m_textureCache->GetTextureCount(ImageViewType::eCube),
+			(uint32_t)m_materialSystem->GetMaterialInstanceCount()
+		}
+	};
+	m_materialSystem->UploadToGPU(*m_commandBufferPool, std::move(constants));
 
-		vk::DescriptorBufferInfo descriptorBufferInfoView(m_viewUniformBuffers[frameIndex].Get(), 0, sizeof(ViewUniforms));
-		std::vector<vk::WriteDescriptorSet> writeDescriptorSets = {
-			vk::WriteDescriptorSet(
-				viewDescriptorSet, 0, {},
-				1, vk::DescriptorType::eUniformBuffer, nullptr, &descriptorBufferInfoView
-			) // binding = 0
-		};
+	// Bind view to material descriptor set
+	SmallVector<vk::Buffer> viewUniformBuffers;
+	viewUniformBuffers.reserve(m_viewUniformBuffers.size());
+	for (int i = 0; i < (int)m_viewUniformBuffers.size(); ++i)
+		viewUniformBuffers.push_back(m_viewUniformBuffers[i].Get());
 
-		vk::DescriptorBufferInfo descriptorBufferInfoLights(m_lightsUniformBuffer->Get(), 0, sizeof(Light) * m_lights.size());
-		writeDescriptorSets.push_back(
-			vk::WriteDescriptorSet(
-				viewDescriptorSet, 1, {},
-				1, vk::DescriptorType::eUniformBuffer, nullptr, &descriptorBufferInfoLights
-			) // binding = 1
-		);
-
-		g_device->Get().updateDescriptorSets(static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
-	}
+	m_materialSystem->UpdateViewDescriptorSets(
+		viewUniformBuffers, m_viewUniformBuffers[0].Size(),
+		m_lightsUniformBuffer->Get(), m_lightsUniformBuffer->Size()
+	);
 
 	// Bind model to material descriptor set
-	{
-		vk::DescriptorSet modelDescriptorSet = m_materialSystem->GetDescriptorSet(DescriptorSetIndex::Model);
-		m_modelSystem->BindModels(modelDescriptorSet, 0); // binding 0
-	}
+	const auto& modelUniformBuffer = m_modelSystem->GetUniformBuffer();
+	m_materialSystem->UpdateModelDescriptorSet(modelUniformBuffer.Get(), modelUniformBuffer.Size());
+
+	// Update material descriptor sets
+	m_materialSystem->UpdateMaterialDescriptorSet();
 }
 
 void Scene::UpdateShadowMapsTransforms(const std::vector<glm::mat4>& transforms)
@@ -688,7 +674,7 @@ void Scene::InitShadowMaps(const std::vector<const ShadowMap*>& shadowMaps)
 		}
 	}
 
-	std::vector<vk::DescriptorImageInfo> texturesInfo;
+	SmallVector<vk::DescriptorImageInfo, 16> texturesInfo;
 	texturesInfo.reserve(nbShadowTextures);
 	for (int i = 0; i < nbShadowTextures; ++i)
 	{
@@ -713,22 +699,28 @@ void Scene::InitShadowMaps(const std::vector<const ShadowMap*>& shadowMaps)
 	}
 
 	// Update shadow system shader view descriptor sets
+	m_materialSystem->UpdateShadowDescriptorSets(
+		texturesInfo, m_shadowDataBuffer->Get(), m_shadowDataBuffer->Size()
+	);
+
+	// todo: move this to shadow system
+
+	// Update shadow system model descriptor set
+	const UniqueBuffer& uniformBuffer = m_modelSystem->GetUniformBuffer();
+	const auto& transforms = m_modelSystem->GetTransforms();
+	vk::DescriptorBufferInfo descriptorBufferInfo(uniformBuffer.Get(), 0, uniformBuffer.Size());
+
 	std::vector<vk::WriteDescriptorSet> writeDescriptorSets;
-	for (int i = 0; i < m_commandBufferPool->GetNbConcurrentSubmits(); ++i)
+	for (auto& shadowMap : shadowMaps)
 	{
-		vk::DescriptorSet viewDescriptorSet = m_materialSystem->GetDescriptorSet(DescriptorSetIndex::View, i);
-
-		writeDescriptorSets.push_back(vk::WriteDescriptorSet(
-			viewDescriptorSet, kShadowMapsBinding, {},
-			static_cast<uint32_t>(texturesInfo.size()),
-			vk::DescriptorType::eCombinedImageSampler, texturesInfo.data(), nullptr
-		));
-
-		vk::DescriptorBufferInfo descriptorBufferInfo(m_shadowDataBuffer->Get(), 0, shadowMaps.size() * sizeof(ShadowData));
-		writeDescriptorSets.push_back(vk::WriteDescriptorSet(
-			viewDescriptorSet, kShadowDataBinding, {},
-			1, vk::DescriptorType::eUniformBuffer, nullptr, &descriptorBufferInfo
-		));
+		const uint32_t binding = 0;
+		vk::DescriptorSet descriptorSet = shadowMap->GetDescriptorSet(DescriptorSetIndex::Model);
+		writeDescriptorSets.push_back(
+			vk::WriteDescriptorSet(
+				descriptorSet, binding, {},
+				1, vk::DescriptorType::eUniformBuffer, nullptr, &descriptorBufferInfo
+			)
+		);
 	}
 
 	g_device->Get().updateDescriptorSets(

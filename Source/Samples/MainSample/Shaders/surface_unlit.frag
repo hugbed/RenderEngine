@@ -15,14 +15,16 @@ layout(location = 0) out vec4 outColor;
 
 // --- Set 2 (Material Uniforms) --- //
 
-layout(set = 2, binding = 0) uniform MaterialProperties {
-    vec4 baseColor;
-    // To use the same layout as the lit shader
-    vec4 secondaryColor; float padding;
-} material;
+layout(set = 2, binding = 0)
+    uniform MaterialProperties {
+        vec4 baseColor;
+        // To use the same layout as the lit shader
+        vec4 secondaryColor; float padding;
+    } material; // todo: this should be an array
 
 // Texture for base color
-layout(set = 2, binding = 1) uniform sampler2D texSamplers[1];
+layout(set = 2, binding = 1)
+    uniform sampler2D texSamplers[1];
 
 void main() {
     outColor = material.baseColor * texture(texSamplers[0], fragTexCoord);

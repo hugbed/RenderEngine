@@ -32,7 +32,7 @@ struct Light {
     float outerCutoff; // spot (cos of the outer angle)
 
     // shadows
-    int shadowIndex;
+    uint shadowIndex;
 };
 
 vec4 PhongLighting(

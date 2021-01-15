@@ -24,11 +24,17 @@
 class ShadowMap
 {
 public:
+	struct VertexShaderConstants
+	{
+		uint32_t nbModels = 64;
+	};
+
 	ShadowMap(
 		vk::Extent2D extent,
-		const Light& light, 
+		const PhongLight& light,
 		GraphicsPipelineSystem& graphicsPipelineSystem,
-		const Scene& scene
+		const Scene& scene,
+		VertexShaderConstants constants
 	);
 
 	void Reset(vk::Extent2D extent);
@@ -45,7 +51,18 @@ public:
 		return m_viewUniforms.proj * m_viewUniforms.view;
 	}
 
+	vk::DescriptorSet GetDescriptorSet(DescriptorSetIndex setIndex) const
+	{
+		return m_descriptorSets[(size_t)setIndex].get();
+	}
+
+	// Set 0
 	void UpdateViewUniforms();
+
+	// Set 1
+	void UpdateModelDescriptorSet(
+		vk::Buffer modelUniformBuffer, size_t modelBufferSize
+	) const;
 
 private:
 	void CreateDepthImage();
@@ -72,7 +89,7 @@ private:
 
 	vk::Extent2D m_extent;
 	const Scene* m_scene{ nullptr };
-	Light m_light;
+	PhongLight m_light;
 
 	std::unique_ptr<Image> m_depthImage;
 	vk::UniqueSampler m_sampler;
@@ -82,8 +99,9 @@ private:
 	gsl::not_null<GraphicsPipelineSystem*> m_graphicsPipelineSystem;
 	GraphicsPipelineID m_graphicsPipelineID;
 
-	ViewUniforms m_viewUniforms;
+	VertexShaderConstants m_constants;
+	LitViewProperties m_viewUniforms;
 	vk::UniqueDescriptorPool m_descriptorPool; // todo: group descriptor pools
-	vk::UniqueDescriptorSet m_viewDescriptorSet;
+	std::array<vk::UniqueDescriptorSet, 2> m_descriptorSets; // View, Model
 	std::unique_ptr<UniqueBuffer> m_viewUniformBuffer;
 };
