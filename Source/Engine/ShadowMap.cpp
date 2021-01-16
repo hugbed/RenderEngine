@@ -24,11 +24,13 @@ ShadowMap::ShadowMap(
 	vk::Extent2D extent,
 	const PhongLight& light,
 	GraphicsPipelineSystem& graphicsPipelineSystem,
+	ModelSystem& modelSystem,
 	const Scene& scene,
 	VertexShaderConstants constants
 )
 	: m_extent(extent)
 	, m_graphicsPipelineSystem(&graphicsPipelineSystem)
+	, m_modelSystem(&modelSystem)
 	, m_scene(&scene)
 	, m_light(light)
 	, m_constants(constants)
@@ -90,9 +92,42 @@ void ShadowMap::Render(vk::CommandBuffer& commandBuffer, uint32_t frameIndex) co
 
 		uint8_t modelSetIndex = (uint8_t)DescriptorSetIndex::Model;
 		vk::PipelineLayout modelPipelineLayout = m_graphicsPipelineSystem->GetPipelineLayout(m_graphicsPipelineID, modelSetIndex);
-		m_scene->DrawAllWithoutShading(commandBuffer, frameIndex, modelPipelineLayout, m_descriptorSets[modelSetIndex].get());
+
+		// Bind the one big vertex + index buffers
+		m_modelSystem->BindGeometry(commandBuffer);
+
+		// Bind the model transforms uniform buffer
+		commandBuffer.bindDescriptorSets(
+			vk::PipelineBindPoint::eGraphics,
+			modelPipelineLayout, (uint32_t)DescriptorSetIndex::Model,
+			1, &m_descriptorSets[modelSetIndex].get(),
+			0, nullptr
+		);
+
+		Draw(commandBuffer, m_scene->GetOpaqueDrawCommands());
+		Draw(commandBuffer, m_scene->GetTransparentDrawCommands());
 	}
 	commandBuffer.endRenderPass();
+}
+
+void ShadowMap::Draw(vk::CommandBuffer& commandBuffer, const std::vector<MeshDrawInfo>& drawCalls) const
+{
+	uint8_t modelSetIndex = (uint8_t)DescriptorSetIndex::Model;
+	vk::PipelineLayout modelPipelineLayout = m_graphicsPipelineSystem->GetPipelineLayout(m_graphicsPipelineID, modelSetIndex);
+
+	for (const auto& drawItem : drawCalls)
+	{
+		uint32_t modelIndex = drawItem.model;
+
+		// Set model index push constant
+		commandBuffer.pushConstants(
+			modelPipelineLayout,
+			vk::ShaderStageFlagBits::eVertex,
+			0, sizeof(uint32_t), &modelIndex
+		);
+
+		commandBuffer.drawIndexed(drawItem.mesh.nbIndices, 1, drawItem.mesh.indexOffset, 0, 0);
+	}
 }
 
 void ShadowMap::CreateDepthImage()

@@ -33,6 +33,7 @@ public:
 		vk::Extent2D extent,
 		const PhongLight& light,
 		GraphicsPipelineSystem& graphicsPipelineSystem,
+		ModelSystem& modelSystem,
 		const Scene& scene,
 		VertexShaderConstants constants
 	);
@@ -59,12 +60,9 @@ public:
 	// Set 0
 	void UpdateViewUniforms();
 
-	// Set 1
-	void UpdateModelDescriptorSet(
-		vk::Buffer modelUniformBuffer, size_t modelBufferSize
-	) const;
-
 private:
+	void Draw(vk::CommandBuffer& commandBuffer, const std::vector<MeshDrawInfo>& drawCalls) const;
+
 	void CreateDepthImage();
 
 	void CreateSampler();
@@ -97,6 +95,7 @@ private:
 	vk::UniqueFramebuffer m_framebuffer;
 
 	gsl::not_null<GraphicsPipelineSystem*> m_graphicsPipelineSystem;
+	gsl::not_null<ModelSystem*> m_modelSystem;
 	GraphicsPipelineID m_graphicsPipelineID;
 
 	VertexShaderConstants m_constants;

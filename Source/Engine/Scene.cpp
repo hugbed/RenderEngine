@@ -382,7 +382,6 @@ ModelID Scene::LoadModel(const aiNode& fileNode, glm::mat4 transform)
 
 	std::vector<Mesh> meshes;
 	meshes.reserve(m_assimp.scene->mNumMeshes);
-	m_modelSystem->ReserveMeshes(m_assimp.scene->mNumMeshes);
 
 	for (size_t i = 0; i < fileNode.mNumMeshes; ++i)
 	{

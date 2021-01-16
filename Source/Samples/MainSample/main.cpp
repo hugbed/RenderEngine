@@ -240,7 +240,7 @@ protected:
 				// todo: support other light types for shadows
 				if (light.type == aiLightSource_DIRECTIONAL)
 				{
-					ShadowMap map(kShadowMapExtent, light, m_graphicsPipelineSystem, *m_scene, constants);
+					ShadowMap map(kShadowMapExtent, light, m_graphicsPipelineSystem, m_modelSystem, *m_scene, constants);
 					m_shadowMaps.push_back(std::move(map));
 				}
 			}
