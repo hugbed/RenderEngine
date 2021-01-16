@@ -22,6 +22,7 @@
 
 #include "Camera.h"
 #include "TextureCache.h"
+#include "Light.h"
 #include "Material.h"
 #include "DescriptorSetLayouts.h"
 #include "Model.h"
@@ -65,6 +66,7 @@ public:
 			m_graphicsPipelineSystem,
 			m_textureCache,
 			m_modelSystem,
+			m_lightSystem,
 			m_materialSystem,
 			*m_renderPass,
 			m_swapchain->GetImageDescription().extent)
@@ -235,7 +237,7 @@ protected:
 		}
 		else
 		{
-			for (const auto& light : m_scene->GetLights())
+			for (const auto& light : m_lightSystem.GetLights())
 			{
 				// todo: support other light types for shadows
 				if (light.type == aiLightSource_DIRECTIONAL)
@@ -470,6 +472,7 @@ private:
 	ShaderSystem m_shaderSystem;
 	GraphicsPipelineSystem m_graphicsPipelineSystem;
 	TextureCache m_textureCache;
+	LightSystem m_lightSystem;
 	MaterialSystem m_materialSystem;
 	ModelSystem m_modelSystem;
 

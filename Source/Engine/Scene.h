@@ -37,6 +37,7 @@ public:
 		GraphicsPipelineSystem& graphicsPipelineSystem,
 		TextureCache& textureCache,
 		ModelSystem& modelSystem,
+		LightSystem& lightSystem,
 		MaterialSystem& materialSystem,
 		const RenderPass& renderPass, vk::Extent2D imageExtent
 	);
@@ -64,8 +65,6 @@ public:
 	BoundingBox GetBoundingBox() const { return m_boundingBox; }
 
 	void ResetCamera();
-
-	const std::vector<PhongLight>& GetLights() const { return m_lights; }
 
 	void InitShadowMaps(const std::vector<const ShadowMap*>& shadowMaps);
 
@@ -117,8 +116,6 @@ private:
 	
 	// --- Lights --- //
 
-	std::vector<PhongLight> m_lights;
-
 	uint32_t m_nbShadowCastingLights = 0;
 	std::unique_ptr<UniqueBuffer> m_shadowDataBuffer;
 
@@ -127,7 +124,6 @@ private:
 	LitViewProperties m_viewUniforms;
 	std::vector<vk::UniqueDescriptorSet> m_unlitViewDescriptorSets;
 	std::vector<UniqueBuffer> m_viewUniformBuffers; // one per in flight frame since these change every frame
-	std::unique_ptr<UniqueBufferWithStaging> m_lightsUniformBuffer;
 
 	// --- Model --- //
 	
@@ -139,6 +135,7 @@ private:
 	// --- Materials --- ///
 
 	gsl::not_null<TextureCache*> m_textureCache;
+	gsl::not_null<LightSystem*> m_lightSystem;
 	gsl::not_null<MaterialSystem*> m_materialSystem;
 	std::vector<MaterialInstanceID> m_materials; // todo: don't need that
 

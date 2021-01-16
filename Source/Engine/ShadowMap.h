@@ -82,8 +82,8 @@ private:
 	void UpdateDescriptorSets();
 
 private:
-	const char* vertexShaderFile = "shadow_map_vert.spv";
-	const char* fragmentShaderFile = "shadow_map_frag.spv";
+	static constexpr char* vertexShaderFile = "shadow_map_vert.spv";
+	static constexpr char* fragmentShaderFile = "shadow_map_frag.spv";
 
 	vk::Extent2D m_extent;
 	const Scene* m_scene{ nullptr };

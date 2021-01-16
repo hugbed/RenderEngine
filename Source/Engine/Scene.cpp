@@ -44,6 +44,7 @@ Scene::Scene(
 	GraphicsPipelineSystem& graphicsPipelineSystem,
 	TextureCache& textureCache,
 	ModelSystem& modelSystem,
+	LightSystem& lightSystem,
 	MaterialSystem& materialSystem,
 	const RenderPass& renderPass, vk::Extent2D imageExtent
 )
@@ -55,6 +56,7 @@ Scene::Scene(
 	, m_imageExtent(imageExtent)
 	, m_modelSystem(&modelSystem)
 	, m_textureCache(&textureCache)
+	, m_lightSystem(&lightSystem)
 	, m_materialSystem(&materialSystem)
 	, m_camera(
 		1.0f * glm::vec3(1.0f, 1.0f, 1.0f),
@@ -215,6 +217,7 @@ void Scene::LoadScene(vk::CommandBuffer commandBuffer)
 void Scene::LoadLights(vk::CommandBuffer buffer)
 {
 	m_nbShadowCastingLights = 0;
+	m_lightSystem->ReserveLights(m_assimp.scene->mNumLights);
 	for (int i = 0; i < m_assimp.scene->mNumLights; ++i)
 	{
 		aiLight* aLight = m_assimp.scene->mLights[i];
@@ -247,7 +250,7 @@ void Scene::LoadLights(vk::CommandBuffer buffer)
 		if (light.type == aiLightSource_DIRECTIONAL)
 			light.shadowIndex = m_nbShadowCastingLights++;
 
-		m_lights.push_back(std::move(light));
+		m_lightSystem->AddLight(std::move(light));
 	}
 
 	// todo: support no shadow casting lights
@@ -518,16 +521,7 @@ void Scene::LoadMaterials(vk::CommandBuffer commandBuffer)
 
 void Scene::CreateLightsUniformBuffers(vk::CommandBuffer commandBuffer)
 {
-	if (m_lights.empty() == false)
-	{
-		vk::DeviceSize bufferSize = m_lights.size() * sizeof(PhongLight);
-		m_lightsUniformBuffer = std::make_unique<UniqueBufferWithStaging>(bufferSize, vk::BufferUsageFlagBits::eUniformBuffer);
-		memcpy(m_lightsUniformBuffer->GetStagingMappedData(), reinterpret_cast<const void*>(m_lights.data()), bufferSize);
-		m_lightsUniformBuffer->CopyStagingToGPU(commandBuffer);
-
-		// We won't need the staging buffer after the initial upload
-		m_commandBufferPool->DestroyAfterSubmit(m_lightsUniformBuffer->ReleaseStagingBuffer());
-	}
+	m_lightSystem->UploadToGPU(*m_commandBufferPool);
 }
 
 void Scene::CreateViewUniformBuffers()
@@ -604,7 +598,7 @@ void Scene::UpdateMaterialDescriptors()
 			(uint32_t)m_modelSystem->GetModelCount()
 		},
 		MaterialSystem::FragmentShaderConstants{
-			(uint32_t)m_lights.size(),
+			(uint32_t)m_lightSystem->GetLightCount(),
 			(uint32_t)m_nbShadowCastingLights,
 			(uint32_t)m_textureCache->GetTextureCount(ImageViewType::e2D),
 			(uint32_t)m_textureCache->GetTextureCount(ImageViewType::eCube),
@@ -619,9 +613,10 @@ void Scene::UpdateMaterialDescriptors()
 	for (int i = 0; i < (int)m_viewUniformBuffers.size(); ++i)
 		viewUniformBuffers.push_back(m_viewUniformBuffers[i].Get());
 
+	auto [lightsBuffer, size] = m_lightSystem->GetUniformBuffer();
 	m_materialSystem->UpdateViewDescriptorSets(
 		viewUniformBuffers, m_viewUniformBuffers[0].Size(),
-		m_lightsUniformBuffer->Get(), m_lightsUniformBuffer->Size()
+		lightsBuffer, size
 	);
 
 	// Bind model to material descriptor set
