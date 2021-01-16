@@ -27,18 +27,6 @@ struct ShadowData
 
 enum class CameraMode { OrbitCamera, FreeCamera };
 
-struct Vertex
-{
-	glm::vec3 pos;
-	glm::vec2 texCoord;
-	glm::vec3 normal;
-
-	bool operator==(const Vertex& other) const
-	{
-		return pos == other.pos && texCoord == other.texCoord && normal == other.normal;
-	}
-};
-
 class Scene
 {
 public:
@@ -142,13 +130,7 @@ private:
 	
 	BoundingBox m_boundingBox;
 
-	// Should be in model system?
 	float m_maxVertexDist = 0.0f;
-	std::vector<Vertex> m_vertices;
-	std::vector<uint32_t> m_indices;
-	std::unique_ptr<UniqueBufferWithStaging> m_vertexBuffer{ nullptr };
-	std::unique_ptr<UniqueBufferWithStaging> m_indexBuffer{ nullptr };
-
 	gsl::not_null<ModelSystem*> m_modelSystem;
 
 	// --- Materials --- ///

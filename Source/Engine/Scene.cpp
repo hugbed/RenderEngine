@@ -135,10 +135,7 @@ void Scene::DrawSceneObjects(vk::CommandBuffer commandBuffer, uint32_t frameInde
 	// Bind the one big vertex + index buffers
 	if (drawCalls.empty() == false)
 	{
-		vk::DeviceSize offsets[] = { 0 };
-		vk::Buffer vertexBuffers[] = { m_vertexBuffer->Get() };
-		commandBuffer.bindVertexBuffers(0, 1, vertexBuffers, offsets);
-		commandBuffer.bindIndexBuffer(m_indexBuffer->Get(), 0, vk::IndexType::eUint32);
+		m_modelSystem->BindGeometry(commandBuffer);
 	}
 
 	for (const auto& drawItem : drawCalls)
@@ -162,10 +159,7 @@ void Scene::DrawWithoutShading(vk::CommandBuffer& commandBuffer, uint32_t frameI
 	if (drawCalls.empty() == false)
 	{
 		// Bind the one big vertex + index buffers
-		vk::DeviceSize offsets[] = { 0 };
-		vk::Buffer vertexBuffers[] = { m_vertexBuffer->Get() };
-		commandBuffer.bindVertexBuffers(0, 1, vertexBuffers, offsets);
-		commandBuffer.bindIndexBuffer(m_indexBuffer->Get(), 0, vk::IndexType::eUint32);
+		m_modelSystem->BindGeometry(commandBuffer);
 
 		// Bind the model transforms uniform buffer
 		commandBuffer.bindDescriptorSets(
@@ -296,13 +290,12 @@ void Scene::LoadCamera()
 
 void Scene::LoadSceneNodes(vk::CommandBuffer commandBuffer)
 {
-	m_vertices.clear();
-	m_indices.clear();
+	assert(m_modelSystem->GetModelCount() == 0);
 	m_maxVertexDist = 0.0f;
 
 	LoadNodeAndChildren(m_assimp.scene->mRootNode, glm::mat4(1.0f));
 
-	m_modelSystem->UploadUniformBuffer(*m_commandBufferPool);
+	m_modelSystem->UploadToGPU(*m_commandBufferPool);
 
 	m_modelSystem->ForEachMesh([this](ModelID id, Mesh mesh) {
 		MeshDrawInfo info = { id, std::move(mesh) };
@@ -375,9 +368,7 @@ void Scene::LoadNodeAndChildren(aiNode* node, glm::mat4 transform)
 	glm::mat4 newTransform = transform * nodeTransform;
 
 	if (node->mNumMeshes > 0)
-	{
 		LoadModel(*node, newTransform);
-	}
 
 	for (int i = 0; i < node->mNumChildren; ++i)
 		LoadNodeAndChildren(node->mChildren[i], newTransform);
@@ -388,25 +379,31 @@ ModelID Scene::LoadModel(const aiNode& fileNode, glm::mat4 transform)
 	constexpr float maxFloat = std::numeric_limits<float>::max();
 
 	BoundingBox box;
-	
+
 	std::vector<Mesh> meshes;
 	meshes.reserve(m_assimp.scene->mNumMeshes);
+	m_modelSystem->ReserveMeshes(m_assimp.scene->mNumMeshes);
 
 	for (size_t i = 0; i < fileNode.mNumMeshes; ++i)
 	{
 		aiMesh* aMesh = m_assimp.scene->mMeshes[fileNode.mMeshes[i]];
 
-		Mesh mesh;
-		mesh.indexOffset = m_indices.size();
-		mesh.nbIndices = (vk::DeviceSize)aMesh->mNumFaces * aMesh->mFaces->mNumIndices;
-		mesh.materialInstanceID = m_materials[aMesh->mMaterialIndex];
-		mesh.shadingModel = Material::ShadingModel::Lit;
-		size_t vertexIndexOffset = m_vertices.size();
+		{
+			Mesh mesh;
+			mesh.indexOffset = m_modelSystem->GetIndexCount();
+			mesh.nbIndices = (vk::DeviceSize)aMesh->mNumFaces * aMesh->mFaces->mNumIndices;
+			mesh.materialInstanceID = m_materials[aMesh->mMaterialIndex];
+			mesh.shadingModel = Material::ShadingModel::Lit;
+			meshes.push_back(std::move(mesh));
+		}
+
+		size_t vertexIndexOffset = m_modelSystem->GetVertexCount();
 
 		bool hasUV = aMesh->HasTextureCoords(0);
 		bool hasColor = aMesh->HasVertexColors(0);
 		bool hasNormals = aMesh->HasNormals();
 
+		m_modelSystem->ReserveVertices(aMesh->mNumVertices);
 		for (size_t v = 0; v < aMesh->mNumVertices; ++v)
 		{
 			Vertex vertex;
@@ -419,16 +416,15 @@ ModelID Scene::LoadModel(const aiNode& fileNode, glm::mat4 transform)
 			box.min = (glm::min)(box.min, vertex.pos);
 			box.max = (glm::max)(box.max, vertex.pos);
 
-			m_vertices.push_back(vertex);
+			m_modelSystem->AddVertex(std::move(vertex));
 		}
 
 		for (size_t f = 0; f < aMesh->mNumFaces; ++f)
 		{
+			m_modelSystem->ReserveIndices((size_t)aMesh->mNumFaces * aMesh->mFaces->mNumIndices);
 			for (size_t fi = 0; fi < aMesh->mFaces->mNumIndices; ++fi)
-				m_indices.push_back(aMesh->mFaces[f].mIndices[fi] + vertexIndexOffset);
+				m_modelSystem->AddIndex(aMesh->mFaces[f].mIndices[fi] + vertexIndexOffset);
 		}
-
-		meshes.push_back(std::move(mesh));
 	}
 
 	ModelID id = m_modelSystem->CreateModel(transform, box, meshes);
@@ -732,28 +728,6 @@ void Scene::InitShadowMaps(const std::vector<const ShadowMap*>& shadowMaps)
 
 void Scene::UploadToGPU(vk::CommandBuffer& commandBuffer)
 {
-	// Upload Geometry
-	{
-		vk::DeviceSize bufferSize = sizeof(m_vertices[0]) * m_vertices.size();
-		m_vertexBuffer = std::make_unique<UniqueBufferWithStaging>(bufferSize, vk::BufferUsageFlagBits::eVertexBuffer);
-		memcpy(m_vertexBuffer->GetStagingMappedData(), reinterpret_cast<const void*>(m_vertices.data()), bufferSize);
-		m_vertexBuffer->CopyStagingToGPU(commandBuffer);
-
-		// We won't need the staging buffer after the initial upload
-		m_commandBufferPool->DestroyAfterSubmit(m_vertexBuffer->ReleaseStagingBuffer());
-		m_vertices.clear();
-	}
-	{
-		vk::DeviceSize bufferSize = sizeof(m_indices[0]) * m_indices.size();
-		m_indexBuffer = std::make_unique<UniqueBufferWithStaging>(bufferSize, vk::BufferUsageFlagBits::eIndexBuffer);
-		memcpy(m_indexBuffer->GetStagingMappedData(), reinterpret_cast<const void*>(m_indices.data()), bufferSize);
-		m_indexBuffer->CopyStagingToGPU(commandBuffer);
-
-		// We won't need the staging buffer after the initial upload
-		m_commandBufferPool->DestroyAfterSubmit(m_indexBuffer->ReleaseStagingBuffer());
-		m_indices.clear();
-	}
-
 	// Skybox
 	m_skybox->UploadToGPU(commandBuffer, *m_commandBufferPool);
 }

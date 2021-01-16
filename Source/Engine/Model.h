@@ -13,6 +13,18 @@
 
 #include <memory>
 
+struct Vertex
+{
+	glm::vec3 pos;
+	glm::vec2 texCoord;
+	glm::vec3 normal;
+
+	bool operator==(const Vertex& other) const
+	{
+		return pos == other.pos && texCoord == other.texCoord && normal == other.normal;
+	}
+};
+
 struct Mesh
 {
 	vk::DeviceSize indexOffset = 0;
@@ -32,64 +44,38 @@ struct MeshDrawInfo
 class ModelSystem
 {
 public:
-	ModelID CreateModel(glm::mat4 transform, BoundingBox boundingBox, const std::vector<Mesh>& meshes)
-	{
-		ModelID id = m_transforms.size();
-		m_transforms.push_back(std::move(transform));
-		m_boundingBoxes.push_back(std::move(boundingBox));
-		m_meshEntries.push_back(Entry::AppendToOutput(meshes, m_meshes));
+	ModelID CreateModel(glm::mat4 transform, BoundingBox boundingBox, const std::vector<Mesh>& meshes);
 
-		// Upload transform
+	size_t GetModelCount() const { return m_transforms.size(); }
 
-		return id;
-	}
+	void UploadToGPU(CommandBufferPool& commandBufferPool);
 
-	void SetLocalAABB(ModelID id, const BoundingBox& box)
-	{
-		m_boundingBoxes[id] = m_transforms[id] * box;
-	}
+	// Vertices, Indices
+	void BindGeometry(const vk::CommandBuffer& commandBuffer) const;
 
-	const BoundingBox& GetWorldAABB(ModelID id)
-	{
-		return m_boundingBoxes[id];
-	}
+	// --- Vertices, meshes and indices --- //
 
-	glm::mat4 GetTransform(ModelID id) const
-	{
-		return m_transforms[id];
-	}
+	// Reserves additional space for "count" items
+	void ReserveVertices(size_t count) { m_vertices.reserve(m_vertices.size() + count); }
+	void ReserveIndices(size_t count) { m_indices.reserve(m_indices.size() + count); }
+	void AddVertex(Vertex vertex) { m_vertices.push_back(std::move(vertex)); }
+	void AddIndex(uint32_t index) { m_indices.push_back(index); }
+	size_t GetVertexCount() const { return m_vertices.size(); }
+	size_t GetIndexCount() const { return m_indices.size(); }
 
-	const UniqueBuffer& GetUniformBuffer() const
-	{
-		return *m_uniformBuffer;
-	}
+	// --- Bounding boxes --- //
 
-	const std::vector<glm::mat4>& GetTransforms() const
-	{
-		return m_transforms;
-	}
+	void SetLocalAABB(ModelID id, const BoundingBox& box) { m_boundingBoxes[id] = m_transforms[id] * box; }
 
-	size_t GetModelCount() const
-	{
-		return m_transforms.size();
-	}
+	const BoundingBox& GetWorldAABB(ModelID id) { return m_boundingBoxes[id]; }
 
-	void UploadUniformBuffer(CommandBufferPool& commandBufferPool)
-	{
-		if (m_uniformBuffer == nullptr)
-		{
-			const void* data = reinterpret_cast<const void*>(m_transforms.data());
-			size_t size = m_transforms.size() * sizeof(m_transforms[0]);
-			vk::BufferCreateInfo bufferInfo({}, size, vk::BufferUsageFlagBits::eUniformBuffer);
-			VmaAllocationCreateInfo allocInfo{ VMA_ALLOCATION_CREATE_MAPPED_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU };
-			m_uniformBuffer = std::make_unique<UniqueBuffer>(bufferInfo, allocInfo);
-		}
+	// --- Transforms --- //
 
-		// todo: handle resize
-		size_t writeSize = m_transforms.size() * sizeof(m_transforms[0]);
-		memcpy((char*)m_uniformBuffer->GetMappedData(), m_transforms.data(), writeSize);
-		m_uniformBuffer->Flush(0, writeSize);
-	}
+	glm::mat4 GetTransform(ModelID id) const { return m_transforms[id]; }
+
+	const UniqueBuffer& GetUniformBuffer() const { return *m_transformsBuffer; }
+
+	const std::vector<glm::mat4>& GetTransforms() const { return m_transforms; }
 
 	template <class Func>
 	void ForEachMesh(Func f)
@@ -109,9 +95,15 @@ private:
 	std::vector<glm::mat4> m_transforms;
 	std::vector<Entry> m_meshEntries;
 
+	// Contains all geometry (vertices and indices)
+	std::vector<Vertex> m_vertices;
+	std::vector<uint32_t> m_indices;
+	std::unique_ptr<UniqueBufferWithStaging> m_vertexBuffer{ nullptr };
+	std::unique_ptr<UniqueBufferWithStaging> m_indexBuffer{ nullptr };
+
 	// Contains all meshes, referenced by meshOffsets for each model
 	std::vector<Mesh> m_meshes;
 
 	// GPU resources
-	std::unique_ptr<UniqueBuffer> m_uniformBuffer{ nullptr }; // buffer of transforms
+	std::unique_ptr<UniqueBuffer> m_transformsBuffer{ nullptr }; // buffer of transforms
 };
