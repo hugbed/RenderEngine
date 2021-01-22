@@ -65,9 +65,19 @@ public:
 
 	// --- Bounding boxes --- //
 
-	void SetLocalAABB(ModelID id, const BoundingBox& box) { m_boundingBoxes[id] = m_transforms[id] * box; }
+	BoundingBox ComputeWorldBoundingBox() const
+	{
+		BoundingBox worldBox;
 
-	const BoundingBox& GetWorldAABB(ModelID id) { return m_boundingBoxes[id]; }
+		for (int i = 0; i < m_transforms.size(); ++i)
+		{
+			BoundingBox box = m_boundingBoxes[i];
+			box = box.Transform(m_transforms[i]);
+			worldBox = worldBox.Union(box);
+		}
+
+		return worldBox;
+	}
 
 	// --- Transforms --- //
 
@@ -76,6 +86,8 @@ public:
 	const UniqueBuffer& GetUniformBuffer() const { return *m_transformsBuffer; }
 
 	const std::vector<glm::mat4>& GetTransforms() const { return m_transforms; }
+
+	const std::vector<BoundingBox>& GetBoundingBoxes() const { return m_boundingBoxes; }
 
 	template <class Func>
 	void ForEachMesh(Func f)

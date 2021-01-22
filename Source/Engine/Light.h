@@ -23,13 +23,27 @@ struct PhongLight
 	glm::aligned_int32 shadowIndex;
 };
 
+using LightID = uint32_t;
+
 class LightSystem
 {
 public:
-	void ReserveLights(size_t count) { m_lights.reserve(m_lights.size() + count); }
-	void AddLight(PhongLight light) { m_lights.push_back(std::move(light)); }
+	void ReserveLights(size_t count)
+	{
+		m_lights.reserve(m_lights.size() + count);
+	}
+	
+	LightID AddLight(PhongLight light)
+	{
+		LightID id = (LightID)m_lights.size();
+		m_lights.push_back(std::move(light));
+		return id;
+	}
 
 	const std::vector<PhongLight> GetLights() { return m_lights; }
+
+	const PhongLight& GetLight(LightID id) const { return m_lights[id]; }
+
 	size_t GetLightCount() const { return m_lights.size(); }
 
 	void UploadToGPU(CommandBufferPool& commandBufferPool);

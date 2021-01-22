@@ -322,7 +322,6 @@ ShaderID ShaderSystem::CreateShader(const char* data, size_t size, std::string e
 	return id;
 }
 
-// todo: 
 ShaderInstanceID ShaderSystem::CreateShaderInstance(
 	ShaderID shaderID,
 	const void* specializationData,

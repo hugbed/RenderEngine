@@ -46,6 +46,7 @@ Scene::Scene(
 	ModelSystem& modelSystem,
 	LightSystem& lightSystem,
 	MaterialSystem& materialSystem,
+	ShadowSystem& shadowSystem,
 	const RenderPass& renderPass, vk::Extent2D imageExtent
 )
 	: m_commandBufferPool(&commandBufferPool)
@@ -58,6 +59,7 @@ Scene::Scene(
 	, m_textureCache(&textureCache)
 	, m_lightSystem(&lightSystem)
 	, m_materialSystem(&materialSystem)
+	, m_shadowSystem(&shadowSystem)
 	, m_camera(
 		1.0f * glm::vec3(1.0f, 1.0f, 1.0f),
 		glm::vec3(0.0f, 0.0f, 0.0f),
@@ -124,12 +126,6 @@ void Scene::DrawTransparentObjects(vk::CommandBuffer commandBuffer, uint32_t fra
 	DrawSceneObjects(commandBuffer, frameIndex, renderState, m_transparentDrawCache);
 }
 
-void Scene::DrawAllWithoutShading(vk::CommandBuffer& commandBuffer, uint32_t frameIndex, vk::PipelineLayout modelPipelineLayout, vk::DescriptorSet modelDescriptorSet) const
-{
-	DrawWithoutShading(commandBuffer, frameIndex, modelPipelineLayout, modelDescriptorSet, m_opaqueDrawCache);
-	DrawWithoutShading(commandBuffer, frameIndex, modelPipelineLayout, modelDescriptorSet, m_transparentDrawCache);
-}
-
 void Scene::DrawSceneObjects(vk::CommandBuffer commandBuffer, uint32_t frameIndex, RenderState& state, const std::vector<MeshDrawInfo>& drawCalls) const
 {
 	uint32_t currentFrameIndex = frameIndex % m_commandBufferPool->GetNbConcurrentSubmits();
@@ -150,39 +146,6 @@ void Scene::DrawSceneObjects(vk::CommandBuffer commandBuffer, uint32_t frameInde
 		state.BindMaterial(commandBuffer, drawItem.mesh.materialInstanceID);
 
 		// Draw
-		commandBuffer.drawIndexed(drawItem.mesh.nbIndices, 1, drawItem.mesh.indexOffset, 0, 0);
-	}
-}
-
-void Scene::DrawWithoutShading(vk::CommandBuffer& commandBuffer, uint32_t frameIndex, vk::PipelineLayout modelPipelineLayout, vk::DescriptorSet modelDescriptorSet, const std::vector<MeshDrawInfo>& drawCalls) const
-{
-	uint32_t currentFrameIndex = frameIndex % m_commandBufferPool->GetNbConcurrentSubmits();
-
-	if (drawCalls.empty() == false)
-	{
-		// Bind the one big vertex + index buffers
-		m_modelSystem->BindGeometry(commandBuffer);
-
-		// Bind the model transforms uniform buffer
-		commandBuffer.bindDescriptorSets(
-			vk::PipelineBindPoint::eGraphics,
-			modelPipelineLayout, (uint32_t)DescriptorSetIndex::Model,
-			1, &modelDescriptorSet,
-			0, nullptr
-		);
-	}
-
-	for (const auto& drawItem : drawCalls)
-	{
-		uint32_t modelIndex = drawItem.model;
-
-		// Set model index push constant
-		commandBuffer.pushConstants(
-			modelPipelineLayout,
-			vk::ShaderStageFlagBits::eVertex,
-			0, sizeof(uint32_t), &modelIndex
-		);
-
 		commandBuffer.drawIndexed(drawItem.mesh.nbIndices, 1, drawItem.mesh.indexOffset, 0, 0);
 	}
 }
@@ -216,7 +179,6 @@ void Scene::LoadScene(vk::CommandBuffer commandBuffer)
 
 void Scene::LoadLights(vk::CommandBuffer buffer)
 {
-	m_nbShadowCastingLights = 0;
 	m_lightSystem->ReserveLights(m_assimp.scene->mNumLights);
 	for (int i = 0; i < m_assimp.scene->mNumLights; ++i)
 	{
@@ -247,25 +209,19 @@ void Scene::LoadLights(vk::CommandBuffer buffer)
 		}
 
 		// mustdo: different shadow types (2d, cascade, cube) will need a different index count
+		bool hasShadows = false;
 		if (light.type == aiLightSource_DIRECTIONAL)
+		{
 			light.shadowIndex = m_nbShadowCastingLights++;
+			hasShadows = true;
+		}
 
-		m_lightSystem->AddLight(std::move(light));
+		LightID id = m_lightSystem->AddLight(std::move(light));
+		if (hasShadows)
+			m_shadowSystem->CreateShadowMap(id);
 	}
 
 	// todo: support no shadow casting lights
-
-	if (m_nbShadowCastingLights > 0)
-	{
-		// Reserve shadow data for each light
-		m_shadowDataBuffer = std::make_unique<UniqueBuffer>(
-			vk::BufferCreateInfo(
-				{},
-				m_nbShadowCastingLights * sizeof(ShadowData),
-				vk::BufferUsageFlagBits::eUniformBuffer
-			), VmaAllocationCreateInfo{ VMA_ALLOCATION_CREATE_MAPPED_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU }
-		);
-	}
 }
 
 void Scene::LoadCamera()
@@ -432,7 +388,7 @@ ModelID Scene::LoadModel(const aiNode& fileNode, glm::mat4 transform)
 	ModelID id = m_modelSystem->CreateModel(transform, box, meshes);
 
 	// Transform the bounding box to world space
-	box.Transform(transform);
+	box = box.Transform(transform);
 
 	// Then add it to the global world bounding box
 	m_boundingBox = m_boundingBox.Union(box);
@@ -546,8 +502,6 @@ void Scene::UpdateMaterialDescriptors()
 	// Create unlit view descriptor set (we don't have a material system for this yet)
 	// todo: this could be handled in skybox
 
-	// Create descriptor sets if required (todo: do before this and skip the if)
-
 	if (m_descriptorPool)
 	{
 		for (auto& set : m_unlitViewDescriptorSets)
@@ -599,7 +553,7 @@ void Scene::UpdateMaterialDescriptors()
 		},
 		MaterialSystem::FragmentShaderConstants{
 			(uint32_t)m_lightSystem->GetLightCount(),
-			(uint32_t)m_nbShadowCastingLights,
+			(uint32_t)m_shadowSystem->GetShadowCount(),
 			(uint32_t)m_textureCache->GetTextureCount(ImageViewType::e2D),
 			(uint32_t)m_textureCache->GetTextureCount(ImageViewType::eCube),
 			(uint32_t)m_materialSystem->GetMaterialInstanceCount()
@@ -627,96 +581,14 @@ void Scene::UpdateMaterialDescriptors()
 	m_materialSystem->UpdateMaterialDescriptorSet();
 }
 
-void Scene::UpdateShadowMapsTransforms(const std::vector<glm::mat4>& transforms)
+void Scene::InitShadowMaps()
 {
-	if (m_shadowDataBuffer == nullptr)
-		return;
+	m_shadowSystem->UploadToGPU();
 
-	auto* transformData = m_shadowDataBuffer->GetMappedData();
-	ASSERT(transforms.size() * sizeof(ShadowData) <= m_shadowDataBuffer->Size());
-	for (int i = 0; i < transforms.size(); ++i)
-	{
-		ShadowData data = { transforms[i] };
-		void* dest = (char*)transformData + i * sizeof(ShadowData);
-		memcpy(dest, &data, sizeof(ShadowData));
-	}
-}
-
-void Scene::InitShadowMaps(const std::vector<const ShadowMap*>& shadowMaps)
-{
-	if (m_shadowDataBuffer == nullptr)
-		return;
-
-	const uint32_t kShadowMapsBinding = 2;
-	const uint32_t kShadowDataBinding = 3;
-
-	uint32_t nbShadowTextures = 0;
-
-	// Make sure we match the number of shadow maps from the pipeline
-	const auto& pipelineSystem = m_materialSystem->GetGraphicsPipelineSystem();
-	const auto& bindings = pipelineSystem.GetDescriptorSetLayoutBindings(m_materialSystem->GetGraphicsPipelinesIDs().front(), 0);
-	for (const auto& binding : bindings)
-	{
-		if (binding.binding == kShadowMapsBinding)
-		{
-			nbShadowTextures = binding.descriptorCount;
-			break;
-		}
-	}
-
-	SmallVector<vk::DescriptorImageInfo, 16> texturesInfo;
-	texturesInfo.reserve(nbShadowTextures);
-	for (int i = 0; i < nbShadowTextures; ++i)
-	{
-		const auto& shadowMap = *shadowMaps[i % shadowMaps.size()]; // mustdo: don't wrap, replace with dummy instead
-		auto combinedImageSampler = shadowMap.GetCombinedImageSampler();
-		texturesInfo.emplace_back(
-			combinedImageSampler.sampler,
-			combinedImageSampler.texture->GetImageView(),
-			vk::ImageLayout::eDepthStencilReadOnlyOptimal
-		);
-	}
-
-	// Update shadow transforms
-	auto* transformData = m_shadowDataBuffer->GetMappedData();
-	ASSERT(shadowMaps.size() * sizeof(ShadowData) <= m_shadowDataBuffer->Size());
-	for (int i = 0; i < shadowMaps.size(); ++i)
-	{
-		const auto& shadowMap = *shadowMaps[i];
-		ShadowData data = { shadowMap.GetLightTransform() };
-		void* dest = (char*)transformData + i * sizeof(ShadowData);
-		memcpy(dest, &data, sizeof(ShadowData));
-	}
-
-	// Update shadow system shader view descriptor sets
+	const UniqueBuffer& shadowPropertiesBuffer = m_shadowSystem->GetShadowTransformsBuffer();
 	m_materialSystem->UpdateShadowDescriptorSets(
-		texturesInfo, m_shadowDataBuffer->Get(), m_shadowDataBuffer->Size()
-	);
-
-	// todo: move this to shadow system
-
-	// Update shadow system model descriptor set
-	const UniqueBuffer& uniformBuffer = m_modelSystem->GetUniformBuffer();
-	const auto& transforms = m_modelSystem->GetTransforms();
-	vk::DescriptorBufferInfo descriptorBufferInfo(uniformBuffer.Get(), 0, uniformBuffer.Size());
-
-	std::vector<vk::WriteDescriptorSet> writeDescriptorSets;
-	for (auto& shadowMap : shadowMaps)
-	{
-		const uint32_t binding = 0;
-		vk::DescriptorSet descriptorSet = shadowMap->GetDescriptorSet(DescriptorSetIndex::Model);
-		writeDescriptorSets.push_back(
-			vk::WriteDescriptorSet(
-				descriptorSet, binding, {},
-				1, vk::DescriptorType::eUniformBuffer, nullptr, &descriptorBufferInfo
-			)
-		);
-	}
-
-	g_device->Get().updateDescriptorSets(
-		static_cast<uint32_t>(writeDescriptorSets.size()),
-		writeDescriptorSets.data(),
-		0, nullptr
+		m_shadowSystem->GetTexturesInfo(),
+		shadowPropertiesBuffer.Get(), shadowPropertiesBuffer.Size()
 	);
 }
 

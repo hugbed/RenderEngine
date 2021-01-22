@@ -6,6 +6,7 @@
 #include "Camera.h"
 #include "Skybox.h"
 #include "Light.h"
+#include "ShadowMap.h"
 
 #include <assimp/Importer.hpp> 
 #include <assimp/scene.h>     
@@ -18,12 +19,7 @@
 
 #include <iostream>
 
-class ShadowMap;
-
-struct ShadowData
-{
-	glm::mat4 transform;
-};
+class ShadowSystem;
 
 enum class CameraMode { OrbitCamera, FreeCamera };
 
@@ -39,6 +35,7 @@ public:
 		ModelSystem& modelSystem,
 		LightSystem& lightSystem,
 		MaterialSystem& materialSystem,
+		ShadowSystem& shadowSystem,
 		const RenderPass& renderPass, vk::Extent2D imageExtent
 	);
 
@@ -54,21 +51,16 @@ public:
 	void SortTransparentObjects();
 	void DrawTransparentObjects(vk::CommandBuffer commandBuffer, uint32_t frameIndex, RenderState& renderState) const;
 
-	// Assumes external pipeline is already bound.
-	// Binds vertices + view + model descriptors and calls draw for each mesh
-	void DrawAllWithoutShading(vk::CommandBuffer& commandBuffer, uint32_t frameIndex, vk::PipelineLayout modelPipelineLayout, vk::DescriptorSet modelDescriptorSet) const;
-
 	Camera& GetCamera() { return m_camera; } // todo: there should be a camera control or something
 
 	const Camera& GetCamera() const { return m_camera; } // todo: there should be a camera control or something
 
+	// todo: move to model system
 	BoundingBox GetBoundingBox() const { return m_boundingBox; }
 
 	void ResetCamera();
 
-	void InitShadowMaps(const std::vector<const ShadowMap*>& shadowMaps);
-
-	void UpdateShadowMapsTransforms(const std::vector<glm::mat4>& shadowMaps);
+	void InitShadowMaps();
 
 	void UpdateMaterialDescriptors();
 
@@ -140,6 +132,8 @@ private:
 	std::vector<MaterialInstanceID> m_materials; // todo: don't need that
 
 	// ---
+
+	gsl::not_null<ShadowSystem*> m_shadowSystem;
 
 	struct AssimpData
 	{

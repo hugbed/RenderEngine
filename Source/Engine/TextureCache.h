@@ -17,7 +17,7 @@ class CommandBufferPool;
 
 struct CombinedImageSampler
 {
-	Image* texture = nullptr;
+	const Image* texture = nullptr;
 	vk::Sampler sampler = nullptr;
 };
 

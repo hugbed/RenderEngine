@@ -68,9 +68,10 @@ public:
 			m_modelSystem,
 			m_lightSystem,
 			m_materialSystem,
-			*m_renderPass,
-			m_swapchain->GetImageDescription().extent)
+			m_shadowSystem,
+			*m_renderPass, m_swapchain->GetImageDescription().extent)
 		)
+		, m_shadowSystem(m_swapchain->GetImageDescription().extent, m_graphicsPipelineSystem, m_modelSystem, m_lightSystem)
 		, m_grid(std::make_unique<Grid>(*m_renderPass, m_swapchain->GetImageDescription().extent, m_graphicsPipelineSystem))
 	{
 		window.SetMouseButtonCallback(reinterpret_cast<void*>(this), OnMouseButton);
@@ -96,7 +97,7 @@ protected:
 		vk::Extent2D imageExtent = m_swapchain->GetImageDescription().extent;
 
 		m_scene->Load(commandBuffer);
-		UpdateShadowMaps(commandBuffer);
+		InitShadowMaps(commandBuffer);
 
 		CreateSecondaryCommandBuffers();
 		RecordRenderPassCommands();
@@ -122,7 +123,8 @@ protected:
 		commandBuffer.begin({ vk::CommandBufferUsageFlagBits::eOneTimeSubmit });
 		{
 			m_scene->Reset(commandBuffer, *m_renderPass, imageExtent);
-			UpdateShadowMaps(commandBuffer);
+			m_shadowSystem.Reset(imageExtent);
+			InitShadowMaps(commandBuffer);
 			m_grid->Reset(*m_renderPass, imageExtent);
 		}
 		commandBuffer.end();
@@ -225,45 +227,20 @@ protected:
 	// For shadow map shaders
 	const vk::Extent2D kShadowMapExtent = vk::Extent2D(2*2048, 2*2048);
 
-	void UpdateShadowMaps(vk::CommandBuffer& commandBuffer)
+	void InitShadowMaps(vk::CommandBuffer& commandBuffer)
 	{
 		// At this point the scene is loaded and we know how many models we have
-		ShadowMap::VertexShaderConstants constants = { (uint32_t)m_modelSystem.GetModelCount() };
-
-		if (m_shadowMaps.empty() == false)
-		{
-			for (auto& shadowMap : m_shadowMaps)
-				shadowMap.Reset(kShadowMapExtent);
-		}
-		else
-		{
-			for (const auto& light : m_lightSystem.GetLights())
-			{
-				// todo: support other light types for shadows
-				if (light.type == aiLightSource_DIRECTIONAL)
-				{
-					ShadowMap map(kShadowMapExtent, light, m_graphicsPipelineSystem, m_modelSystem, *m_scene, constants);
-					m_shadowMaps.push_back(std::move(map));
-				}
-			}
-		}
-
-		std::vector<const ShadowMap*> shadowMaps;
-		shadowMaps.reserve(m_shadowMaps.size());
-		for (const auto& shadowMap : m_shadowMaps)
-			shadowMaps.push_back(&shadowMap);
-
-		m_scene->InitShadowMaps(shadowMaps);
+		m_scene->InitShadowMaps();
 
 		if (m_options.showShadowMapPreview)
 		{
 			// Optional view on the depth map
-			if (m_shadowMaps.empty() == false)
+			if (m_shadowSystem.GetShadowCount() > 0)
 			{
 				if (m_shadowMapPreviewQuad == nullptr)
 				{
 					m_shadowMapPreviewQuad = std::make_unique<TexturedQuad>(
-						m_shadowMaps[0].GetCombinedImageSampler(),
+						m_shadowSystem.GetCombinedImageSampler(0),
 						*m_renderPass,
 						m_swapchain->GetImageDescription().extent,
 						m_graphicsPipelineSystem,
@@ -273,7 +250,7 @@ protected:
 				else
 				{
 					m_shadowMapPreviewQuad->Reset(
-						m_shadowMaps[0].GetCombinedImageSampler(),
+						m_shadowSystem.GetCombinedImageSampler(0),
 						*m_renderPass,
 						m_swapchain->GetImageDescription().extent
 					);
@@ -282,18 +259,19 @@ protected:
 		}
 	}
 
+	std::vector<MeshDrawInfo> drawCalls; // to preserve allocated memory
+
 	void RenderShadowMaps(vk::CommandBuffer& commandBuffer, uint32_t frameIndex)
 	{
-		std::vector<glm::mat4> transforms;
-		transforms.reserve(m_shadowMaps.size());
-		for (auto& shadowMap : m_shadowMaps)
-		{
-			shadowMap.UpdateViewUniforms();
-			shadowMap.Render(commandBuffer, frameIndex);
-			transforms.push_back(shadowMap.GetLightTransform());
-		}
+		const std::vector<MeshDrawInfo>& opaqueDrawCalls = m_scene->GetOpaqueDrawCommands();
+		const std::vector<MeshDrawInfo>& transparentDrawCalls = m_scene->GetTransparentDrawCommands();
 
-		m_scene->UpdateShadowMapsTransforms(transforms);
+		drawCalls.resize(opaqueDrawCalls.size() + transparentDrawCalls.size());
+		std::copy(opaqueDrawCalls.begin(), opaqueDrawCalls.end(), drawCalls.begin());
+		std::copy(transparentDrawCalls.begin(), transparentDrawCalls.end(), drawCalls.begin() + opaqueDrawCalls.size());
+
+		m_shadowSystem.Update(m_scene->GetCamera(), m_scene->GetBoundingBox());
+		m_shadowSystem.Render(commandBuffer, frameIndex, drawCalls);
 	}
 
 	Camera& GetCamera() { return m_scene->GetCamera(); }
@@ -458,7 +436,7 @@ protected:
 
 	void OnCameraUpdated()
 	{
-		if (m_scene->HasTransparentObjects() || m_shadowMaps.empty() == false)
+		if (m_scene->HasTransparentObjects() || m_shadowSystem.GetShadowCount() > 0)
 		{
 			m_scene->SortTransparentObjects();
 			m_frameDirty = kAllFramesDirty;
@@ -475,12 +453,12 @@ private:
 	LightSystem m_lightSystem;
 	MaterialSystem m_materialSystem;
 	ModelSystem m_modelSystem;
+	ShadowSystem m_shadowSystem;
 
 	// Secondary command buffers
 	vk::UniqueCommandPool m_secondaryCommandPool;
 	std::vector<vk::UniqueCommandBuffer> m_renderPassCommandBuffers;
 
-	std::vector<ShadowMap> m_shadowMaps;
 	std::unique_ptr<Scene> m_scene;
 	std::unique_ptr<Grid> m_grid;
 	std::unique_ptr<TexturedQuad> m_shadowMapPreviewQuad;
