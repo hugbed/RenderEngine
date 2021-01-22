@@ -10,7 +10,7 @@
 #include <gsl/pointers>
 #include <vector>
 
-class TextureCache;
+class TextureSystem;
 class CommandBufferPool;
 class RenderPass;
 
@@ -20,7 +20,7 @@ public:
 	Skybox(
 		const RenderPass& renderPass,
 		vk::Extent2D swapchainExtent,
-		TextureCache& textureCache,
+		TextureSystem& textureSystem,
 		GraphicsPipelineSystem& graphicsPipelineSystem
 	);
 
@@ -50,7 +50,7 @@ private:
 
 	// todo: add m_ to each member
 
-	gsl::not_null<TextureCache*> m_textureCache;
+	gsl::not_null<TextureSystem*> m_textureSystem;
 	TextureID m_cubeMap = ~0;
 
 	gsl::not_null<GraphicsPipelineSystem*> m_graphicsPipelineSystem;

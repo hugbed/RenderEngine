@@ -42,7 +42,7 @@ Scene::Scene(
 	std::string sceneFilename,
 	CommandBufferPool& commandBufferPool,
 	GraphicsPipelineSystem& graphicsPipelineSystem,
-	TextureCache& textureCache,
+	TextureSystem& textureSystem,
 	ModelSystem& modelSystem,
 	LightSystem& lightSystem,
 	MaterialSystem& materialSystem,
@@ -56,7 +56,7 @@ Scene::Scene(
 	, m_renderPass(&renderPass)
 	, m_imageExtent(imageExtent)
 	, m_modelSystem(&modelSystem)
-	, m_textureCache(&textureCache)
+	, m_textureSystem(&textureSystem)
 	, m_lightSystem(&lightSystem)
 	, m_materialSystem(&materialSystem)
 	, m_shadowSystem(&shadowSystem)
@@ -84,7 +84,7 @@ void Scene::Reset(vk::CommandBuffer& commandBuffer, const RenderPass& renderPass
 
 void Scene::Load(vk::CommandBuffer commandBuffer)
 {
-	m_skybox = std::make_unique<Skybox>(*m_renderPass, m_imageExtent, *m_textureCache, *m_graphicsPipelineSystem);
+	m_skybox = std::make_unique<Skybox>(*m_renderPass, m_imageExtent, *m_textureSystem, *m_graphicsPipelineSystem);
 
 	LoadScene(commandBuffer);
 
@@ -440,7 +440,7 @@ void Scene::LoadMaterials(vk::CommandBuffer commandBuffer)
 //#endif
 	
 		// Create default textures
-		TextureID dummyTextureID = m_textureCache->LoadTexture("dummy_texture.png");
+		TextureID dummyTextureID = m_textureSystem->LoadTexture("dummy_texture.png");
 		for (int textureIndex = 0; textureIndex < (int)PhongMaterialTextures::eCount; ++textureIndex)
 			materialInfo.properties.textures[textureIndex] = dummyTextureID;
 
@@ -450,7 +450,7 @@ void Scene::LoadMaterials(vk::CommandBuffer commandBuffer)
 			{
 				aiString textureFile;
 				assimpMaterial->GetTexture(type, 0, &textureFile);
-				materialInfo.properties.textures[textureIndex] = m_textureCache->LoadTexture(textureFile.C_Str());
+				materialInfo.properties.textures[textureIndex] = m_textureSystem->LoadTexture(textureFile.C_Str());
 			}
 		};
 
@@ -475,7 +475,7 @@ void Scene::LoadMaterials(vk::CommandBuffer commandBuffer)
 		m_materials[i] = materialInstanceID;
 	}
 
-	m_textureCache->UploadTextures(*m_commandBufferPool);
+	m_textureSystem->UploadTextures(*m_commandBufferPool);
 }
 
 void Scene::CreateViewUniformBuffers()
@@ -548,8 +548,8 @@ void Scene::UpdateMaterialDescriptors()
 	MaterialSystem::ShaderConstants constants = {
 		(uint32_t)m_lightSystem->GetLightCount(),
 		(uint32_t)m_shadowSystem->GetShadowCount(),
-		(uint32_t)m_textureCache->GetTextureCount(ImageViewType::e2D),
-		(uint32_t)m_textureCache->GetTextureCount(ImageViewType::eCube)
+		(uint32_t)m_textureSystem->GetTextureCount(ImageViewType::e2D),
+		(uint32_t)m_textureSystem->GetTextureCount(ImageViewType::eCube)
 	};
 	m_materialSystem->UploadToGPU(*m_commandBufferPool, std::move(constants));
 

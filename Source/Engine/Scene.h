@@ -31,7 +31,7 @@ public:
 		std::string sceneFilename,
 		CommandBufferPool& commandBufferPool,
 		GraphicsPipelineSystem& graphicsPipelineSystem,
-		TextureCache& textureCache,
+		TextureSystem& textureSystem,
 		ModelSystem& modelSystem,
 		LightSystem& lightSystem,
 		MaterialSystem& materialSystem,
@@ -118,7 +118,7 @@ private:
 
 	// --- Materials --- ///
 
-	gsl::not_null<TextureCache*> m_textureCache;
+	gsl::not_null<TextureSystem*> m_textureSystem;
 	gsl::not_null<MaterialSystem*> m_materialSystem;
 	std::vector<MaterialInstanceID> m_materials; // todo: don't need that
 

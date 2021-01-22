@@ -36,10 +36,10 @@ struct TextureKey
 	TextureID id;
 };
 
-class TextureCache
+class TextureSystem
 {
 public:
-	TextureCache(std::string basePath)
+	TextureSystem(std::string basePath)
 		: m_basePath(std::move(basePath))
 	{}
 

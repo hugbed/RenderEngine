@@ -126,7 +126,7 @@ public:
 		vk::RenderPass renderPass,
 		vk::Extent2D swapchainExtent,
 		GraphicsPipelineSystem& graphicsPipelineSystem,
-		TextureCache& textureCache,
+		TextureSystem& textureSystem,
 		ModelSystem& modelSystem
 	);
 
@@ -193,7 +193,7 @@ private:
 	vk::Extent2D m_imageExtent;
 	ShaderConstants m_constants;
 
-	gsl::not_null<TextureCache*> m_textureCache;
+	gsl::not_null<TextureSystem*> m_textureSystem;
 	gsl::not_null<GraphicsPipelineSystem*> m_graphicsPipelineSystem;
 	gsl::not_null<ModelSystem*> m_modelSystem;
 

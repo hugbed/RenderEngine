@@ -58,13 +58,13 @@ public:
 		, m_renderPass(std::make_unique<RenderPass>(m_swapchain->GetImageDescription().format))
 		, m_framebuffers(Framebuffer::FromSwapchain(*m_swapchain, m_renderPass->Get()))
 		, m_graphicsPipelineSystem(m_shaderSystem)
-		, m_textureCache(basePath)
-		, m_materialSystem(m_renderPass->Get(), m_swapchain->GetImageDescription().extent, m_graphicsPipelineSystem, m_textureCache, m_modelSystem)
+		, m_textureSystem(basePath)
+		, m_materialSystem(m_renderPass->Get(), m_swapchain->GetImageDescription().extent, m_graphicsPipelineSystem, m_textureSystem, m_modelSystem)
 		, m_scene(std::make_unique<Scene>(
 			std::move(basePath), std::move(sceneFile),
 			m_commandBufferPool,
 			m_graphicsPipelineSystem,
-			m_textureCache,
+			m_textureSystem,
 			m_modelSystem,
 			m_lightSystem,
 			m_materialSystem,
@@ -458,7 +458,7 @@ private:
 
 	ShaderSystem m_shaderSystem;
 	GraphicsPipelineSystem m_graphicsPipelineSystem;
-	TextureCache m_textureCache;
+	TextureSystem m_textureSystem;
 	LightSystem m_lightSystem;
 	MaterialSystem m_materialSystem;
 	ModelSystem m_modelSystem;

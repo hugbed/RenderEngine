@@ -54,10 +54,10 @@ const std::vector<float> vertices = {
 Skybox::Skybox(
 	const RenderPass& renderPass,
 	vk::Extent2D swapchainExtent,
-	TextureCache& textureCache,
+	TextureSystem& textureSystem,
 	GraphicsPipelineSystem& graphicsPipelineSystem
 )
-	: m_textureCache(&textureCache)
+	: m_textureSystem(&textureSystem)
 	, m_graphicsPipelineSystem(&graphicsPipelineSystem)
 {
 	// Load textures
@@ -69,7 +69,7 @@ Skybox::Skybox(
 		"skybox/front.jpg",
 		"skybox/back.jpg"
 	};
-	m_cubeMap = m_textureCache->LoadCubeMapFaces(cubeFacesFiles);
+	m_cubeMap = m_textureSystem->LoadCubeMapFaces(cubeFacesFiles);
 
 	// Create graphics pipeline
 	ShaderSystem& shaderSystem = m_graphicsPipelineSystem->GetShaderSystem();
@@ -122,7 +122,7 @@ void Skybox::CreateDescriptors()
 void Skybox::UpdateDescriptors()
 {
 	uint32_t binding = 0;
-	vk::DescriptorImageInfo imageInfo = m_textureCache->GetDescriptorImageInfo(ImageViewType::eCube, m_cubeMap);
+	vk::DescriptorImageInfo imageInfo = m_textureSystem->GetDescriptorImageInfo(ImageViewType::eCube, m_cubeMap);
 	std::vector<vk::WriteDescriptorSet> writeDescriptorSets = {
 		vk::WriteDescriptorSet(
 			m_cubeDescriptorSets[0].get(), binding++, {},
@@ -141,7 +141,7 @@ void Skybox::UploadToGPU(vk::CommandBuffer& commandBuffer, CommandBufferPool& co
 	m_vertexBuffer->CopyStagingToGPU(commandBuffer);
 	commandBufferPool.DestroyAfterSubmit(m_vertexBuffer->ReleaseStagingBuffer());
 
-	m_textureCache->UploadTextures(commandBufferPool);
+	m_textureSystem->UploadTextures(commandBufferPool);
 
 	UpdateDescriptors();
 }

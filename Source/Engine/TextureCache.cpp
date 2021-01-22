@@ -11,14 +11,14 @@
 #include <algorithm>
 #include <iostream>
 
-TextureID TextureCache::LoadTexture(std::string_view filename)
+TextureID TextureSystem::LoadTexture(std::string_view filename)
 {
 	TextureID id = CreateAndUploadTextureImage(filename);
 	vk::Sampler sampler = CreateSampler(m_textures[(size_t)ImageViewType::e2D][id]->GetMipLevels());
 	return id;
 }
 
-TextureID TextureCache::CreateAndUploadTextureImage(std::string_view filename)
+TextureID TextureSystem::CreateAndUploadTextureImage(std::string_view filename)
 {
 	// Check if we already loaded this texture
 	uint64_t fileHash = fnv_hash((uint8_t*)filename.data(), filename.size());
@@ -66,7 +66,7 @@ TextureID TextureCache::CreateAndUploadTextureImage(std::string_view filename)
 	return id;
 }
 
-vk::Sampler TextureCache::CreateSampler(uint32_t nbMipLevels)
+vk::Sampler TextureSystem::CreateSampler(uint32_t nbMipLevels)
 {
 	// Check if we already have a sampler
 	auto it = m_mipLevelToSamplerID.find(nbMipLevels);
@@ -98,7 +98,7 @@ vk::Sampler TextureCache::CreateSampler(uint32_t nbMipLevels)
 	return m_samplers[samplerID].get();
 }
 
-TextureID TextureCache::LoadCubeMapFaces(gsl::span<std::string> filenames)
+TextureID TextureSystem::LoadCubeMapFaces(gsl::span<std::string> filenames)
 {
 	if (filenames.size() != 6)
 		return {};
@@ -191,7 +191,7 @@ TextureID TextureCache::LoadCubeMapFaces(gsl::span<std::string> filenames)
 	return id;
 }
 
-void TextureCache::UploadTextures(CommandBufferPool& commandBufferPool)
+void TextureSystem::UploadTextures(CommandBufferPool& commandBufferPool)
 {
 	vk::CommandBuffer& commandBuffer = commandBufferPool.GetCommandBuffer();
 
@@ -205,7 +205,7 @@ void TextureCache::UploadTextures(CommandBufferPool& commandBufferPool)
 	m_texturesToUpload.clear();
 }
 
-SmallVector<vk::DescriptorImageInfo> TextureCache::GetDescriptorImageInfos(ImageViewType samplerType) const
+SmallVector<vk::DescriptorImageInfo> TextureSystem::GetDescriptorImageInfos(ImageViewType samplerType) const
 {
 	const size_t samplerTypeIndex = (size_t)samplerType;
 
@@ -223,7 +223,7 @@ SmallVector<vk::DescriptorImageInfo> TextureCache::GetDescriptorImageInfos(Image
 	return imageInfos;
 }
 
-vk::DescriptorImageInfo TextureCache::GetDescriptorImageInfo(ImageViewType imageViewType, TextureID id) const
+vk::DescriptorImageInfo TextureSystem::GetDescriptorImageInfo(ImageViewType imageViewType, TextureID id) const
 {
 	return vk::DescriptorImageInfo(
 		m_samplers[m_mipLevelToSamplerID.at(m_mipLevels[(size_t)imageViewType][id])].get(),

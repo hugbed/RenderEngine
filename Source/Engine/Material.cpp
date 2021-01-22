@@ -54,13 +54,13 @@ MaterialSystem::MaterialSystem(
 	vk::RenderPass renderPass,
 	vk::Extent2D swapchainExtent,
 	GraphicsPipelineSystem& graphicsPipelineSystem,
-	TextureCache& textureCache,
+	TextureSystem& textureSystem,
 	ModelSystem& modelSystem
 )
 	: m_renderPass(renderPass)
 	, m_imageExtent(swapchainExtent)
 	, m_graphicsPipelineSystem(&graphicsPipelineSystem)
-	, m_textureCache(&textureCache)
+	, m_textureSystem(&textureSystem)
 	, m_modelSystem(&modelSystem)
 {
 }
@@ -232,7 +232,7 @@ void MaterialSystem::CreateDescriptorPool(uint8_t numConcurrentFrames)
 	//					 - 1 storage buffer with all shadow map transforms
 	// Set 1 (model):    - 1 storage buffer containing all models
 	// Set 2 (material): - 1 storage buffer containing all material properties +
-	//                   - 1 image sampler per texture in the texture cache
+	//                   - 1 image sampler per texture in the texture system
 	std::array<std::pair<vk::DescriptorType, uint16_t>, 3ULL> descriptorCount = {
 		std::make_pair(vk::DescriptorType::eUniformBuffer, (uint16_t)numConcurrentFrames + 1),
 		std::make_pair(vk::DescriptorType::eStorageBuffer, (uint16_t)3),
@@ -342,7 +342,7 @@ void MaterialSystem::UpdateMaterialDescriptorSet() const
 	);
 
 	// Material's textures
-	SmallVector<vk::DescriptorImageInfo> descriptorImageInfoTwo2D = m_textureCache->GetDescriptorImageInfos(ImageViewType::e2D);
+	SmallVector<vk::DescriptorImageInfo> descriptorImageInfoTwo2D = m_textureSystem->GetDescriptorImageInfos(ImageViewType::e2D);
 	writeDescriptorSets.push_back(
 		vk::WriteDescriptorSet(
 			descriptorSet, (uint32_t)MaterialSetBindings::eSamplers2D, {},
@@ -351,7 +351,7 @@ void MaterialSystem::UpdateMaterialDescriptorSet() const
 	);
 
 	// Material's cube maps
-	SmallVector<vk::DescriptorImageInfo> descriptorImageInfoCube = m_textureCache->GetDescriptorImageInfos(ImageViewType::eCube);
+	SmallVector<vk::DescriptorImageInfo> descriptorImageInfoCube = m_textureSystem->GetDescriptorImageInfos(ImageViewType::eCube);
 	writeDescriptorSets.push_back(
 		vk::WriteDescriptorSet(
 			descriptorSet, (uint32_t)MaterialSetBindings::eSamplersCube, {},
