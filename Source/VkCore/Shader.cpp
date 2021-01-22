@@ -46,26 +46,27 @@ namespace
 		bindingDescription = { 0, offset, vk::VertexInputRate::eVertex }; // todo: support multiple bindings
 	}
 
-	void PopulateUniformBufferDescriptorSetLayouts(
+	void PopulateBufferDescriptorSetLayoutBindings(
+		vk::DescriptorType descriptorType,
 		const spirv_cross::CompilerReflection& comp,
-		const spirv_cross::VectorView<spirv_cross::Resource>& uniformBuffers,
+		const spirv_cross::VectorView<spirv_cross::Resource>& buffers, // uniform_buffers or storage_buffers 
 		SetVector<SmallVector<vk::DescriptorSetLayoutBinding>>& descriptorSetLayoutsBindings)
 	{
-		for (const auto& ubo : uniformBuffers)
+		for (const auto& buffer : buffers)
 		{
-			uint32_t set = comp.get_decoration(ubo.id, spv::Decoration::DecorationDescriptorSet);
+			uint32_t set = comp.get_decoration(buffer.id, spv::Decoration::DecorationDescriptorSet);
 			if (set >= descriptorSetLayoutsBindings.size())
 				descriptorSetLayoutsBindings.resize(set + 1ULL);
 
 			auto& bindings = descriptorSetLayoutsBindings[set];
 
-			auto binding = comp.get_decoration(ubo.id, spv::Decoration::DecorationBinding);
+			auto binding = comp.get_decoration(buffer.id, spv::Decoration::DecorationBinding);
 
-			const auto& type = comp.get_type(ubo.type_id);
+			const auto& type = comp.get_type(buffer.type_id);
 
 			bindings.emplace_back(
 				binding, // binding
-				vk::DescriptorType::eUniformBuffer,
+				descriptorType, // uniform/storage buffer
 				type.array.empty() ? 1U : type.array[0], // descriptorCount
 				spirv_vk::execution_model_to_shader_stage(comp.get_execution_model())
 			);
@@ -75,7 +76,7 @@ namespace
 		}
 	}
 
-	void PopulateSampledImagesDescriptorSetLayouts(
+	void PopulateSampledImagesDescriptorSetLayoutBindings(
 		const spirv_cross::CompilerReflection& comp,
 		const spirv_cross::VectorView<spirv_cross::Resource>& sampledImages,
 		SetVector<SmallVector<vk::DescriptorSetLayoutBinding>>& descriptorSetLayoutBindings)
@@ -429,13 +430,21 @@ SetVector<SmallVector<vk::DescriptorSetLayoutBinding>> ShaderSystem::GetDescript
 
 	SetVector<SmallVector<vk::DescriptorSetLayoutBinding>> descriptorSetLayoutBindings;
 
-	::PopulateUniformBufferDescriptorSetLayouts(
+	::PopulateBufferDescriptorSetLayoutBindings(
+		vk::DescriptorType::eUniformBuffer,
 		reflection.comp,
 		reflection.shaderResources.uniform_buffers,
 		descriptorSetLayoutBindings
 	);
 
-	::PopulateSampledImagesDescriptorSetLayouts(
+	::PopulateBufferDescriptorSetLayoutBindings(
+		vk::DescriptorType::eStorageBuffer,
+		reflection.comp,
+		reflection.shaderResources.storage_buffers,
+		descriptorSetLayoutBindings
+	);
+
+	::PopulateSampledImagesDescriptorSetLayoutBindings(
 		reflection.comp,
 		reflection.shaderResources.sampled_images,
 		descriptorSetLayoutBindings

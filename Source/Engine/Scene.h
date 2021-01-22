@@ -60,8 +60,6 @@ public:
 
 	void ResetCamera();
 
-	void InitShadowMaps();
-
 	void UpdateMaterialDescriptors();
 
 	const std::vector<MeshDrawInfo>& GetOpaqueDrawCommands() const { return m_opaqueDrawCache; }
@@ -71,8 +69,6 @@ private:
 	// Uses scene materials
 	void DrawSceneObjects(vk::CommandBuffer commandBuffer, uint32_t frameIndex, RenderState& state, const std::vector<MeshDrawInfo>& drawCalls) const;
 
-	void DrawWithoutShading(vk::CommandBuffer& commandBuffer, uint32_t frameIndex, vk::PipelineLayout modelPipelineLayout, vk::DescriptorSet modelDescriptorSet, const std::vector<MeshDrawInfo>& drawCalls) const;
-
 	void LoadScene(vk::CommandBuffer commandBuffer);
 	void LoadLights(vk::CommandBuffer buffer);
 	void LoadCamera();
@@ -81,10 +77,7 @@ private:
 	ModelID LoadModel(const aiNode& fileNode, glm::mat4 transform);
 	void LoadMaterials(vk::CommandBuffer commandBuffer);
 
-	void CreateLightsUniformBuffers(vk::CommandBuffer commandBuffer);
 	void CreateViewUniformBuffers();
-
-	void UploadToGPU(vk::CommandBuffer& commandBuffer);
 
 	UniqueBuffer& GetViewUniformBuffer(uint32_t imageIndex);
 
@@ -108,8 +101,7 @@ private:
 	
 	// --- Lights --- //
 
-	uint32_t m_nbShadowCastingLights = 0;
-	std::unique_ptr<UniqueBuffer> m_shadowDataBuffer;
+	gsl::not_null<LightSystem*> m_lightSystem;
 
 	// --- View --- //
 
@@ -127,7 +119,6 @@ private:
 	// --- Materials --- ///
 
 	gsl::not_null<TextureCache*> m_textureCache;
-	gsl::not_null<LightSystem*> m_lightSystem;
 	gsl::not_null<MaterialSystem*> m_materialSystem;
 	std::vector<MaterialInstanceID> m_materials; // todo: don't need that
 

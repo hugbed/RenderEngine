@@ -42,7 +42,7 @@ void ModelSystem::UploadToGPU(CommandBufferPool& commandBufferPool)
 	{
 		const void* data = reinterpret_cast<const void*>(m_transforms.data());
 		size_t size = m_transforms.size() * sizeof(m_transforms[0]);
-		vk::BufferCreateInfo bufferInfo({}, size, vk::BufferUsageFlagBits::eUniformBuffer);
+		vk::BufferCreateInfo bufferInfo({}, size, vk::BufferUsageFlagBits::eStorageBuffer);
 		VmaAllocationCreateInfo allocInfo{ VMA_ALLOCATION_CREATE_MAPPED_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU };
 		m_transformsBuffer = std::make_unique<UniqueBuffer>(bufferInfo, allocInfo);
 

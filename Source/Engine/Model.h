@@ -83,7 +83,7 @@ public:
 
 	glm::mat4 GetTransform(ModelID id) const { return m_transforms[id]; }
 
-	const UniqueBuffer& GetUniformBuffer() const { return *m_transformsBuffer; }
+	const UniqueBuffer& GetBuffer() const { return *m_transformsBuffer; }
 
 	const std::vector<glm::mat4>& GetTransforms() const { return m_transforms; }
 

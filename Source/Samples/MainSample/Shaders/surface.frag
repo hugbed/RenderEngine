@@ -23,9 +23,6 @@ layout(constant_id = CONSTANT_NB_MATERIAL_SAMPLERS_2D)
 layout(constant_id = CONSTANT_NB_MATERIAL_SAMPLERS_CUBE)
     const uint NB_MATERIAL_SAMPLERS_CUBE = 64;
 
-layout(constant_id = CONSTANT_NB_MATERIAL_PROPERTIES)
-    const uint NB_MATERIAL_PROPERTIES = 64;
-
 layout(push_constant)
     uniform MaterialIndex {
 	    layout(offset = 4) uint materialIndex; // index into material.properties
@@ -52,8 +49,8 @@ struct MaterialProperties {
 };
 
 layout(set = SET_MATERIAL, binding = BINDING_MATERIAL_PROPERTIES)
-    uniform MaterialPropertiesUBO {
-        MaterialProperties properties[NB_MATERIAL_PROPERTIES];
+    readonly buffer MaterialPropertiesUBO {
+        MaterialProperties properties[];
     } material;
 
 layout(set = SET_MATERIAL, binding = BINDING_MATERIAL_SAMPLERS_2D)

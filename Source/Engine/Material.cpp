@@ -13,11 +13,7 @@ namespace
 		eNbLights = 0,
 		eNbShadowMaps = 1,
 		eNbMaterialSamplers2D = 2,
-		eNbMaterialSamplersCube = 3,
-		eNbMaterialProperties = 4,
-
-		// Vertex
-		eNbModels = 5,
+		eNbMaterialSamplersCube = 3
 	};
 
 	enum class ViewSetBindings
@@ -40,26 +36,16 @@ namespace
 		eSamplersCube = 2
 	};
 
-	SmallVector<vk::SpecializationMapEntry> GetVertexSpecializationMapEntries()
-	{
-		using VSConst = MaterialSystem::VertexShaderConstants;
-
-		return SmallVector<vk::SpecializationMapEntry>{
-			vk::SpecializationMapEntry((uint32_t)ConstantIDs::eNbModels, offsetof(VSConst, nbModels), sizeof(VSConst::nbModels)),
-		};
-	}
-	
 	SmallVector<vk::SpecializationMapEntry> GetFragmentSpecializationMapEntries()
 	{
-		using FSConst = MaterialSystem::FragmentShaderConstants;
+		using FSConst = MaterialSystem::ShaderConstants;
 
 		uint32_t nbEntries = 0;
 		return SmallVector<vk::SpecializationMapEntry>{
 			vk::SpecializationMapEntry((uint32_t)ConstantIDs::eNbLights, offsetof(FSConst, nbLights), sizeof(FSConst::nbLights)),
 			vk::SpecializationMapEntry((uint32_t)ConstantIDs::eNbShadowMaps, offsetof(FSConst, nbShadowMaps), sizeof(FSConst::nbShadowMaps)),
 			vk::SpecializationMapEntry((uint32_t)ConstantIDs::eNbMaterialSamplers2D, offsetof(FSConst, nbSamplers2D), sizeof(FSConst::nbSamplers2D)),
-			vk::SpecializationMapEntry((uint32_t)ConstantIDs::eNbMaterialSamplersCube, offsetof(FSConst, nbSamplersCube), sizeof(FSConst::nbSamplersCube)),
-			vk::SpecializationMapEntry((uint32_t)ConstantIDs::eNbMaterialProperties, offsetof(FSConst, nbMaterialProperties), sizeof(FSConst::nbMaterialProperties))
+			vk::SpecializationMapEntry((uint32_t)ConstantIDs::eNbMaterialSamplersCube, offsetof(FSConst, nbSamplersCube), sizeof(FSConst::nbSamplersCube))
 		};
 	}
 }
@@ -166,10 +152,10 @@ GraphicsPipelineID MaterialSystem::LoadGraphicsPipeline(const LitMaterialInstanc
 	ShaderID fragmentShaderID = shaderSystem.CreateShader(kFragmentShader);
 
 	ShaderInstanceID vertexInstanceID = shaderSystem.CreateShaderInstance(
-		vertexShaderID, (const void*)&m_constants.vertex, ::GetVertexSpecializationMapEntries()
+		vertexShaderID
 	);
 	ShaderInstanceID fragmentInstanceID = shaderSystem.CreateShaderInstance(
-		fragmentShaderID, (const void*)&m_constants.fragment, ::GetFragmentSpecializationMapEntries()
+		fragmentShaderID, (const void*)&m_constants, ::GetFragmentSpecializationMapEntries()
 	);
 
 	uint32_t pipelineIndex = m_graphicsPipelineIDs.size();
@@ -192,7 +178,7 @@ void MaterialSystem::CreateAndUploadUniformBuffer(CommandBufferPool& commandBuff
 		
 	const void* data = reinterpret_cast<const void*>(m_properties.data());
 	size_t bufferSize = m_properties.size() * sizeof(LitMaterialProperties);
-	m_uniformBuffer = std::make_unique<UniqueBufferWithStaging>(bufferSize, vk::BufferUsageFlagBits::eUniformBuffer);
+	m_uniformBuffer = std::make_unique<UniqueBufferWithStaging>(bufferSize, vk::BufferUsageFlagBits::eStorageBuffer);
 	memcpy(m_uniformBuffer->GetStagingMappedData(), data, bufferSize);
 	m_uniformBuffer->CopyStagingToGPU(commandBuffer);
 	commandBufferPool.DestroyAfterSubmit(m_uniformBuffer->ReleaseStagingBuffer());
@@ -236,18 +222,20 @@ void MaterialSystem::CreateDescriptorPool(uint8_t numConcurrentFrames)
 		g_device->Get().resetDescriptorPool(m_descriptorPool.get());
 
 	uint16_t nbSamplers =
-		m_constants.fragment.nbSamplers2D +
-		m_constants.fragment.nbSamplersCube +
-		m_constants.fragment.nbShadowMaps;
+		m_constants.nbSamplers2D +
+		m_constants.nbSamplersCube +
+		m_constants.nbShadowMaps;
 
 	// Set 0 (view):     - 1 uniform buffer for view uniforms per concurrentFrames +
 	//                   - 1 uniform buffer containing all lights +
 	//					 - 1 image sampler per shadow map texture
-	// Set 1 (model):    - 1 uniform buffer containing all models
-	// Set 2 (material): - 1 uniform buffer containing all material properties +
+	//					 - 1 storage buffer with all shadow map transforms
+	// Set 1 (model):    - 1 storage buffer containing all models
+	// Set 2 (material): - 1 storage buffer containing all material properties +
 	//                   - 1 image sampler per texture in the texture cache
-	std::array<std::pair<vk::DescriptorType, uint16_t>, 2ULL> descriptorCount = {
-		std::make_pair(vk::DescriptorType::eUniformBuffer, (uint16_t)numConcurrentFrames + 3),
+	std::array<std::pair<vk::DescriptorType, uint16_t>, 3ULL> descriptorCount = {
+		std::make_pair(vk::DescriptorType::eUniformBuffer, (uint16_t)numConcurrentFrames + 1),
+		std::make_pair(vk::DescriptorType::eStorageBuffer, (uint16_t)3),
 		std::make_pair(vk::DescriptorType::eCombinedImageSampler, (uint16_t)nbSamplers)
 	};
 
@@ -317,21 +305,21 @@ void MaterialSystem::UpdateShadowDescriptorSets(
 
 		writeDescriptorSets.emplace_back(
 			viewDescriptorSet, (uint32_t)ViewSetBindings::eShadowData, 0,
-			1, vk::DescriptorType::eUniformBuffer, nullptr, &descriptorBufferInfo
+			1, vk::DescriptorType::eStorageBuffer, nullptr, &descriptorBufferInfo
 		);
 	}
 
 	g_device->Get().updateDescriptorSets(static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
 }
 
-void MaterialSystem::UpdateModelDescriptorSet(vk::Buffer modelUniformBuffer, size_t modelBufferSize) const
+void MaterialSystem::UpdateModelDescriptorSet(vk::Buffer modelBuffer, size_t modelBufferSize) const
 {
 	vk::DescriptorSet descriptorSet = GetDescriptorSet(DescriptorSetIndex::Model);
 
-	vk::DescriptorBufferInfo descriptorBufferInfo(modelUniformBuffer, 0, modelBufferSize);
+	vk::DescriptorBufferInfo descriptorBufferInfo(modelBuffer, 0, modelBufferSize);
 	vk::WriteDescriptorSet writeDescriptorSet(
 		descriptorSet, (uint32_t)ModelSetBindings::eModelData, {},
-		1, vk::DescriptorType::eUniformBuffer, nullptr, &descriptorBufferInfo
+		1, vk::DescriptorType::eStorageBuffer, nullptr, &descriptorBufferInfo
 	);
 	g_device->Get().updateDescriptorSets(1, &writeDescriptorSet, 0, nullptr); // kind of sad that these updates are not batched together (todo: descriptor set system)
 }
@@ -349,7 +337,7 @@ void MaterialSystem::UpdateMaterialDescriptorSet() const
 	writeDescriptorSets.push_back(
 		vk::WriteDescriptorSet(
 			descriptorSet, (uint32_t)MaterialSetBindings::eProperties, {},
-			1, vk::DescriptorType::eUniformBuffer, nullptr, &descriptorBufferInfo
+			1, vk::DescriptorType::eStorageBuffer, nullptr, &descriptorBufferInfo
 		)
 	);
 

@@ -114,24 +114,12 @@ public:
 	static constexpr char* kVertexShader = "primitive_vert.spv";
 	static constexpr char* kFragmentShader = "surface_frag.spv";
 
-	struct VertexShaderConstants
-	{
-		uint32_t nbModels = 64;
-	};
-
-	struct FragmentShaderConstants
+	struct ShaderConstants
 	{
 		uint32_t nbLights = 1;
 		uint32_t nbShadowMaps = 12;
 		uint32_t nbSamplers2D = 64;
 		uint32_t nbSamplersCube = 64;
-		uint32_t nbMaterialProperties = 64;
-	};
-
-	struct ShaderConstants
-	{
-		VertexShaderConstants vertex;
-		FragmentShaderConstants fragment;
 	};
 
 	MaterialSystem(
@@ -169,7 +157,7 @@ public:
 
 	// Set 1
 	void UpdateModelDescriptorSet(
-		vk::Buffer modelUniformBuffer, size_t modelBufferSize
+		vk::Buffer modelBuffer, size_t modelBufferSize
 	) const;
 
 	// Set 2

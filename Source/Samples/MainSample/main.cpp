@@ -92,6 +92,9 @@ protected:
 
 	CameraMode m_cameraMode = CameraMode::OrbitCamera;
 
+	// For shadow map shaders
+	const vk::Extent2D kShadowMapExtent = vk::Extent2D(2 * 2048, 2 * 2048);
+
 	void Init(vk::CommandBuffer& commandBuffer) override
 	{
 		vk::Extent2D imageExtent = m_swapchain->GetImageDescription().extent;
@@ -107,7 +110,6 @@ protected:
 	void OnSwapchainRecreated() override
 	{
 		// Reset resources that depend on the swapchain images
-		//m_graphicsPipelines.clear();
 		m_framebuffers.clear();
 
 		m_renderPass.reset();
@@ -123,8 +125,14 @@ protected:
 		commandBuffer.begin({ vk::CommandBufferUsageFlagBits::eOneTimeSubmit });
 		{
 			m_scene->Reset(commandBuffer, *m_renderPass, imageExtent);
-			m_shadowSystem.Reset(imageExtent);
-			InitShadowMaps(commandBuffer);
+			
+			// Reset Shadow Maps
+			const UniqueBuffer& shadowPropertiesBuffer = m_shadowSystem.GetShadowTransformsBuffer();
+			m_materialSystem.UpdateShadowDescriptorSets(
+				m_shadowSystem.GetTexturesInfo(),
+				shadowPropertiesBuffer.Get(), shadowPropertiesBuffer.Size()
+			);
+
 			m_grid->Reset(*m_renderPass, imageExtent);
 		}
 		commandBuffer.end();
@@ -224,13 +232,14 @@ protected:
 		));
 	}
 
-	// For shadow map shaders
-	const vk::Extent2D kShadowMapExtent = vk::Extent2D(2*2048, 2*2048);
-
 	void InitShadowMaps(vk::CommandBuffer& commandBuffer)
 	{
-		// At this point the scene is loaded and we know how many models we have
-		m_scene->InitShadowMaps();
+		m_shadowSystem.UploadToGPU();
+		const UniqueBuffer& shadowPropertiesBuffer = m_shadowSystem.GetShadowTransformsBuffer();
+		m_materialSystem.UpdateShadowDescriptorSets(
+			m_shadowSystem.GetTexturesInfo(),
+			shadowPropertiesBuffer.Get(), shadowPropertiesBuffer.Size()
+		);
 
 		if (m_options.showShadowMapPreview)
 		{

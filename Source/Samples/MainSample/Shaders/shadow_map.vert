@@ -13,9 +13,6 @@ layout(push_constant)
 
 //--- Set 0 (Scene Uniforms) --- //
 
-layout(constant_id = 0)
-    const uint NB_SHADOW_CASTING_LIGHTS = 4;
-
 struct ShadowView {
     mat4 view;
     mat4 proj;
@@ -23,18 +20,15 @@ struct ShadowView {
 };
 
 layout(set = 0, binding = 0)
-    uniform ViewUniforms {
-        ShadowView transforms[NB_SHADOW_CASTING_LIGHTS];
+    readonly buffer ViewUniforms {
+        ShadowView transforms[];
     } shadow;
 
 // --- Set 1 (Model Uniforms) --- //
 
-layout(constant_id = 1)
-    const uint NB_MODELS = 64;
-
 layout(set = 1, binding = 0)
-    uniform ModelUniforms {
-        mat4 transforms[NB_MODELS];
+    readonly buffer ModelUniforms {
+        mat4 transforms[];
     } model;
 
 void main() {

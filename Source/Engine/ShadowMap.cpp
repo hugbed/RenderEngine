@@ -6,34 +6,11 @@
 
 namespace
 {
-	struct VertexShaderConstants
-	{
-		uint32_t nbShadowCastingLights = 4;
-		uint32_t nbModels = 64;
-	};
-
 	struct PushConstants
 	{
 		uint32_t shadowIndex = 0;
 		uint32_t modelIndex = 0;
 	};
-
-	enum class ConstantIDs
-	{
-		// Fragment
-		eNbShadowCastingLights = 0,
-		eNbModels = 1
-	};
-
-	SmallVector<vk::SpecializationMapEntry> GetSpecializationMapEntries()
-	{
-		using VSConst = VertexShaderConstants;
-
-		return SmallVector<vk::SpecializationMapEntry>{
-			vk::SpecializationMapEntry((uint32_t)ConstantIDs::eNbShadowCastingLights, offsetof(VSConst, nbShadowCastingLights), sizeof(VSConst::nbShadowCastingLights)),
-				vk::SpecializationMapEntry((uint32_t)ConstantIDs::eNbModels, offsetof(VSConst, nbModels), sizeof(VSConst::nbModels))
-		};
-	}
 
 	[[nodiscard]] vk::UniqueSampler CreateSampler(vk::SamplerAddressMode addressMode)
 	{
@@ -116,13 +93,13 @@ namespace
 		return info;
 	}
 
-	[[discard]] std::unique_ptr<UniqueBuffer> CreateUniformBuffer(size_t bufferSize)
+	[[discard]] std::unique_ptr<UniqueBuffer> CreateStorageBuffer(size_t bufferSize)
 	{
 		return std::make_unique<UniqueBuffer>(
 			vk::BufferCreateInfo(
 				{},
 				bufferSize,
-				vk::BufferUsageFlagBits::eUniformBuffer
+				vk::BufferUsageFlagBits::eStorageBuffer
 			), VmaAllocationCreateInfo{ VMA_ALLOCATION_CREATE_MAPPED_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU }
 		);
 	}
@@ -134,7 +111,7 @@ namespace
 		std::vector<vk::WriteDescriptorSet> writeDescriptorSets = {
 			vk::WriteDescriptorSet(
 				descriptorSet, binding++, {},
-				1, vk::DescriptorType::eUniformBuffer, nullptr, &descriptorBufferInfoView
+				1, vk::DescriptorType::eStorageBuffer, nullptr, &descriptorBufferInfoView
 			) // binding = 0
 		};
 		g_device->Get().updateDescriptorSets(static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
@@ -148,7 +125,7 @@ namespace
 		writeDescriptorSets.push_back(
 			vk::WriteDescriptorSet(
 				descriptorSet, binding, {},
-				1, vk::DescriptorType::eUniformBuffer, nullptr, &descriptorBufferInfo
+				1, vk::DescriptorType::eStorageBuffer, nullptr, &descriptorBufferInfo
 			)
 		);
 		g_device->Get().updateDescriptorSets(
@@ -299,10 +276,10 @@ void ShadowSystem::CreateDescriptorPool()
 	for (auto& descriptorSet : m_descriptorSets)
 		descriptorSet.reset();
 
-	// Set 0 (view):     { 1 uniform buffer containing all shadow map transforms }
-	// Set 1 (model):    { 1 uniform buffer containing all model transforms }
+	// Set 0 (view):     { 1 buffer containing all shadow map transforms }
+	// Set 1 (model):    { 1 buffer containing all model transforms }
 	std::pair<vk::DescriptorType, uint16_t> descriptorCount[] = {
-		std::make_pair(vk::DescriptorType::eUniformBuffer, 2),
+		std::make_pair(vk::DescriptorType::eStorageBuffer, 2),
 	};
 	const uint32_t descriptorCountSize = sizeof(descriptorCount) / sizeof(descriptorCount[0]);
 
@@ -350,16 +327,16 @@ void ShadowSystem::UploadToGPU()
 	CreateGraphicsPipeline();
 	CreateDescriptorSets();
 	
-	m_viewPropertiesBuffer = ::CreateUniformBuffer(m_properties.size() * sizeof(m_properties[0]));
+	m_viewPropertiesBuffer = ::CreateStorageBuffer(m_properties.size() * sizeof(m_properties[0]));
 
-	m_transformsBuffer = ::CreateUniformBuffer(m_transforms.size() * sizeof(m_transforms[0]));
+	m_transformsBuffer = ::CreateStorageBuffer(m_transforms.size() * sizeof(m_transforms[0]));
 
 	::UpdateViewDescriptorSet(
 		m_viewPropertiesBuffer->Get(), m_viewPropertiesBuffer->Size(),
 		GetDescriptorSet(DescriptorSetIndex::View)
 	);
 	
-	const UniqueBuffer& modelBuffer = m_modelSystem->GetUniformBuffer();
+	const UniqueBuffer& modelBuffer = m_modelSystem->GetBuffer();
 	::UpdateModelDescriptorSet(
 		modelBuffer.Get(), modelBuffer.Size(),
 		GetDescriptorSet(DescriptorSetIndex::Model)
@@ -371,18 +348,8 @@ void ShadowSystem::CreateGraphicsPipeline()
 	ShaderSystem& shaderSystem = m_graphicsPipelineSystem->GetShaderSystem();
 	ShaderID vertexShaderID = shaderSystem.CreateShader(vertexShaderFile);
 	ShaderID fragmentShaderID = shaderSystem.CreateShader(fragmentShaderFile);
-
-	// Set constants now that we have the info
-	VertexShaderConstants constants = {
-		(uint32_t)m_properties.size(),
-		(uint32_t)m_modelSystem->GetModelCount()
-	};
-	ShaderInstanceID vertexShaderInstanceID = shaderSystem.CreateShaderInstance(
-		vertexShaderID, (const void*)&constants, ::GetSpecializationMapEntries()
-	);
-	ShaderInstanceID fragmentShaderInstanceID = shaderSystem.CreateShaderInstance(
-		fragmentShaderID
-	);
+	ShaderInstanceID vertexShaderInstanceID = shaderSystem.CreateShaderInstance(vertexShaderID);
+	ShaderInstanceID fragmentShaderInstanceID = shaderSystem.CreateShaderInstance(fragmentShaderID);
 	m_graphicsPipelineID = m_graphicsPipelineSystem->CreateGraphicsPipeline(
 		vertexShaderInstanceID,
 		fragmentShaderInstanceID,
@@ -430,7 +397,7 @@ void ShadowSystem::Update(const Camera& camera, BoundingBox sceneBoundingBox)
 		m_transforms[id] = m_properties[id].proj * m_properties[id].view;
 	}
 
-	// Write values to uniform buffer
+	// Write values to buffer
 	{
 		size_t writeSize = m_properties.size() * sizeof(m_properties[0]);
 		memcpy(m_viewPropertiesBuffer->GetMappedData(), reinterpret_cast<const void*>(m_properties.data()), writeSize);
@@ -486,7 +453,7 @@ void ShadowSystem::Render(vk::CommandBuffer& commandBuffer, uint32_t frameIndex,
 			// Bind the one big vertex + index buffers
 			m_modelSystem->BindGeometry(commandBuffer);
 
-			// Bind the model transforms uniform buffer
+			// Bind the model transforms buffer
 			commandBuffer.bindDescriptorSets(
 				vk::PipelineBindPoint::eGraphics,
 				modelPipelineLayout, (uint32_t)DescriptorSetIndex::Model,

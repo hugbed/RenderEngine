@@ -9,13 +9,6 @@ layout(location = 7) in mat4 fragProj;
 
 layout(location = 0) out vec4 outColor;
 
-//--- Set 0 (Scene Uniforms) --- //
-
-// --- Set 1 (Model Uniforms) --- //
-// ...
-
-// --- Set 2 (Material Uniforms) --- //
-
 float checkerboard(vec2 R, float scale) {
 	return float((
 		int(floor(R.x / scale)) +

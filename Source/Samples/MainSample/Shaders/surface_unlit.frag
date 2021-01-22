@@ -20,7 +20,7 @@ layout(set = 2, binding = 0)
         vec4 baseColor;
         // To use the same layout as the lit shader
         vec4 secondaryColor; float padding;
-    } material; // todo: this should be an array
+    } material;
 
 // Texture for base color
 layout(set = 2, binding = 1)

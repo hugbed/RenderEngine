@@ -15,17 +15,14 @@ layout(location = 3) out vec3 viewPos;
 
 // --- Set 1 (Model Uniforms) --- //
 
-layout(constant_id = CONSTANT_NB_MODELS)
-    const uint NB_MODELS = 64;
-
 layout(push_constant)
     uniform ModelIndex {
 	    layout(offset = 0) uint modelIndex; // index into model.transforms
     } pc;
 
 layout(set = SET_MODEL, binding = BINDING_MODEL_UNIFORMS)
-    uniform ModelUniforms {
-        mat4 transforms[NB_MODELS];
+    readonly buffer ModelUniforms {
+        mat4 transforms[];
     } model;
 
 void main() {

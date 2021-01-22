@@ -6,8 +6,8 @@ layout(set = SET_VIEW, binding = BINDING_VIEW_SHADOW_MAPS)
     uniform sampler2D shadowMaps[NB_SHADOW_MAPS];
 
 layout(set = SET_VIEW, binding = BINDING_VIEW_SHADOW_DATA)
-    uniform ShadowData {
-        mat4 transform[NB_SHADOW_MAPS];
+    readonly buffer ShadowData {
+        mat4 transform[];
     } shadowData;
 
 /// 1.0 means shadow, 0.0 no shadow

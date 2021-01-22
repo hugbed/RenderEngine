@@ -85,13 +85,13 @@ void Scene::Reset(vk::CommandBuffer& commandBuffer, const RenderPass& renderPass
 void Scene::Load(vk::CommandBuffer commandBuffer)
 {
 	m_skybox = std::make_unique<Skybox>(*m_renderPass, m_imageExtent, *m_textureCache, *m_graphicsPipelineSystem);
+
 	LoadScene(commandBuffer);
 
-	CreateLightsUniformBuffers(commandBuffer);
+	m_lightSystem->UploadToGPU(*m_commandBufferPool);
 	CreateViewUniformBuffers();
 	UpdateMaterialDescriptors();
-
-	UploadToGPU(commandBuffer);
+	m_skybox->UploadToGPU(commandBuffer, *m_commandBufferPool);
 }
 
 void Scene::Update(uint32_t imageIndex)
@@ -180,6 +180,9 @@ void Scene::LoadScene(vk::CommandBuffer commandBuffer)
 void Scene::LoadLights(vk::CommandBuffer buffer)
 {
 	m_lightSystem->ReserveLights(m_assimp.scene->mNumLights);
+
+	uint32_t nbShadowCastingLights = 0;
+
 	for (int i = 0; i < m_assimp.scene->mNumLights; ++i)
 	{
 		aiLight* aLight = m_assimp.scene->mLights[i];
@@ -212,7 +215,7 @@ void Scene::LoadLights(vk::CommandBuffer buffer)
 		bool hasShadows = false;
 		if (light.type == aiLightSource_DIRECTIONAL)
 		{
-			light.shadowIndex = m_nbShadowCastingLights++;
+			light.shadowIndex = nbShadowCastingLights++;
 			hasShadows = true;
 		}
 
@@ -475,11 +478,6 @@ void Scene::LoadMaterials(vk::CommandBuffer commandBuffer)
 	m_textureCache->UploadTextures(*m_commandBufferPool);
 }
 
-void Scene::CreateLightsUniformBuffers(vk::CommandBuffer commandBuffer)
-{
-	m_lightSystem->UploadToGPU(*m_commandBufferPool);
-}
-
 void Scene::CreateViewUniformBuffers()
 {
 	// Per view
@@ -548,16 +546,10 @@ void Scene::UpdateMaterialDescriptors()
 	}
 
 	MaterialSystem::ShaderConstants constants = {
-		MaterialSystem::VertexShaderConstants{
-			(uint32_t)m_modelSystem->GetModelCount()
-		},
-		MaterialSystem::FragmentShaderConstants{
-			(uint32_t)m_lightSystem->GetLightCount(),
-			(uint32_t)m_shadowSystem->GetShadowCount(),
-			(uint32_t)m_textureCache->GetTextureCount(ImageViewType::e2D),
-			(uint32_t)m_textureCache->GetTextureCount(ImageViewType::eCube),
-			(uint32_t)m_materialSystem->GetMaterialInstanceCount()
-		}
+		(uint32_t)m_lightSystem->GetLightCount(),
+		(uint32_t)m_shadowSystem->GetShadowCount(),
+		(uint32_t)m_textureCache->GetTextureCount(ImageViewType::e2D),
+		(uint32_t)m_textureCache->GetTextureCount(ImageViewType::eCube)
 	};
 	m_materialSystem->UploadToGPU(*m_commandBufferPool, std::move(constants));
 
@@ -574,28 +566,11 @@ void Scene::UpdateMaterialDescriptors()
 	);
 
 	// Bind model to material descriptor set
-	const auto& modelUniformBuffer = m_modelSystem->GetUniformBuffer();
-	m_materialSystem->UpdateModelDescriptorSet(modelUniformBuffer.Get(), modelUniformBuffer.Size());
+	const auto& modelBuffer = m_modelSystem->GetBuffer();
+	m_materialSystem->UpdateModelDescriptorSet(modelBuffer.Get(), modelBuffer.Size());
 
 	// Update material descriptor sets
 	m_materialSystem->UpdateMaterialDescriptorSet();
-}
-
-void Scene::InitShadowMaps()
-{
-	m_shadowSystem->UploadToGPU();
-
-	const UniqueBuffer& shadowPropertiesBuffer = m_shadowSystem->GetShadowTransformsBuffer();
-	m_materialSystem->UpdateShadowDescriptorSets(
-		m_shadowSystem->GetTexturesInfo(),
-		shadowPropertiesBuffer.Get(), shadowPropertiesBuffer.Size()
-	);
-}
-
-void Scene::UploadToGPU(vk::CommandBuffer& commandBuffer)
-{
-	// Skybox
-	m_skybox->UploadToGPU(commandBuffer, *m_commandBufferPool);
 }
 
 UniqueBuffer& Scene::GetViewUniformBuffer(uint32_t imageIndex)

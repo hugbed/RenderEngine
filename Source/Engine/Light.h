@@ -20,7 +20,7 @@ struct PhongLight
 	glm::aligned_vec4 specular;
 	glm::aligned_float32 innerCutoff; // (cos of the inner angle)
 	glm::aligned_float32 outerCutoff; // (cos of the outer angle)
-	glm::aligned_int32 shadowIndex;
+	glm::aligned_uint32 shadowIndex;
 };
 
 using LightID = uint32_t;

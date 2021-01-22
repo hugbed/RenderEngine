@@ -65,7 +65,7 @@ public:
 
 		if (isSetCompatible[set] == false)
 		{
-			// Bind the model transforms uniform buffer
+			// Bind the model transforms buffer
 			vk::PipelineLayout pipelineLayout = m_graphicsPipelineSystem->GetPipelineLayout(pipelineID, (uint8_t)set);
 			vk::DescriptorSet descriptorSet = m_materialSystem->GetDescriptorSet(DescriptorSetIndex::Model);
 
