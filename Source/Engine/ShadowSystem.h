@@ -1,15 +1,17 @@
 #pragma once
 
-#include "Light.h"
-#include "Scene.h"
+#include "LightSystem.h"
+#include "ModelSystem.h"
+#include "Camera.h"
+#include "BoundingBox.h"
 
 #include "RenderPass.h"
 #include "Swapchain.h"
-#include "GraphicsPipeline.h"
+#include "GraphicsPipelineSystem.h"
+#include "ShaderSystem.h"
 #include "Framebuffer.h"
 #include "Texture.h"
 #include "Image.h"
-#include "Shader.h"
 
 #include "Device.h"
 #include "PhysicalDevice.h"

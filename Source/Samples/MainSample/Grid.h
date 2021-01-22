@@ -1,8 +1,8 @@
 #pragma once
 
 #include "Texture.h"
-#include "Shader.h"
-#include "GraphicsPipeline.h"
+#include "ShaderSystem.h"
+#include "GraphicsPipelineSystem.h"
 #include "RenderPass.h"
 
 #include <gsl/gsl>

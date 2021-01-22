@@ -1,4 +1,4 @@
-#include "GraphicsPipeline.h"
+#include "GraphicsPipelineSystem.h"
 
 #include "Image.h"
 #include "Device.h"

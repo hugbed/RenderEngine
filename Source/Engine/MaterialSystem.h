@@ -1,9 +1,9 @@
 #pragma once
 
-#include "Light.h"
-#include "GraphicsPipeline.h"
+#include "LightSystem.h"
+#include "GraphicsPipelineSystem.h"
+#include "TextureSystem.h"
 #include "RenderPass.h"
-#include "TextureCache.h"
 #include "DescriptorSetLayouts.h"
 #include "hash.h"
 #include "glm_includes.h"

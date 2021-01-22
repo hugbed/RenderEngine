@@ -1,11 +1,11 @@
 #pragma once
 
 #include "Image.h"
-#include "Shader.h"
-#include "GraphicsPipeline.h"
+#include "ShaderSystem.h"
+#include "GraphicsPipelineSystem.h"
 #include "CommandBufferPool.h"
 #include "RenderPass.h"
-#include "TextureCache.h"
+#include "TextureSystem.h"
 
 #include "glm_includes.h"
 

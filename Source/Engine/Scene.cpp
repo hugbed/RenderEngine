@@ -1,8 +1,8 @@
 #include "Scene.h"
 
 #include "CommandBufferPool.h"
-#include "Material.h"
-#include "ShadowMap.h"
+#include "MaterialSystem.h"
+#include "ShadowSystem.h"
 
 #define _USE_MATH_DEFINES
 #include <math.h>

@@ -1,4 +1,4 @@
-#include "TextureCache.h"
+#include "TextureSystem.h"
 
 #include "Texture.h"
 #include "CommandBufferPool.h"

@@ -1,12 +1,12 @@
 #pragma once
 
-#include "TextureCache.h"
-#include "Material.h"
+#include "TextureSystem.h"
+#include "MaterialSystem.h"
+#include "LightSystem.h"
+#include "ShadowSystem.h"
 #include "RenderState.h"
 #include "Camera.h"
 #include "Skybox.h"
-#include "Light.h"
-#include "ShadowMap.h"
 
 #include <assimp/Importer.hpp> 
 #include <assimp/scene.h>     

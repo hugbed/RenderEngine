@@ -1,7 +1,7 @@
 #pragma once
 
+#include "MaterialSystem.h"
 #include "DescriptorSetLayouts.h"
-#include "Material.h"
 #include "BoundingBox.h"
 
 #include "Buffers.h"

@@ -1,4 +1,4 @@
-#include "Light.h"
+#include "LightSystem.h"
 
 #include "Buffers.h"
 #include "CommandBufferPool.h"

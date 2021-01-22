@@ -1,4 +1,4 @@
-#include "ShadowMap.h"
+#include "ShadowSystem.h"
 
 #include "Scene.h"
 

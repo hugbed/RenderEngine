@@ -1,10 +1,9 @@
 #pragma once
 
 #include "Texture.h"
-#include "GraphicsPipeline.h"
-#include "Shader.h"
-
-#include "TextureCache.h"
+#include "GraphicsPipelineSystem.h"
+#include "ShaderSystem.h"
+#include "TextureSystem.h"
 
 #include <vulkan/vulkan.hpp>
 #include <gsl/pointers>

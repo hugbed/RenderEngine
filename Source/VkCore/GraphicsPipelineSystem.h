@@ -1,7 +1,7 @@
 #pragma once
+#include "ShaderSystem.h"
 
 #include "Buffers.h"
-#include "Shader.h" // move to cpp
 
 #include "SmallVector.h"
 

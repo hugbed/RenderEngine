@@ -1,8 +1,8 @@
 #pragma once
 
-#include "GraphicsPipeline.h"
-#include "Material.h"
-#include "Model.h"
+#include "MaterialSystem.h"
+#include "ModelSystem.h"
+#include "GraphicsPipelineSystem.h"
 #include "DescriptorSetLayouts.h"
 
 #include <vulkan/vulkan.hpp>

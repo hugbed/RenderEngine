@@ -1,9 +1,10 @@
-#include "Material.h"
+#include "MaterialSystem.h"
 
-#include "Shader.h"
-#include "GraphicsPipeline.h"
-#include "Model.h"
+#include "ShaderSystem.h"
+#include "GraphicsPipelineSystem.h"
+#include "ModelSystem.h"
 #include "CommandBufferPool.h"
+#include "DescriptorSetLayouts.h"
 
 namespace
 {
