@@ -5,7 +5,7 @@
 #include <string_view>
 #include <vector>
 
-class GLFWwindow;
+struct GLFWwindow;
 
 class Window
 {
@@ -19,6 +19,8 @@ public:
 	vk::UniqueSurfaceKHR CreateSurface(vk::Instance instance);
 
 	vk::Extent2D GetFramebufferSize() const;
+
+	GLFWwindow* GetGLFWWindow() { return m_window; }
 
 	bool ShouldClose() const;
 	void PollEvents() const;

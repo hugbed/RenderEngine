@@ -27,6 +27,17 @@ set(SPIRV_CROSS_ENABLE_C_API OFF CACHE BOOL "SPIRV_CROSS_ENABLE_C_API" FORCE)
 set(SPIRV_CROSS_ENABLE_UTIL OFF CACHE BOOL "SPIRV_CROSS_ENABLE_UTIL" FORCE)
 add_subdirectory(SPIRV-Cross)
 
+# IMGUI
+find_package(Vulkan REQUIRED)
+add_library(imgui STATIC)
+target_include_directories(imgui PUBLIC ${Vulkan_INCLUDE_DIRS} imgui)
+file(GLOB IMGUI_SRC_FILES
+  ${PROJECT_SOURCE_DIR}/imgui/*.h
+  ${PROJECT_SOURCE_DIR}/imgui/*.cpp
+  ${PROJECT_SOURCE_DIR}/imgui/*.natvis)
+target_sources(imgui PRIVATE ${IMGUI_SRC_FILES})
+target_link_libraries(imgui PUBLIC ${Vulkan_LIBRARY} glfw)
+
 # ASSIMP
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "BUILD_SHARED_LIBS" FORCE)
 set(ASSIMP_BUILD_TESTS OFF CACHE BOOL "ASSIMP_BUILD_TESTS" FORCE)

@@ -35,10 +35,18 @@ public:
 
 	vk::ImageView GetDepthImageView() const { return m_depthImage->GetImageView(); }
 
+	vk::SurfaceFormatKHR GetSurfaceFormat() const { return m_surfaceFormat; }
+
+	vk::PresentModeKHR GetPresentMode() const { return m_presentMode; }
+
 	const value_type& Get() const { return m_swapchain.get(); }
 
 private:
 	void CreateImageViews();
+
+	// Surface
+	vk::SurfaceFormatKHR m_surfaceFormat;
+	vk::PresentModeKHR m_presentMode;
 
 	// Swapchain
 	vk::UniqueSwapchainKHR m_swapchain;

@@ -95,6 +95,8 @@ Swapchain::Swapchain(vk::SurfaceKHR surface, vk::Extent2D desiredExtent)
 	m_images = g_device->Get().getSwapchainImagesKHR(m_swapchain.get());
 	m_imageDescription.format = surfaceFormat.format;
 	m_imageDescription.extent = imageExtent;
+	m_surfaceFormat = surfaceFormat;
+	m_presentMode = presentMode;
 	CreateImageViews();
 
 	// Depth buffer
