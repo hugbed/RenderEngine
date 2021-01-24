@@ -151,6 +151,30 @@ namespace imgui
 			}
 		}
 
+		void Reset(const Resources& resources, vk::CommandBuffer commandBuffer)
+		{
+			ImGui_ImplVulkan_Shutdown();
+
+			m_device = resources.device;
+			m_renderPass = resources.renderPass;
+
+			ImGui_ImplVulkan_InitInfo init_info = {};
+			init_info.Instance = resources.instance;
+			init_info.PhysicalDevice = resources.physicalDevice;
+			init_info.Device = m_device;
+			init_info.QueueFamily = resources.queueFamily;
+			init_info.Queue = resources.queue;
+			init_info.PipelineCache = VK_NULL_HANDLE;
+			init_info.DescriptorPool = m_imguiDescriptorPool;
+			init_info.Allocator = nullptr;
+			init_info.MinImageCount = 2;
+			init_info.ImageCount = resources.imageCount;
+			init_info.MSAASamples = (VkSampleCountFlagBits)resources.MSAASamples;
+			init_info.CheckVkResultFn = &Context::CheckVkResult;
+			assert(ImGui_ImplVulkan_Init(&init_info, m_renderPass) && "Could not initialize imgui");
+			assert(ImGui_ImplVulkan_CreateFontsTexture(commandBuffer));
+		}
+
 		~Context()
 		{
 			m_imguiCommandBuffers.clear();
@@ -264,28 +288,54 @@ protected:
 		InitShadowMaps(commandBuffer);
 
 		// Init ImGui
-		{
-			imgui::Resources resources = {};
-			resources.window = m_window.GetGLFWWindow();
-			resources.instance = m_instance;
-			resources.physicalDevice = g_physicalDevice->Get();
-			resources.device = g_device->Get();
-			resources.queueFamily = g_physicalDevice->GetQueueFamilies().graphicsFamily.value();
-			resources.queue = g_device->GetGraphicsQueue();
-			resources.imageCount = m_swapchain->GetImageCount();
-			resources.MSAASamples = (VkSampleCountFlagBits)g_physicalDevice->GetMsaaSamples();
-			resources.renderPass = m_renderPass->Get();
-			m_imgui = std::make_unique<imgui::Context>(resources, commandBuffer);
-		}
+		imgui::Resources resources = PopulateImGuiResources();
+		m_imgui = std::make_unique<imgui::Context>(resources, commandBuffer);
 
 		CreateSecondaryCommandBuffers();
 		RecordRenderPassCommands();
 	}
 
+	void ShowMenuFile()
+	{
+		if (ImGui::MenuItem("Open", "Ctrl+O")) {}
+		if (ImGui::BeginMenu("Open Recent"))
+		{
+			ImGui::MenuItem("fish_hat.c");
+			ImGui::MenuItem("fish_hat.inl");
+			ImGui::MenuItem("fish_hat.h");
+			ImGui::EndMenu();
+		}
+	}
+
+	imgui::Resources PopulateImGuiResources()
+	{
+		imgui::Resources resources = {};
+		resources.window = m_window.GetGLFWWindow();
+		resources.instance = m_instance;
+		resources.physicalDevice = g_physicalDevice->Get();
+		resources.device = g_device->Get();
+		resources.queueFamily = g_physicalDevice->GetQueueFamilies().graphicsFamily.value();
+		resources.queue = g_device->GetGraphicsQueue();
+		resources.imageCount = m_swapchain->GetImageCount();
+		resources.MSAASamples = (VkSampleCountFlagBits)g_physicalDevice->GetMsaaSamples();
+		resources.renderPass = m_renderPass->Get();
+		return resources;
+	}
+
 	void UpdateImGui()
 	{
 		// Add ImGui widgets here
-		// ImGui::ShowDemoWindow();
+		/*ImGui::ShowDemoWindow();*/
+
+		if (ImGui::BeginMainMenuBar())
+		{
+			if (ImGui::BeginMenu("File"))
+			{
+				ShowMenuFile();
+				ImGui::EndMenu();
+			}
+			ImGui::EndMainMenuBar();
+		}
 	}
 
 	// Render pass commands are recorded once and executed every frame
@@ -318,6 +368,10 @@ protected:
 			);
 
 			m_grid->Reset(*m_renderPass, imageExtent);
+
+			// Reset ImGUI
+			imgui::Resources resources = PopulateImGuiResources();
+			m_imgui->Reset(resources, commandBuffer);
 		}
 		commandBuffer.end();
 
