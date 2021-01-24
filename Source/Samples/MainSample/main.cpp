@@ -30,6 +30,8 @@
 #include "RenderState.h"
 #include "Scene.h"
 #include "TexturedQuad.h"
+#include "InputSystem.h"
+#include "CameraController.h"
 
 #include "Grid.h"
 
@@ -79,10 +81,10 @@ public:
 		, m_shadowSystem(m_swapchain->GetImageDescription().extent, m_graphicsPipelineSystem, m_modelSystem, m_lightSystem)
 		, m_grid(std::make_unique<Grid>(*m_renderPass, m_swapchain->GetImageDescription().extent, m_graphicsPipelineSystem))
 	{
-		window.SetMouseButtonCallback(reinterpret_cast<void*>(this), OnMouseButton);
-		window.SetMouseScrollCallback(reinterpret_cast<void*>(this), OnMouseScroll);
-		window.SetCursorPositionCallback(reinterpret_cast<void*>(this), OnCursorPosition);
-		window.SetKeyCallback(reinterpret_cast<void*>(this), OnKey);
+		window.SetMouseButtonCallback(reinterpret_cast<void*>(&m_inputSystem), InputSystem::OnMouseButton);
+		window.SetMouseScrollCallback(reinterpret_cast<void*>(&m_inputSystem), InputSystem::OnMouseScroll);
+		window.SetCursorPositionCallback(reinterpret_cast<void*>(&m_inputSystem), InputSystem::OnCursorPosition);
+		window.SetKeyCallback(reinterpret_cast<void*>(&m_inputSystem), InputSystem::OnKey);
 	}
 
 	~App()
@@ -93,26 +95,6 @@ public:
 	using RenderLoop::Init;
 
 protected:
-	using KeyID = int;
-
-	enum KeyAction
-	{
-		ePressed = 1,
-		eRepeated = 2
-	};
-
-	struct Inputs
-	{
-		glm::vec2 lastCursorPos = glm::vec2(0.0f);
-		glm::vec2 cursorPos = glm::vec2(0.0f);
-		glm::vec2 scrollOffset = glm::vec2(0.0f);
-	
-		std::map<KeyID, KeyAction> keyState;
-
-		bool scrollOffsetReceived = false;
-		bool isMouseDown = false;
-		bool ignoreMouseInputs = false;
-	};
 	Inputs m_inputs;
 
 	// assimp uses +Y as the up vector
@@ -128,6 +110,7 @@ protected:
 		vk::Extent2D imageExtent = m_swapchain->GetImageDescription().extent;
 
 		m_scene->Load(commandBuffer);
+		m_cameraController = std::make_unique<CameraController>(m_scene->GetCamera(), m_swapchain->GetImageDescription().extent);
 		InitShadowMaps(commandBuffer);
 		InitImGui(commandBuffer);
 
@@ -138,7 +121,7 @@ protected:
 	// -- ImGui -- //
 
 	ImGui_ImplVulkanH_Window m_imguiWindow;
-	VkDescriptorPool m_imguiDescriptorPool;
+	VkDescriptorPool m_imguiDescriptorPool = VK_NULL_HANDLE;
 
 	static void CheckVkResult(VkResult result)
 	{
@@ -253,6 +236,8 @@ protected:
 		// --- Recreate everything that depends on the swapchain images --- //
 
 		vk::Extent2D imageExtent = m_swapchain->GetImageDescription().extent;
+
+		m_cameraController->SetViewportExtent(imageExtent);
 
 		// Use any command buffer for init
 		auto commandBuffer = m_commandBufferPool.ResetAndGetCommandBuffer();
@@ -429,66 +414,10 @@ protected:
 
 	Camera& GetCamera() { return m_scene->GetCamera(); }
 
-	bool HandleCameraKeys(std::chrono::duration<float> dt_s)
+	bool HandleOptionsKeys(const Inputs& inputs)
 	{
-		Camera& camera = GetCamera();
-
-		bool cameraMoved = false;
-		const float speed = 1.0f; // in m/s
-
-		for (const std::pair<KeyID, KeyAction>& key : m_inputs.keyState)
-		{
-			KeyID keyID = key.first;
-			KeyAction keyAction = key.second;
-
-			// Handle free camera
-			if (keyAction == KeyAction::ePressed || keyAction == KeyAction::eRepeated && m_cameraMode == CameraMode::FreeCamera)
-			{
-				glm::vec3 forward = glm::normalize(camera.GetLookAt() - camera.GetEye());
-				glm::vec3 rightVector = glm::normalize(glm::cross(forward, camera.GetUpVector()));
-				float dx = speed * dt_s.count(); // in m / s
-
-				switch (keyID) {
-				case GLFW_KEY_W:
-					camera.MoveCamera(forward, dx, false);
-					cameraMoved = true;
-					break;
-				case GLFW_KEY_A:
-					camera.MoveCamera(rightVector, -dx, true);
-					cameraMoved = true;
-					break;
-				case GLFW_KEY_S:
-					camera.MoveCamera(forward, -dx, false);
-					cameraMoved = true;
-					break;
-				case GLFW_KEY_D:
-					camera.MoveCamera(rightVector, dx, true);
-					cameraMoved = true;
-					break;
-				case GLFW_KEY_F:
-					m_scene->ResetCamera();
-					cameraMoved = true;
-					break;
-				default:
-					break;
-				}
-			}
-
-			// Handle camera mode change
-			if (keyID == GLFW_KEY_F && keyAction == KeyAction::ePressed)
-			{
-				m_cameraMode = m_cameraMode == CameraMode::FreeCamera ? CameraMode::OrbitCamera : CameraMode::FreeCamera;
-				cameraMoved = true;
-			}
-		}
-
-		return cameraMoved;
-	}
-
-	bool HandleOptionsKeys()
-	{
-		auto it = m_inputs.keyState.find(GLFW_KEY_G);
-		if (it != m_inputs.keyState.end() && it->second == KeyAction::ePressed)
+		auto it = inputs.keyState.find(GLFW_KEY_G);
+		if (it != inputs.keyState.end() && it->second == KeyAction::ePressed)
 		{
 			m_options.showGrid = !m_options.showGrid;
 			m_frameDirty = kAllFramesDirty;
@@ -497,156 +426,26 @@ protected:
 		return false;
 	}
 
-	bool HandleCameraMouseScroll(std::chrono::duration<float> dt_s)
-	{
-		Camera& camera = GetCamera();
-		const double scrollOffsetY = m_inputs.scrollOffset.y;
-		if (m_inputs.scrollOffsetReceived)
-		{
-			float fov = std::clamp(camera.GetFieldOfView() - scrollOffsetY, 30.0, 130.0);
-			camera.SetFieldOfView(fov);
-			return true;
-		}
-		return false;
-	}
-
-	template <typename T>
-	static T sgn(T val)
-	{
-		return (T(0) < val) - (val < T(0));
-	}
-
-	bool HandleCameraMouseMove(std::chrono::duration<float> dt_s)
-	{
-		int viewportWidth = 0;
-		int viewportHeight = 0;
-		m_window.GetSize(&viewportWidth, &viewportHeight);
-
-		Camera& camera = GetCamera();
-		bool cameraMoved = false;
-
-		if ((m_inputs.isMouseDown) && m_cameraMode == CameraMode::OrbitCamera)
-		{
-			glm::vec4 position(camera.GetEye().x, camera.GetEye().y, camera.GetEye().z, 1);
-			glm::vec4 target(camera.GetLookAt().x, camera.GetLookAt().y, camera.GetLookAt().z, 1);
-
-			glm::vec2 deltaAngle = glm::vec2(2 * M_PI / viewportWidth, M_PI / viewportHeight);
-			deltaAngle = glm::vec2(
-				m_inputs.lastCursorPos.x - m_inputs.cursorPos.x,
-				m_inputs.lastCursorPos.y - m_inputs.cursorPos.y
-			) * deltaAngle;
-
-			float cosAngle = dot(camera.GetForwardVector(), m_upVector);
-			if (cosAngle * sgn(deltaAngle.y) > 0.99f)
-				deltaAngle.y = 0;
-
-			// Rotate in X
-			glm::mat4x4 rotationMatrixX(1.0f);
-			rotationMatrixX = glm::rotate(rotationMatrixX, deltaAngle.x, m_upVector);
-			position = (rotationMatrixX * (position - target)) + target;
-
-			// Rotate in Y
-			glm::mat4x4 rotationMatrixY(1.0f);
-			rotationMatrixY = glm::rotate(rotationMatrixY, deltaAngle.y, camera.GetRightVector());
-			glm::vec3 finalPositionV3 = (rotationMatrixY * (position - target)) + target;
-
-			camera.SetCameraView(finalPositionV3, camera.GetLookAt(), m_upVector);
-
-			cameraMoved = true;
-		}
-		else if (m_inputs.isMouseDown && m_cameraMode == CameraMode::FreeCamera)
-		{
-			glm::vec2 delta = glm::vec2(
-				m_inputs.lastCursorPos.x - m_inputs.cursorPos.x,
-				m_inputs.lastCursorPos.y - m_inputs.cursorPos.y
-			);
-
-			float m_fovV = camera.GetFieldOfView() / viewportWidth * viewportHeight;
-
-			float xDeltaAngle = glm::radians(delta.x * camera.GetFieldOfView() / viewportWidth);
-			float yDeltaAngle = glm::radians(delta.y * m_fovV / viewportHeight);
-
-			//Handle case were dir = up vector
-			float cosAngle = dot(camera.GetForwardVector(), m_upVector);
-			if (cosAngle > 0.99f && yDeltaAngle < 0 || cosAngle < -0.99f && yDeltaAngle > 0)
-				yDeltaAngle = 0;
-
-			glm::vec3 lookat = camera.GetLookAt() - camera.GetUpVector() * yDeltaAngle;
-			float length = glm::distance(camera.GetLookAt(), camera.GetEye());
-
-			glm::vec3 rightVector = camera.GetRightVector();
-			glm::vec3 newLookat = lookat + rightVector * xDeltaAngle;
-
-			auto lookatDist = glm::distance(newLookat, camera.GetEye());
-			camera.LookAt(newLookat, m_upVector);
-
-			cameraMoved = true;
-		}
-		
-		return cameraMoved;
-	}
-
 	void Update() override 
 	{
 		ImGui_ImplVulkan_NewFrame();
 		ImGui_ImplGlfw_NewFrame();
 		ImGui::NewFrame();
-		bool mouseWasCaptured = ImGui::GetIO().WantCaptureMouse;
+		m_inputSystem.CaptureMouseInputs(ImGui::GetIO().WantCaptureMouse);
 		UpdateImGui();
 		ImGui::EndFrame();
 		ImGui::Render();
 
-		bool cameraMoved = false;
 		std::chrono::duration<float> dt_s = GetDeltaTime();
 
-		cameraMoved = HandleCameraKeys(dt_s);
+		const Inputs& inputs = m_inputSystem.GetFrameInputs();
 
-		if (mouseWasCaptured == false)
-		{
-			cameraMoved = HandleCameraMouseScroll(dt_s) || cameraMoved;
-			cameraMoved = HandleCameraMouseMove(dt_s) || cameraMoved;
-		}
+		HandleOptionsKeys(inputs);
 
-		HandleOptionsKeys();
-
-		if (cameraMoved)
+		if (m_cameraController->Update(dt_s, inputs))
 			OnCameraUpdated();
 
-		m_inputs.scrollOffsetReceived = false;
-		m_inputs.lastCursorPos = m_inputs.cursorPos;
-		m_inputs.keyState.clear();
-	}
-
-	static void OnMouseButton(void* data, int button, int action, int mods)
-	{
-		App* app = reinterpret_cast<App*>(data);
-
-		if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS)
-			app->m_inputs.isMouseDown = true;
-		if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_RELEASE)
-			app->m_inputs.isMouseDown = false;
-	}
-
-	static void OnMouseScroll(void* data, double xOffset, double yOffset)
-	{
-		App* app = reinterpret_cast<App*>(data);
-		app->m_inputs.scrollOffset = glm::vec2(xOffset, yOffset);
-		app->m_inputs.scrollOffsetReceived = true;
-	}
-
-	static void OnCursorPosition(void* data, double xPos, double yPos)
-	{
-		App* app = reinterpret_cast<App*>(data);
-		app->m_inputs.cursorPos = glm::vec2(xPos, yPos);
-	}
-
-	static void OnKey(void* data, int key, int scancode, int action, int mods)
-	{
-		App* app = reinterpret_cast<App*>(data);
-		if (action == GLFW_REPEAT)
-			app->m_inputs.keyState[key] = KeyAction::eRepeated;
-		else if (action == GLFW_PRESS)
-			app->m_inputs.keyState[key] = KeyAction::ePressed;
+		m_inputSystem.EndFrame();
 	}
 
 	void OnCameraUpdated()
@@ -671,12 +470,15 @@ private:
 	ModelSystem m_modelSystem;
 	ShadowSystem m_shadowSystem;
 
+	InputSystem m_inputSystem;
+
 	// Secondary command buffers
 	vk::UniqueCommandPool m_secondaryCommandPool;
 	std::vector<vk::UniqueCommandBuffer> m_renderPassCommandBuffers;
 	std::vector<vk::UniqueCommandBuffer> m_imguiCommandBuffers;
 
 	std::unique_ptr<Scene> m_scene;
+	std::unique_ptr<CameraController> m_cameraController;
 	std::unique_ptr<Grid> m_grid;
 	std::unique_ptr<TexturedQuad> m_shadowMapPreviewQuad;
 };

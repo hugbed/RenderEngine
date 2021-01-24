@@ -21,8 +21,6 @@
 
 class ShadowSystem;
 
-enum class CameraMode { OrbitCamera, FreeCamera };
-
 class Scene
 {
 public:
