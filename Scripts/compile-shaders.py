@@ -153,7 +153,8 @@ if __name__ == '__main__':
 
 	# Load previous file hashes
 	last_file_hashes = {}
-	config_file = os.path.join("F:\\Personal\\RenderEngine\\Scripts", "..", "Build", "config.json") # todo: replace hardcoded
+	script_path = os.path.dirname(os.path.realpath(__file__))
+	config_file = os.path.join(script_path, "..", "Build", "config.json") # todo: replace hardcoded
 	if os.path.exists(config_file):
 		with open(config_file) as f:
 			config = json.load(f)
@@ -193,7 +194,7 @@ if __name__ == '__main__':
 		build_shader(shader_in, shader_out)
 
 	# Save current hashes
-	with open(config_file, 'w') as f:
+	with open(config_file, 'w+') as f:
 		json.dump({ shaders_path : current_file_hashes }, f)
 
 	# unittest.main()

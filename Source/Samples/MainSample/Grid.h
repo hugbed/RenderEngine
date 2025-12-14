@@ -18,8 +18,8 @@ public:
 		: m_graphicsPipelineSystem(&graphicsPipelineSystem)
 	{
 		ShaderSystem& shaderSystem = m_graphicsPipelineSystem->GetShaderSystem();
-		ShaderID vertexShaderID = shaderSystem.CreateShader("grid_vert.spv", "main");
-		ShaderID fragmentShaderID = shaderSystem.CreateShader("grid_frag.spv", "main");
+		ShaderID vertexShaderID = shaderSystem.CreateShader("../grid_vert.spv", "main");
+		ShaderID fragmentShaderID = shaderSystem.CreateShader("../grid_frag.spv", "main");
 		vertexShader = shaderSystem.CreateShaderInstance(vertexShaderID);
 		fragmentShader = shaderSystem.CreateShaderInstance(fragmentShaderID);
 		Reset(renderPass, swapchainExtent);

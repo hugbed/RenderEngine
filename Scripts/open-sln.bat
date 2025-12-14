@@ -1,1 +1,1 @@
-start %~dp0..\Build\RenderEngine.sln
+start %~dp0..\Build\RenderEngine.slnx

@@ -36,7 +36,7 @@ vk::UniqueSurfaceKHR Window::CreateSurface(vk::Instance instance)
 	if (glfwCreateWindowSurface(static_cast<VkInstance>(instance), m_window, nullptr, &surfaceKHR) != VK_SUCCESS)
 		ASSERT(false && "failed to create window surface");
 	
-	vk::ObjectDestroy<vk::Instance, vk::DispatchLoaderStatic> surfaceDeleter(instance);
+	vk::detail::ObjectDestroy<vk::Instance, vk::detail::DispatchLoaderStatic> surfaceDeleter(instance);
 	return vk::UniqueSurfaceKHR(vk::SurfaceKHR(surfaceKHR), surfaceDeleter );
 }
 
