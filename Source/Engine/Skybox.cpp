@@ -62,19 +62,19 @@ Skybox::Skybox(
 {
 	// Load textures
 	std::vector<std::string> cubeFacesFiles = {
-		"skybox/right.jpg",
-		"skybox/left.jpg",
-		"skybox/top.jpg",
-		"skybox/bottom.jpg",
-		"skybox/front.jpg",
-		"skybox/back.jpg"
+		"C:/Projects/RenderEngine/Assets/skybox/right.jpg", // todo (hbedard): have a base dir for assets as a setting
+		"C:/Projects/RenderEngine/Assets/skybox/left.jpg",
+		"C:/Projects/RenderEngine/Assets/skybox/top.jpg",
+		"C:/Projects/RenderEngine/Assets/skybox/bottom.jpg",
+		"C:/Projects/RenderEngine/Assets/skybox/front.jpg",
+		"C:/Projects/RenderEngine/Assets/skybox/back.jpg"
 	};
 	m_cubeMap = m_textureSystem->LoadCubeMapFaces(cubeFacesFiles);
 
 	// Create graphics pipeline
 	ShaderSystem& shaderSystem = m_graphicsPipelineSystem->GetShaderSystem();
-	ShaderID vertexShaderID = shaderSystem.CreateShader("skybox_vert.spv", "main");
-	ShaderID fragmentShaderID = shaderSystem.CreateShader("skybox_frag.spv", "main");
+	ShaderID vertexShaderID = shaderSystem.CreateShader("../skybox_vert.spv", "main");
+	ShaderID fragmentShaderID = shaderSystem.CreateShader("../skybox_frag.spv", "main");
 	m_vertexShader = shaderSystem.CreateShaderInstance(vertexShaderID);
 	m_fragmentShader = shaderSystem.CreateShaderInstance(fragmentShaderID);
 

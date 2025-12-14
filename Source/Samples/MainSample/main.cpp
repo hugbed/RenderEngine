@@ -600,6 +600,8 @@ int main(int argc, char* argv[])
 {
 	if (argc < 3)
 	{
+		// For example:
+		// RenderEngine.exe "C:\Projects\RenderEngine\ThirdParty\assimp\test\models\Collada" "duck.dae"
 		std::cout << "Missing argument(s), expecting '\"path/to/assets/\" \"scene_file.dae\"'" << std::endl;
 		return 1;
 	}

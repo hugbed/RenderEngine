@@ -37,7 +37,7 @@ using ModelID = uint32_t;
 
 struct MeshDrawInfo
 {
-	ModelID model;
+	ModelID model = std::numeric_limits<uint32_t>::max();
 	Mesh mesh;
 };
 

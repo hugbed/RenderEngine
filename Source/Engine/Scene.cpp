@@ -440,7 +440,7 @@ void Scene::LoadMaterials(vk::CommandBuffer commandBuffer)
 //#endif
 	
 		// Create default textures
-		TextureID dummyTextureID = m_textureSystem->LoadTexture("dummy_texture.png");
+		TextureID dummyTextureID = m_textureSystem->LoadTexture("../../../../../Source/Samples/MainSample/Assets/dummy_texture.png");
 		for (int textureIndex = 0; textureIndex < (int)PhongMaterialTextures::eCount; ++textureIndex)
 			materialInfo.properties.textures[textureIndex] = dummyTextureID;
 

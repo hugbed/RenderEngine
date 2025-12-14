@@ -111,8 +111,8 @@ class MaterialSystem
 {
 public:
 	static constexpr Material::ShadingModel kShadingModel = Material::ShadingModel::Lit; // todo: template by ConstantType, PropertiesType
-	static constexpr char* kVertexShader = "primitive_vert.spv";
-	static constexpr char* kFragmentShader = "surface_frag.spv";
+	static constexpr char* kVertexShader = "../primitive_vert.spv"; // todo (hbedard): fix this
+	static constexpr char* kFragmentShader = "../surface_frag.spv";
 
 	struct ShaderConstants
 	{
