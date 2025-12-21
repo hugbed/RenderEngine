@@ -5,6 +5,7 @@
 #include "TextureSystem.h"
 #include "RenderPass.h"
 #include "DescriptorSetLayouts.h"
+#include "AssetPath.h"
 #include "hash.h"
 #include "glm_includes.h"
 
@@ -17,6 +18,7 @@
 #include <map>
 #include <memory>
 #include <string_view>
+#include <filesystem>
 
 class ModelSystem;
 
@@ -111,8 +113,8 @@ class MaterialSystem
 {
 public:
 	static constexpr Material::ShadingModel kShadingModel = Material::ShadingModel::Lit; // todo: template by ConstantType, PropertiesType
-	static constexpr char* kVertexShader = "../primitive_vert.spv"; // todo (hbedard): fix this
-	static constexpr char* kFragmentShader = "../surface_frag.spv";
+	static const AssetPath kVertexShader;
+	static const AssetPath kFragmentShader;
 
 	struct ShaderConstants
 	{

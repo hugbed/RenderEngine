@@ -51,7 +51,7 @@ Scene::Scene(
 )
 	: m_commandBufferPool(&commandBufferPool)
 	, m_graphicsPipelineSystem(&graphicsPipelineSystem)
-	, m_basePath(std::move(basePath))
+	, m_sceneDir(std::move(basePath))
 	, m_sceneFilename(std::move(sceneFilename))
 	, m_renderPass(&renderPass)
 	, m_imageExtent(imageExtent)
@@ -161,10 +161,11 @@ void Scene::LoadScene(vk::CommandBuffer commandBuffer)
 		| aiProcess_GenNormals
 		| aiProcess_JoinIdenticalVertices;
 
-	auto sceneName = m_basePath + "/" + m_sceneFilename;
+	auto sceneName = AssetPath(m_sceneDir + "/" + m_sceneFilename);
 
 	m_assimp.importer = std::make_unique<Assimp::Importer>();
-	m_assimp.scene = m_assimp.importer->ReadFile(sceneName.c_str(), 0);
+	std::string scenePathStr = sceneName.PathOnDisk().string();
+	m_assimp.scene = m_assimp.importer->ReadFile(scenePathStr, 0);
 	if (m_assimp.scene == nullptr)
 	{
 		std::cout << m_assimp.importer->GetErrorString() << std::endl;
@@ -440,7 +441,7 @@ void Scene::LoadMaterials(vk::CommandBuffer commandBuffer)
 //#endif
 	
 		// Create default textures
-		TextureID dummyTextureID = m_textureSystem->LoadTexture("../../../../../Source/Samples/MainSample/Assets/dummy_texture.png");
+		TextureID dummyTextureID = m_textureSystem->LoadTexture(AssetPath("/Engine/Textures/dummy_texture.png"));
 		for (int textureIndex = 0; textureIndex < (int)PhongMaterialTextures::eCount; ++textureIndex)
 			materialInfo.properties.textures[textureIndex] = dummyTextureID;
 
@@ -450,7 +451,8 @@ void Scene::LoadMaterials(vk::CommandBuffer commandBuffer)
 			{
 				aiString textureFile;
 				assimpMaterial->GetTexture(type, 0, &textureFile);
-				materialInfo.properties.textures[textureIndex] = m_textureSystem->LoadTexture(textureFile.C_Str());
+				std::filesystem::path texturePath = m_sceneDir / std::filesystem::path(textureFile.C_Str());
+				materialInfo.properties.textures[textureIndex] = m_textureSystem->LoadTexture(AssetPath(texturePath));
 			}
 		};
 

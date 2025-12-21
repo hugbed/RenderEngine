@@ -51,6 +51,9 @@ namespace
 	}
 }
 
+const AssetPath MaterialSystem::kVertexShader = AssetPath("/Engine/Generated/Shaders/primitive_vert.spv");
+const AssetPath MaterialSystem::kFragmentShader = AssetPath("/Engine/Generated/Shaders/surface_frag.spv");
+
 MaterialSystem::MaterialSystem(
 	vk::RenderPass renderPass,
 	vk::Extent2D swapchainExtent,
@@ -149,8 +152,8 @@ GraphicsPipelineID MaterialSystem::LoadGraphicsPipeline(const LitMaterialInstanc
 
 	ShaderSystem& shaderSystem = m_graphicsPipelineSystem->GetShaderSystem();
 
-	ShaderID vertexShaderID = shaderSystem.CreateShader(kVertexShader);
-	ShaderID fragmentShaderID = shaderSystem.CreateShader(kFragmentShader);
+	ShaderID vertexShaderID = shaderSystem.CreateShader(kVertexShader.PathOnDisk());
+	ShaderID fragmentShaderID = shaderSystem.CreateShader(kFragmentShader.PathOnDisk());
 
 	ShaderInstanceID vertexInstanceID = shaderSystem.CreateShaderInstance(
 		vertexShaderID

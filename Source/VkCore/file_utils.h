@@ -5,6 +5,7 @@
 namespace file_utils
 {
 	// todo: move to file utils class or something
+	// todo (hbedard): use std::filesystem::path
 	static std::vector<char> ReadFile(const std::string& filename) {
 		std::ifstream file(filename, std::ios::ate | std::ios::binary);
 		if (!file.is_open())

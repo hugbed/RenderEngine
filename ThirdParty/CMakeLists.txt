@@ -46,3 +46,6 @@ add_subdirectory(${PROJECT_SOURCE_DIR}/assimp)
 
 set(ASSIMP_INCLUDE_DIRS ${PROJECT_SOURCE_DIR}/assimp/include PARENT_SCOPE)
 set(ASSIMP_LIBRAIRIES assimp PARENT_SCOPE)
+
+# tomlplusplus
+set(TOML_PLUS_PLUS_INCLUDE_DIRS ${PROJECT_SOURCE_DIR}/tomlplusplus/include PARENT_SCOPE)

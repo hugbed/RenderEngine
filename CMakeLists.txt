@@ -26,6 +26,7 @@ add_subdirectory(ThirdParty)
 # Targets
 add_subdirectory(Source/VkCore)
 add_subdirectory(Source/Engine)
+add_subdirectory(Source/Editor)
 add_subdirectory(Source/Samples/MainSample)
 
 # Set default project

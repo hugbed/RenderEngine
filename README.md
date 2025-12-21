@@ -25,10 +25,6 @@ Vulkan rendering engine.
 - Update submodules (`git submodule update --init`).
 - Run `./Scripts/generate.bat`
 - A solution named RenderEngine.sln should be have been generated in `./Build`.
-- Compile shaders with
-```
-py .\compile-shaders.py "PathTo\RenderEngine\Source\Samples\MainSample\Shaders" "PathTo\RenderEngine\Build\Source\Samples\MainSample"
-```
 
 # Todo
 

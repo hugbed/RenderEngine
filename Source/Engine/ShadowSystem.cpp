@@ -247,6 +247,9 @@ namespace
 	}
 }
 
+const AssetPath ShadowSystem::kVertexShaderFile("/Engine/Generated/Shaders/shadow_map_vert.spv");
+const AssetPath ShadowSystem::kFragmentShaderFile("/Engine/Generated/Shaders/shadow_map_frag.spv");
+
 ShadowSystem::ShadowSystem(
 	vk::Extent2D extent,
 	GraphicsPipelineSystem& graphicsPipelineSystem,
@@ -346,8 +349,8 @@ void ShadowSystem::UploadToGPU()
 void ShadowSystem::CreateGraphicsPipeline()
 {
 	ShaderSystem& shaderSystem = m_graphicsPipelineSystem->GetShaderSystem();
-	ShaderID vertexShaderID = shaderSystem.CreateShader(vertexShaderFile);
-	ShaderID fragmentShaderID = shaderSystem.CreateShader(fragmentShaderFile);
+	ShaderID vertexShaderID = shaderSystem.CreateShader(kVertexShaderFile.PathOnDisk());
+	ShaderID fragmentShaderID = shaderSystem.CreateShader(kFragmentShaderFile.PathOnDisk());
 	ShaderInstanceID vertexShaderInstanceID = shaderSystem.CreateShaderInstance(vertexShaderID);
 	ShaderInstanceID fragmentShaderInstanceID = shaderSystem.CreateShaderInstance(fragmentShaderID);
 	m_graphicsPipelineID = m_graphicsPipelineSystem->CreateGraphicsPipeline(

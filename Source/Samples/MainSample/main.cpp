@@ -3,6 +3,7 @@
 #define _USE_MATH_DEFINES
 #endif
 
+#include "ArgumentParser.h"
 #include "RenderLoop.h"
 #include "Window.h"
 #include "Instance.h"
@@ -598,16 +599,28 @@ private:
 
 int main(int argc, char* argv[])
 {
-	if (argc < 3)
+	ProgramArguments args{
+		.name = "MainSample.exe", .description = "The main sample",
+		.options = std::vector {
+			Argument{ .name = "engineDir", .value = "dirPath" },
+			Argument{ .name = "gameDir", .value = "dirPath" },
+			Argument{ .name = "scenePath", .value = "filePath.dae" }
+		}
+	};
+	ArgumentParser argParser(std::move(args));
+	if (!argParser.ParseArgs(argc, argv))
 	{
-		// For example:
-		// RenderEngine.exe "C:\Projects\RenderEngine\ThirdParty\assimp\test\models\Collada" "duck.dae"
-		std::cout << "Missing argument(s), expecting '\"path/to/assets/\" \"scene_file.dae\"'" << std::endl;
-		return 1;
+		return -1;
 	}
-	
-	std::string basePath = argv[1];
-	std::string sceneFile = argv[2];
+
+	// todo (hbedard): only if args are valid
+	std::optional<std::string> engineDirectory = argParser.GetString("engineDir");
+	std::optional<std::string> gameDirectory = argParser.GetString("gameDir");
+	std::optional<std::string> sceneFilePathStr = argParser.GetString("scenePath");
+	// todo (hbedard): check that those are good :)
+
+	AssetPath::SetEngineDirectory(std::filesystem::path(engineDirectory.value()));
+	AssetPath::SetGameDirectory(std::filesystem::path(gameDirectory.value()));
 
 	vk::Extent2D extent(800, 600);
 	Window window(extent, "Vulkan");
@@ -619,7 +632,8 @@ int main(int argc, char* argv[])
 	PhysicalDevice::Init(instance.Get(), surface.get());
 	Device::Init(instance, *g_physicalDevice);
 	{
-		App app(instance.Get(), surface.get(), extent, window, std::move(basePath), std::move(sceneFile));
+		std::filesystem::path scenePath(sceneFilePathStr.value());
+		App app(instance.Get(), surface.get(), extent, window, scenePath.parent_path().string(), scenePath.filename().string());
 		app.Init();
 		app.Run();
 	}

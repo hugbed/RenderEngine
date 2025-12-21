@@ -89,8 +89,8 @@ private:
 	void CreateDescriptorSets();
 
 private:
-	static constexpr char* vertexShaderFile = "../shadow_map_vert.spv";
-	static constexpr char* fragmentShaderFile = "../shadow_map_frag.spv";
+	static const AssetPath kVertexShaderFile;
+	static const AssetPath kFragmentShaderFile;
 
 	vk::Extent2D m_extent;
 	vk::UniqueRenderPass m_renderPass;

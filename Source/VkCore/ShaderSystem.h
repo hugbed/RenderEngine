@@ -10,6 +10,7 @@
 #include <optional>
 #include <vector>
 #include <map>
+#include <filesystem>
 
 struct Entry
 {
@@ -63,8 +64,8 @@ class ShaderSystem
 public:
 	// --- Shader Creation --- //
 
-	ShaderID CreateShader(const std::string& filename); // entryPoint defaults to main
-	ShaderID CreateShader(const std::string& filename, std::string entryPoint);
+	ShaderID CreateShader(const std::filesystem::path& filePath); // entryPoint defaults to main
+	ShaderID CreateShader(const std::filesystem::path& filePath, std::string entryPoint);
 	ShaderID CreateShader(const char* data, size_t size, std::string entryPoint);
 
 	ShaderInstanceID CreateShaderInstance(ShaderID shaderID);
