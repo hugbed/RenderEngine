@@ -42,6 +42,8 @@
 #include "backends/imgui_impl_glfw.h"
 #include "backends/imgui_impl_vulkan.h"
 
+#include "ImGuiVulkan.h"
+
 // For Uniform Buffer
 #include "glm_includes.h"
 
@@ -50,184 +52,6 @@
 #include <unordered_map>
 #include <iostream>
 #include <cmath>
-
-// Use imgui lowercase for our utilities
-namespace imgui
-{
-	struct Resources
-	{
-		GLFWwindow* window;
-		VkInstance instance;
-		VkPhysicalDevice physicalDevice;
-		VkDevice device;
-		uint32_t queueFamily;
-		VkQueue queue;
-		uint32_t imageCount;
-		VkSampleCountFlagBits MSAASamples;
-		VkRenderPass renderPass;
-	};
-
-	class Context
-	{
-	public:
-		static void CheckVkResult(VkResult result)
-		{
-			// empty for now
-		}
-
-		Context(const Resources& resources, vk::CommandBuffer commandBuffer)
-			: m_device(resources.device)
-			, m_renderPass(resources.renderPass)
-		{
-			// Create a descriptor pool specifically for IMGUI
-			VkDescriptorPoolSize poolSizes[] =
-			{
-				{ VK_DESCRIPTOR_TYPE_SAMPLER, 1000 },
-				{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000 },
-				{ VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1000 },
-				{ VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1000 },
-				{ VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1000 },
-				{ VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 1000 },
-				{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000 },
-				{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000 },
-				{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1000 },
-				{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 1000 },
-				{ VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1000 }
-			};
-			VkDescriptorPoolCreateInfo poolInfo = {};
-			poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-			poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
-			poolInfo.maxSets = 1000 * (uint32_t)IM_ARRAYSIZE(poolSizes);
-			poolInfo.poolSizeCount = (uint32_t)IM_ARRAYSIZE(poolSizes);
-			poolInfo.pPoolSizes = poolSizes;
-			VkResult result = vkCreateDescriptorPool(g_device->Get(), &poolInfo, nullptr, &m_imguiDescriptorPool);
-			if (result != VK_SUCCESS)
-			{
-				assert(false && "Could not initialize descriptor pool for imgui");
-				return;
-			}
-
-			// Setup Dear ImGui context
-			IMGUI_CHECKVERSION();
-			ImGui::CreateContext();
-			ImGuiIO& io = ImGui::GetIO(); (void)io;
-
-			// Setup Dear ImGui style
-			ImGui::StyleColorsDark();
-
-			// Setup Platform/Renderer backends
-			ImGui_ImplGlfw_InitForVulkan(resources.window, true);
-			ImGui_ImplVulkan_InitInfo init_info = {};
-			init_info.Instance = resources.instance;
-			init_info.PhysicalDevice = resources.physicalDevice;
-			init_info.Device = m_device;
-			init_info.QueueFamily = resources.queueFamily;
-			init_info.Queue = resources.queue;
-			init_info.PipelineCache = VK_NULL_HANDLE;
-			init_info.DescriptorPool = m_imguiDescriptorPool;
-			init_info.Allocator = nullptr;
-			init_info.MinImageCount = 2;
-			init_info.ImageCount = resources.imageCount;
-			init_info.CheckVkResultFn = &Context::CheckVkResult;
-			init_info.PipelineInfoMain.RenderPass = m_renderPass;
-			init_info.PipelineInfoMain.MSAASamples = (VkSampleCountFlagBits)resources.MSAASamples;
-			if (!ImGui_ImplVulkan_Init(&init_info))
-			{
-				vkDestroyDescriptorPool(m_device, m_imguiDescriptorPool, nullptr);
-				assert(false && "Could not initialize imgui");
-			}
-
-			// Create secondary command buffers
-			{
-				m_imguiCommandBuffers.clear();
-
-				m_secondaryCommandPool = g_device->Get().createCommandPoolUnique(vk::CommandPoolCreateInfo(
-					vk::CommandPoolCreateFlagBits::eResetCommandBuffer, g_physicalDevice->GetQueueFamilies().graphicsFamily.value()
-				));
-
-				m_imguiCommandBuffers = g_device->Get().allocateCommandBuffersUnique(vk::CommandBufferAllocateInfo(
-					m_secondaryCommandPool.get(), vk::CommandBufferLevel::eSecondary, resources.imageCount
-				));
-			}
-		}
-
-		void Reset(const Resources& resources, vk::CommandBuffer commandBuffer)
-		{
-			ImGui_ImplVulkan_Shutdown();
-
-			m_device = resources.device;
-			m_renderPass = resources.renderPass;
-
-			ImGui_ImplVulkan_InitInfo init_info = {};
-			init_info.Instance = resources.instance;
-			init_info.PhysicalDevice = resources.physicalDevice;
-			init_info.Device = m_device;
-			init_info.QueueFamily = resources.queueFamily;
-			init_info.Queue = resources.queue;
-			init_info.PipelineCache = VK_NULL_HANDLE;
-			init_info.DescriptorPool = m_imguiDescriptorPool;
-			init_info.Allocator = nullptr;
-			init_info.MinImageCount = 2;
-			init_info.ImageCount = resources.imageCount;
-			init_info.PipelineInfoMain.RenderPass = m_renderPass;
-			init_info.PipelineInfoMain.MSAASamples = (VkSampleCountFlagBits)resources.MSAASamples;
-			init_info.CheckVkResultFn = &Context::CheckVkResult;
-			assert(ImGui_ImplVulkan_Init(&init_info) && "Could not initialize imgui");
-		}
-
-		~Context()
-		{
-			ImGui_ImplVulkan_Shutdown();
-			ImGui_ImplGlfw_Shutdown();
-			ImGui::DestroyContext();
-
-			m_imguiCommandBuffers.clear();
-			m_secondaryCommandPool.reset();
-
-			if (m_imguiDescriptorPool != VK_NULL_HANDLE)
-				vkDestroyDescriptorPool(m_device, m_imguiDescriptorPool, nullptr);
-		}
-
-		void BeginFrame()
-		{
-			ImGui_ImplVulkan_NewFrame();
-			ImGui_ImplGlfw_NewFrame();
-			ImGui::NewFrame();
-		}
-
-		void EndFrame()
-		{
-			ImGui::EndFrame();
-			ImGui::Render();
-		}
-
-		void RecordCommands(uint32_t frameIndex, VkFramebuffer framebuffer)
-		{
-			auto& commandBuffer = m_imguiCommandBuffers[frameIndex];
-			vk::CommandBufferInheritanceInfo info(
-				m_renderPass, 0, framebuffer
-			);
-			commandBuffer->begin({ vk::CommandBufferUsageFlagBits::eRenderPassContinue, &info });
-			{
-				ImDrawData* drawData = ImGui::GetDrawData();
-				if (drawData != nullptr)
-					ImGui_ImplVulkan_RenderDrawData(drawData, *commandBuffer);
-			}
-			commandBuffer->end();
-		}
-
-		vk::CommandBuffer GetCommandBuffer(uint32_t frameIndex) const { return m_imguiCommandBuffers[frameIndex].get(); }
-
-	private:
-		VkDevice m_device = VK_NULL_HANDLE;
-		VkRenderPass m_renderPass = VK_NULL_HANDLE;
-
-		ImGui_ImplVulkanH_Window m_imguiWindow;
-		VkDescriptorPool m_imguiDescriptorPool = VK_NULL_HANDLE;
-		std::vector<vk::UniqueCommandBuffer> m_imguiCommandBuffers;
-		vk::UniqueCommandPool m_secondaryCommandPool;
-	};
-}
 
 class App : public RenderLoop
 {
@@ -288,8 +112,8 @@ protected:
 		InitShadowMaps(commandBuffer);
 
 		// Init ImGui
-		imgui::Resources resources = PopulateImGuiResources();
-		m_imgui = std::make_unique<imgui::Context>(resources, commandBuffer);
+		ImGuiVulkan::Resources resources = PopulateImGuiResources();
+		m_imgui = std::make_unique<ImGuiVulkan>(resources, commandBuffer);
 
 		CreateSecondaryCommandBuffers();
 		RecordRenderPassCommands();
@@ -307,9 +131,9 @@ protected:
 		}
 	}
 
-	imgui::Resources PopulateImGuiResources()
+	ImGuiVulkan::Resources PopulateImGuiResources()
 	{
-		imgui::Resources resources = {};
+		ImGuiVulkan::Resources resources = {};
 		resources.window = m_window.GetGLFWWindow();
 		resources.instance = m_instance;
 		resources.physicalDevice = g_physicalDevice->Get();
@@ -373,7 +197,7 @@ protected:
 			m_grid->Reset(*m_renderPass, imageExtent);
 
 			// Reset ImGUI
-			imgui::Resources resources = PopulateImGuiResources();
+			ImGuiVulkan::Resources resources = PopulateImGuiResources();
 			m_imgui->Reset(resources, commandBuffer);
 		}
 		commandBuffer.end();
@@ -579,7 +403,7 @@ protected:
 	}
 
 private:
-	std::unique_ptr<imgui::Context> m_imgui;
+	std::unique_ptr<ImGuiVulkan> m_imgui;
 
 	VkInstance m_instance = VK_NULL_HANDLE;
 	std::unique_ptr<RenderPass> m_renderPass;
