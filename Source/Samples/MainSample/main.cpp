@@ -137,9 +137,6 @@ namespace imgui
 				assert(false && "Could not initialize imgui");
 			}
 
-			// not required anymore?
-			//assert(ImGui_ImplVulkan_CreateFontsTexture(commandBuffer));
-
 			// Create secondary command buffers
 			{
 				m_imguiCommandBuffers.clear();
@@ -176,20 +173,19 @@ namespace imgui
 			init_info.PipelineInfoMain.MSAASamples = (VkSampleCountFlagBits)resources.MSAASamples;
 			init_info.CheckVkResultFn = &Context::CheckVkResult;
 			assert(ImGui_ImplVulkan_Init(&init_info) && "Could not initialize imgui");
-			//assert(ImGui_ImplVulkan_CreateFontsTexture(commandBuffer));
 		}
 
 		~Context()
 		{
+			ImGui_ImplVulkan_Shutdown();
+			ImGui_ImplGlfw_Shutdown();
+			ImGui::DestroyContext();
+
 			m_imguiCommandBuffers.clear();
 			m_secondaryCommandPool.reset();
 
 			if (m_imguiDescriptorPool != VK_NULL_HANDLE)
 				vkDestroyDescriptorPool(m_device, m_imguiDescriptorPool, nullptr);
-
-			ImGui_ImplVulkan_Shutdown();
-			ImGui_ImplGlfw_Shutdown();
-			ImGui::DestroyContext();
 		}
 
 		void BeginFrame()
