@@ -39,8 +39,8 @@
 #include <GLFW/glfw3.h>
 
 #include "imgui.h"
-#include "imgui_impl_glfw.h"
-#include "imgui_impl_vulkan.h"
+#include "backends/imgui_impl_glfw.h"
+#include "backends/imgui_impl_vulkan.h"
 
 // For Uniform Buffer
 #include "glm_includes.h"
@@ -128,15 +128,17 @@ namespace imgui
 			init_info.Allocator = nullptr;
 			init_info.MinImageCount = 2;
 			init_info.ImageCount = resources.imageCount;
-			init_info.MSAASamples = (VkSampleCountFlagBits)resources.MSAASamples;
 			init_info.CheckVkResultFn = &Context::CheckVkResult;
-			if (!ImGui_ImplVulkan_Init(&init_info, m_renderPass))
+			init_info.PipelineInfoMain.RenderPass = m_renderPass;
+			init_info.PipelineInfoMain.MSAASamples = (VkSampleCountFlagBits)resources.MSAASamples;
+			if (!ImGui_ImplVulkan_Init(&init_info))
 			{
 				vkDestroyDescriptorPool(m_device, m_imguiDescriptorPool, nullptr);
 				assert(false && "Could not initialize imgui");
 			}
 
-			assert(ImGui_ImplVulkan_CreateFontsTexture(commandBuffer));
+			// not required anymore?
+			//assert(ImGui_ImplVulkan_CreateFontsTexture(commandBuffer));
 
 			// Create secondary command buffers
 			{
@@ -170,10 +172,11 @@ namespace imgui
 			init_info.Allocator = nullptr;
 			init_info.MinImageCount = 2;
 			init_info.ImageCount = resources.imageCount;
-			init_info.MSAASamples = (VkSampleCountFlagBits)resources.MSAASamples;
+			init_info.PipelineInfoMain.RenderPass = m_renderPass;
+			init_info.PipelineInfoMain.MSAASamples = (VkSampleCountFlagBits)resources.MSAASamples;
 			init_info.CheckVkResultFn = &Context::CheckVkResult;
-			assert(ImGui_ImplVulkan_Init(&init_info, m_renderPass) && "Could not initialize imgui");
-			assert(ImGui_ImplVulkan_CreateFontsTexture(commandBuffer));
+			assert(ImGui_ImplVulkan_Init(&init_info) && "Could not initialize imgui");
+			//assert(ImGui_ImplVulkan_CreateFontsTexture(commandBuffer));
 		}
 
 		~Context()
@@ -362,11 +365,14 @@ protected:
 			m_scene->Reset(commandBuffer, *m_renderPass, imageExtent);
 			
 			// Reset Shadow Maps
-			const UniqueBuffer& shadowPropertiesBuffer = m_shadowSystem.GetShadowTransformsBuffer();
-			m_materialSystem.UpdateShadowDescriptorSets(
-				m_shadowSystem.GetTexturesInfo(),
-				shadowPropertiesBuffer.Get(), shadowPropertiesBuffer.Size()
-			);
+			if (m_shadowSystem.GetShadowCount() > 0)
+			{
+				const UniqueBuffer& shadowPropertiesBuffer = m_shadowSystem.GetShadowTransformsBuffer();
+				m_materialSystem.UpdateShadowDescriptorSets(
+					m_shadowSystem.GetTexturesInfo(),
+					shadowPropertiesBuffer.Get(), shadowPropertiesBuffer.Size()
+				);
+			}
 
 			m_grid->Reset(*m_renderPass, imageExtent);
 
@@ -477,12 +483,15 @@ protected:
 
 	void InitShadowMaps(vk::CommandBuffer& commandBuffer)
 	{
-		m_shadowSystem.UploadToGPU();
-		const UniqueBuffer& shadowPropertiesBuffer = m_shadowSystem.GetShadowTransformsBuffer();
-		m_materialSystem.UpdateShadowDescriptorSets(
-			m_shadowSystem.GetTexturesInfo(),
-			shadowPropertiesBuffer.Get(), shadowPropertiesBuffer.Size()
-		);
+		if (m_shadowSystem.GetShadowCount() > 0)
+		{
+			m_shadowSystem.UploadToGPU();
+			const UniqueBuffer& shadowPropertiesBuffer = m_shadowSystem.GetShadowTransformsBuffer();
+			m_materialSystem.UpdateShadowDescriptorSets(
+				m_shadowSystem.GetTexturesInfo(),
+				shadowPropertiesBuffer.Get(), shadowPropertiesBuffer.Size()
+			);
+		}
 
 		if (m_options.showShadowMapPreview)
 		{
@@ -515,15 +524,18 @@ protected:
 
 	void RenderShadowMaps(vk::CommandBuffer& commandBuffer, uint32_t frameIndex)
 	{
-		const std::vector<MeshDrawInfo>& opaqueDrawCalls = m_scene->GetOpaqueDrawCommands();
-		const std::vector<MeshDrawInfo>& transparentDrawCalls = m_scene->GetTransparentDrawCommands();
+		if (m_shadowSystem.GetShadowCount() > 0)
+		{
+			const std::vector<MeshDrawInfo>& opaqueDrawCalls = m_scene->GetOpaqueDrawCommands();
+			const std::vector<MeshDrawInfo>& transparentDrawCalls = m_scene->GetTransparentDrawCommands();
 
-		drawCalls.resize(opaqueDrawCalls.size() + transparentDrawCalls.size());
-		std::copy(opaqueDrawCalls.begin(), opaqueDrawCalls.end(), drawCalls.begin());
-		std::copy(transparentDrawCalls.begin(), transparentDrawCalls.end(), drawCalls.begin() + opaqueDrawCalls.size());
+			drawCalls.resize(opaqueDrawCalls.size() + transparentDrawCalls.size());
+			std::copy(opaqueDrawCalls.begin(), opaqueDrawCalls.end(), drawCalls.begin());
+			std::copy(transparentDrawCalls.begin(), transparentDrawCalls.end(), drawCalls.begin() + opaqueDrawCalls.size());
 
-		m_shadowSystem.Update(m_scene->GetCamera(), m_scene->GetBoundingBox());
-		m_shadowSystem.Render(commandBuffer, frameIndex, drawCalls);
+			m_shadowSystem.Update(m_scene->GetCamera(), m_scene->GetBoundingBox());
+			m_shadowSystem.Render(commandBuffer, frameIndex, drawCalls);
+		}
 	}
 
 	Camera& GetCamera() { return m_scene->GetCamera(); }
@@ -602,7 +614,6 @@ int main(int argc, char* argv[])
 	ProgramArguments args{
 		.name = "MainSample.exe", .description = "The main sample",
 		.options = std::vector {
-			Argument{ .name = "engineDir", .value = "dirPath" },
 			Argument{ .name = "gameDir", .value = "dirPath" },
 			Argument{ .name = "scenePath", .value = "filePath.dae" }
 		}
@@ -614,12 +625,12 @@ int main(int argc, char* argv[])
 	}
 
 	// todo (hbedard): only if args are valid
-	std::optional<std::string> engineDirectory = argParser.GetString("engineDir");
 	std::optional<std::string> gameDirectory = argParser.GetString("gameDir");
 	std::optional<std::string> sceneFilePathStr = argParser.GetString("scenePath");
 	// todo (hbedard): check that those are good :)
 
-	AssetPath::SetEngineDirectory(std::filesystem::path(engineDirectory.value()));
+	std::filesystem::path engineDir = std::filesystem::absolute((std::filesystem::path(argv[0]) / "../../../../../.."));
+	AssetPath::SetEngineDirectory(engineDir);
 	AssetPath::SetGameDirectory(std::filesystem::path(gameDirectory.value()));
 
 	vk::Extent2D extent(800, 600);

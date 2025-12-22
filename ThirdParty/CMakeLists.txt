@@ -34,7 +34,11 @@ target_include_directories(imgui PUBLIC ${Vulkan_INCLUDE_DIRS} imgui)
 file(GLOB IMGUI_SRC_FILES
   ${PROJECT_SOURCE_DIR}/imgui/*.h
   ${PROJECT_SOURCE_DIR}/imgui/*.cpp
-  ${PROJECT_SOURCE_DIR}/imgui/*.natvis)
+  ${PROJECT_SOURCE_DIR}/imgui/*.natvis
+  ${PROJECT_SOURCE_DIR}/imgui/backends/imgui_impl_glfw.h
+  ${PROJECT_SOURCE_DIR}/imgui/backends/imgui_impl_glfw.cpp
+  ${PROJECT_SOURCE_DIR}/imgui/backends/imgui_impl_vulkan.h
+  ${PROJECT_SOURCE_DIR}/imgui/backends/imgui_impl_vulkan.cpp)
 target_sources(imgui PRIVATE ${IMGUI_SRC_FILES})
 target_link_libraries(imgui PUBLIC ${Vulkan_LIBRARY} glfw)
 
