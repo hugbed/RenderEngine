@@ -30,18 +30,6 @@ public:
 	void Run();
 
 protected:
-	struct GPUSync
-	{
-	public:
-		GPUSync()
-		{
-			imageAvailableSemaphore = g_device->Get().createSemaphoreUnique({});
-			renderFinishedSemaphore = g_device->Get().createSemaphoreUnique({});
-		}
-		vk::UniqueSemaphore imageAvailableSemaphore;
-		vk::UniqueSemaphore renderFinishedSemaphore;
-	};
-
 	virtual void Init(vk::CommandBuffer& commandBuffer) = 0;
 	virtual void OnSwapchainRecreated() = 0;
 	virtual void Update() = 0;
@@ -66,5 +54,8 @@ protected:
 	vk::SurfaceKHR m_surface;
 	std::unique_ptr<Swapchain> m_swapchain;
 	CommandBufferPool m_commandBufferPool;
-	GPUSync m_gpuSync;
+
+	vk::UniqueSemaphore m_imageAvailableSemaphores[kMaxFramesInFlight];
+	std::vector<vk::UniqueSemaphore> m_renderFinishedSemaphores; // num of swapchain images
+	uint8_t m_frameIndex = 0;
 };

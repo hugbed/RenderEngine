@@ -512,7 +512,7 @@ void Scene::UpdateMaterialDescriptors()
 
 	// Set 0 (view): { 1 uniform buffer for view uniforms per concurrentFrames }
 	std::array<std::pair<vk::DescriptorType, uint16_t>, 1ULL> descriptorCount = {
-		std::make_pair(vk::DescriptorType::eUniformBuffer, 1U),
+		std::make_pair(vk::DescriptorType::eUniformBuffer, m_commandBufferPool->GetNbConcurrentSubmits()),
 	};
 
 	SmallVector<vk::DescriptorPoolSize> poolSizes;
@@ -548,10 +548,10 @@ void Scene::UpdateMaterialDescriptors()
 	}
 
 	MaterialSystem::ShaderConstants constants = {
-		(uint32_t)m_lightSystem->GetLightCount(),
-		(uint32_t)m_shadowSystem->GetShadowCount(),
-		(uint32_t)m_textureSystem->GetTextureCount(ImageViewType::e2D),
-		(uint32_t)m_textureSystem->GetTextureCount(ImageViewType::eCube)
+		static_cast<uint32_t>(m_lightSystem->GetLightCount()),
+		std::max(static_cast<uint32_t>(m_shadowSystem->GetShadowCount()), 1U), // used as an array size, so it needs to be at least 1
+		static_cast<uint32_t>(m_textureSystem->GetTextureCount(ImageViewType::e2D)),
+		static_cast<uint32_t>(m_textureSystem->GetTextureCount(ImageViewType::eCube))
 	};
 	m_materialSystem->UploadToGPU(*m_commandBufferPool, std::move(constants));
 

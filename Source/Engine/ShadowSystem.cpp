@@ -327,18 +327,22 @@ ShadowID ShadowSystem::CreateShadowMap(LightID lightID)
 
 void ShadowSystem::UploadToGPU()
 {
+	if (GetShadowCount() == 0)
+	{
+		return; // nothing to upload
+	}
+
 	CreateGraphicsPipeline();
 	CreateDescriptorSets();
-	
-	m_viewPropertiesBuffer = ::CreateStorageBuffer(m_properties.size() * sizeof(m_properties[0]));
 
+	m_viewPropertiesBuffer = ::CreateStorageBuffer(m_properties.size() * sizeof(m_properties[0]));
 	m_transformsBuffer = ::CreateStorageBuffer(m_transforms.size() * sizeof(m_transforms[0]));
 
 	::UpdateViewDescriptorSet(
 		m_viewPropertiesBuffer->Get(), m_viewPropertiesBuffer->Size(),
 		GetDescriptorSet(DescriptorSetIndex::View)
 	);
-	
+
 	const UniqueBuffer& modelBuffer = m_modelSystem->GetBuffer();
 	::UpdateModelDescriptorSet(
 		modelBuffer.Get(), modelBuffer.Size(),

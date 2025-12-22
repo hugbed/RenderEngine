@@ -238,7 +238,7 @@ void MaterialSystem::CreateDescriptorPool(uint8_t numConcurrentFrames)
 	// Set 2 (material): - 1 storage buffer containing all material properties +
 	//                   - 1 image sampler per texture in the texture system
 	std::array<std::pair<vk::DescriptorType, uint16_t>, 3ULL> descriptorCount = {
-		std::make_pair(vk::DescriptorType::eUniformBuffer, (uint16_t)numConcurrentFrames + 1),
+		std::make_pair(vk::DescriptorType::eUniformBuffer, (uint16_t)2 * numConcurrentFrames),
 		std::make_pair(vk::DescriptorType::eStorageBuffer, (uint16_t)3),
 		std::make_pair(vk::DescriptorType::eCombinedImageSampler, (uint16_t)nbSamplers)
 	};
