@@ -1,0 +1,1 @@
+start %~dp0..\Intermediate\Projects\RenderEngine.slnx

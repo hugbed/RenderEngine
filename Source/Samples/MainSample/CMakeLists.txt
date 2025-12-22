@@ -29,10 +29,6 @@ target_link_libraries(
     assimp
     imgui)
 
-if (WIN32)
-  set_property(TARGET ${PROJECT_NAME} PROPERTY VS_DEBUGGER_WORKING_DIRECTORY ${PROJECT_BINARY_DIR}/Debug)
-endif ()
-
 # Always build shaders,
 # compile-shaders2.py will rebuild only when necessary.
 

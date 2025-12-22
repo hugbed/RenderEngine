@@ -20,6 +20,12 @@ endif ()
 # CMake modules
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/modules/")
 
+# Output in a bin directory
+set(CMAKE_BINARY_DIR ${CMAKE_BINARY_DIR}/../../Binaries/Win64)
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+
 # Dependencies 
 add_subdirectory(ThirdParty)
 
@@ -34,3 +40,4 @@ set(DEFAULT_PROJECT MainSample)
 if (WIN32)
   set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT ${DEFAULT_PROJECT})
 endif ()
+

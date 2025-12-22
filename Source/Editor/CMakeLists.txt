@@ -31,6 +31,3 @@ target_link_libraries(
     assimp
     imgui)
 
-if (WIN32)
-  set_property(TARGET ${PROJECT_NAME} PROPERTY VS_DEBUGGER_WORKING_DIRECTORY ${PROJECT_BINARY_DIR}/Debug)
-endif ()

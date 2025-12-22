@@ -512,7 +512,7 @@ void Scene::UpdateMaterialDescriptors()
 
 	// Set 0 (view): { 1 uniform buffer for view uniforms per concurrentFrames }
 	std::array<std::pair<vk::DescriptorType, uint16_t>, 1ULL> descriptorCount = {
-		std::make_pair(vk::DescriptorType::eUniformBuffer, m_commandBufferPool->GetNbConcurrentSubmits()),
+		std::make_pair(vk::DescriptorType::eUniformBuffer, static_cast<uint16_t>(m_commandBufferPool->GetNbConcurrentSubmits())),
 	};
 
 	SmallVector<vk::DescriptorPoolSize> poolSizes;

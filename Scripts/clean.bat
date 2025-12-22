@@ -1,3 +1,3 @@
 @echo off
 
-rmdir /s /q %~dp0..\Build
+rmdir /s /q %~dp0..\Intermediate\Projects
