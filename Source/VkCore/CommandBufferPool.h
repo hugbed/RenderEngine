@@ -57,8 +57,6 @@ public:
 			UINT64_MAX // indefinitely
 		);
 		assert(result == vk::Result::eSuccess);
-		VkFence fence = frameFence;
-		vkResetFences(g_device->Get(), 1, &fence);
 
 		for (const auto& resource : m_resourcesToDestroy[m_fenceIndex])
 			delete resource;
