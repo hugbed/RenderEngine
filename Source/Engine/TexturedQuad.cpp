@@ -1,5 +1,7 @@
 #include "TexturedQuad.h"
 
+#include "AssetPath.h"
+
 TexturedQuad::TexturedQuad(
 	CombinedImageSampler combinedImageSampler,
 	const RenderPass& renderPass,
@@ -12,8 +14,8 @@ TexturedQuad::TexturedQuad(
 	, m_graphicsPipelineSystem(&graphicsPipelineSystem)
 {
 	ShaderSystem& shaderSystem = m_graphicsPipelineSystem->GetShaderSystem();
-	ShaderID vertexShaderID = shaderSystem.CreateShader("textured_quad_vert.spv", "main");
-	ShaderID fragmentShaderID = shaderSystem.CreateShader("textured_quad_frag.spv", "main");
+	ShaderID vertexShaderID = shaderSystem.CreateShader(AssetPath("/Engine/Generated/Shaders/textured_quad_vert.spv").PathOnDisk(), "main");
+	ShaderID fragmentShaderID = shaderSystem.CreateShader(AssetPath("/Engine/Generated/Shaders/textured_quad_frag.spv").PathOnDisk(), "main");
 
 	m_vertexShader = shaderSystem.CreateShaderInstance(vertexShaderID);
 

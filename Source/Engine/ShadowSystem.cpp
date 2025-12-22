@@ -247,6 +247,9 @@ namespace
 	}
 }
 
+const AssetPath ShadowSystem::kVertexShaderFile("/Engine/Generated/Shaders/shadow_map_vert.spv");
+const AssetPath ShadowSystem::kFragmentShaderFile("/Engine/Generated/Shaders/shadow_map_frag.spv");
+
 ShadowSystem::ShadowSystem(
 	vk::Extent2D extent,
 	GraphicsPipelineSystem& graphicsPipelineSystem,
@@ -324,18 +327,22 @@ ShadowID ShadowSystem::CreateShadowMap(LightID lightID)
 
 void ShadowSystem::UploadToGPU()
 {
+	if (GetShadowCount() == 0)
+	{
+		return; // nothing to upload
+	}
+
 	CreateGraphicsPipeline();
 	CreateDescriptorSets();
-	
-	m_viewPropertiesBuffer = ::CreateStorageBuffer(m_properties.size() * sizeof(m_properties[0]));
 
+	m_viewPropertiesBuffer = ::CreateStorageBuffer(m_properties.size() * sizeof(m_properties[0]));
 	m_transformsBuffer = ::CreateStorageBuffer(m_transforms.size() * sizeof(m_transforms[0]));
 
 	::UpdateViewDescriptorSet(
 		m_viewPropertiesBuffer->Get(), m_viewPropertiesBuffer->Size(),
 		GetDescriptorSet(DescriptorSetIndex::View)
 	);
-	
+
 	const UniqueBuffer& modelBuffer = m_modelSystem->GetBuffer();
 	::UpdateModelDescriptorSet(
 		modelBuffer.Get(), modelBuffer.Size(),
@@ -346,8 +353,8 @@ void ShadowSystem::UploadToGPU()
 void ShadowSystem::CreateGraphicsPipeline()
 {
 	ShaderSystem& shaderSystem = m_graphicsPipelineSystem->GetShaderSystem();
-	ShaderID vertexShaderID = shaderSystem.CreateShader(vertexShaderFile);
-	ShaderID fragmentShaderID = shaderSystem.CreateShader(fragmentShaderFile);
+	ShaderID vertexShaderID = shaderSystem.CreateShader(kVertexShaderFile.PathOnDisk());
+	ShaderID fragmentShaderID = shaderSystem.CreateShader(kFragmentShaderFile.PathOnDisk());
 	ShaderInstanceID vertexShaderInstanceID = shaderSystem.CreateShaderInstance(vertexShaderID);
 	ShaderInstanceID fragmentShaderInstanceID = shaderSystem.CreateShaderInstance(fragmentShaderID);
 	m_graphicsPipelineID = m_graphicsPipelineSystem->CreateGraphicsPipeline(

@@ -86,7 +86,7 @@ private:
 	vk::UniqueDescriptorPool m_descriptorPool;
 
 	std::string m_sceneFilename;
-	std::string m_basePath;
+	std::string m_sceneDir;
 
 	const RenderPass* m_renderPass;
 	vk::Extent2D m_imageExtent;

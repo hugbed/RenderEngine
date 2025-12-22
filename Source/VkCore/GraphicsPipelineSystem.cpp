@@ -296,7 +296,7 @@ void GraphicsPipelineSystem::ResetGraphicsPipeline(
 	);
 
 	::ReserveIndex(id, m_pipelines);
-	m_pipelines[id] = g_device->Get().createGraphicsPipelineUnique({}, graphicsPipelineCreateInfo);
+	m_pipelines[id] = g_device->Get().createGraphicsPipelineUnique({}, graphicsPipelineCreateInfo).value; // todo (hbedard): only if it succeeds
 }
 
 bool GraphicsPipelineSystem::IsSetLayoutCompatible(GraphicsPipelineID a, GraphicsPipelineID b, uint8_t set) const

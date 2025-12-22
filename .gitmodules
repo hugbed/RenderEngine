@@ -13,3 +13,12 @@
 [submodule "ThirdParty/GSL"]
 	path = ThirdParty/GSL
 	url = git@github.com:microsoft/GSL.git
+[submodule "ThirdParty/VulkanMemoryAllocator"]
+	path = ThirdParty/VulkanMemoryAllocator
+	url = git@github.com:GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
+[submodule "ThirdParty/tomlplusplus"]
+	path = ThirdParty/tomlplusplus
+	url = git@github.com:marzer/tomlplusplus.git
+[submodule "ThirdParty/imgui"]
+	path = ThirdParty/imgui
+	url = git@github.com:ocornut/imgui.git

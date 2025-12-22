@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 4.2.1)
 
 project(ThirdParty)
 
@@ -15,7 +15,7 @@ add_subdirectory(glfw)
 set(GLFW_INCLUDE_DIRS ${PROJECT_SOURCE_DIR}/glfw/include PARENT_SCOPE)
 set(GLM_INCLUDE_DIRS ${PROJECT_SOURCE_DIR}/glm PARENT_SCOPE)
 set(STB_INCLUDE_DIRS ${PROJECT_SOURCE_DIR}/stb PARENT_SCOPE)
-set(VMA_INCLUDE_DIRS ${PROJECT_SOURCE_DIR}/VulkanMemoryAllocator/src PARENT_SCOPE)
+set(VMA_INCLUDE_DIRS ${PROJECT_SOURCE_DIR}/VulkanMemoryAllocator/include PARENT_SCOPE)
 
 # SPIRV-Cross
 set(SPIRV_CROSS_CLI OFF CACHE BOOL "SPIRV_CROSS_CLI" FORCE)
@@ -34,7 +34,11 @@ target_include_directories(imgui PUBLIC ${Vulkan_INCLUDE_DIRS} imgui)
 file(GLOB IMGUI_SRC_FILES
   ${PROJECT_SOURCE_DIR}/imgui/*.h
   ${PROJECT_SOURCE_DIR}/imgui/*.cpp
-  ${PROJECT_SOURCE_DIR}/imgui/*.natvis)
+  ${PROJECT_SOURCE_DIR}/imgui/*.natvis
+  ${PROJECT_SOURCE_DIR}/imgui/backends/imgui_impl_glfw.h
+  ${PROJECT_SOURCE_DIR}/imgui/backends/imgui_impl_glfw.cpp
+  ${PROJECT_SOURCE_DIR}/imgui/backends/imgui_impl_vulkan.h
+  ${PROJECT_SOURCE_DIR}/imgui/backends/imgui_impl_vulkan.cpp)
 target_sources(imgui PRIVATE ${IMGUI_SRC_FILES})
 target_link_libraries(imgui PUBLIC ${Vulkan_LIBRARY} glfw)
 
@@ -46,3 +50,6 @@ add_subdirectory(${PROJECT_SOURCE_DIR}/assimp)
 
 set(ASSIMP_INCLUDE_DIRS ${PROJECT_SOURCE_DIR}/assimp/include PARENT_SCOPE)
 set(ASSIMP_LIBRAIRIES assimp PARENT_SCOPE)
+
+# tomlplusplus
+set(TOML_PLUS_PLUS_INCLUDE_DIRS ${PROJECT_SOURCE_DIR}/tomlplusplus/include PARENT_SCOPE)

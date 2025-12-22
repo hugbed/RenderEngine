@@ -12,17 +12,19 @@ Vulkan rendering engine.
 
 # Prerequisites
 
-- CMake 3.19.2
-- Vulkan SDK 1.2.162.0
-- glslc.exe in the PATH environment variable
+- CMake >= 4.2.1
+- C++17 compatible toolchain
+- Vulkan SDK >= 1.4.328.1
+- python 3.14.2
+- glslc.exe >=  in the PATH environment variable
+- clang-format?
 
 ## Setup
 
 - Make sure to have Vulkan SDK installed.
-- Update submodules (git submodule update --init).
-- Run ./Scripts/generate.bat
-- A solution named RenderEngine.sln should be have been generated in ./Build :). Have fun!
-
+- Update submodules (`git submodule update --init`).
+- Run `./Scripts/generate.bat`
+- A solution named RenderEngine.sln should be have been generated in `./Build`.
 
 # Todo
 

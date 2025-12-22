@@ -2,7 +2,6 @@
 
 #include "Texture.h"
 #include "CommandBufferPool.h"
-
 #include "hash.h"
 
 #define STB_IMAGE_IMPLEMENTATION
@@ -11,24 +10,26 @@
 #include <algorithm>
 #include <iostream>
 
-TextureID TextureSystem::LoadTexture(std::string_view filename)
+TextureID TextureSystem::LoadTexture(const AssetPath& assetPath)
 {
-	TextureID id = CreateAndUploadTextureImage(filename);
+	TextureID id = CreateAndUploadTextureImage(assetPath);
 	vk::Sampler sampler = CreateSampler(m_textures[(size_t)ImageViewType::e2D][id]->GetMipLevels());
 	return id;
 }
 
-TextureID TextureSystem::CreateAndUploadTextureImage(std::string_view filename)
+TextureID TextureSystem::CreateAndUploadTextureImage(const AssetPath& assetPath)
 {
 	// Check if we already loaded this texture
-	uint64_t fileHash = fnv_hash((uint8_t*)filename.data(), filename.size());
-	auto& cachedTexture = m_fileHashToTextureKey.find(fileHash);
-	if (cachedTexture != m_fileHashToTextureKey.end())
+	std::string filePathStr = assetPath.PathOnDisk().string();
+	uint64_t fileHash = fnv_hash(reinterpret_cast<uint8_t*>(filePathStr.data()), filePathStr.size());
+	auto cachedTexture = m_fileHashToTextureKey.find(fileHash);
+	if (cachedTexture != m_fileHashToTextureKey.end()) {
 		return cachedTexture->second.id;
+	}
 
 	// Read image from file
 	int texWidth = 0, texHeight = 0, texChannels = 0;
-	stbi_uc* pixels = stbi_load((m_basePath + "/" + filename.data()).c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+	stbi_uc* pixels = stbi_load(filePathStr.data(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
 	if (pixels == nullptr || texWidth == 0 || texHeight == 0 || texChannels == 0) {
 		throw std::runtime_error("failed to load texture image!");
 	}
@@ -57,7 +58,7 @@ TextureID TextureSystem::CreateAndUploadTextureImage(std::string_view filename)
 	m_texturesToUpload.push_back(key);
 	m_mipLevels[imageViewTypeIndex].push_back(texture->GetMipLevels());
 	m_fileHashToTextureKey.emplace(fileHash, std::move(key));
-	m_names[imageViewTypeIndex].push_back(filename.data());
+	m_names[imageViewTypeIndex].push_back(filePathStr.data());
 	m_imageTypeCount[(size_t)ImageViewType::e2D]++;
 
 	memcpy(texture->GetStagingMappedData(), reinterpret_cast<const void*>(pixels), (size_t)texWidth* texHeight * 4);
@@ -98,15 +99,18 @@ vk::Sampler TextureSystem::CreateSampler(uint32_t nbMipLevels)
 	return m_samplers[samplerID].get();
 }
 
-TextureID TextureSystem::LoadCubeMapFaces(gsl::span<std::string> filenames)
+TextureID TextureSystem::LoadCubeMapFaces(gsl::span<AssetPath> filePaths)
 {
-	if (filenames.size() != 6)
+	if (filePaths.size() != 6)
 		return {};
 
 	// Check if we already loaded this texture
 	std::string filename;
-	for (const auto& file : filenames)
-		filename += std::string(file) + ";"; // use hash of ";".join(filenames) as id
+	for (const auto& file : filePaths)
+	{
+		std::string filePathStr = file.ToString();
+		filename += filePathStr + ";"; // use hash of ";".join(filenames) as id
+	}
 	uint64_t fileHash = fnv_hash((uint8_t*)filename.data(), filename.size());
 	auto cachedTextureIt = m_fileHashToTextureKey.find(fileHash); // todo: use better ID
 	if (cachedTextureIt != m_fileHashToTextureKey.end())
@@ -118,21 +122,21 @@ TextureID TextureSystem::LoadCubeMapFaces(gsl::span<std::string> filenames)
 		return cachedTextureIt->second.id;
 	}
 	std::vector<stbi_uc*> faces;
-	faces.reserve(filenames.size());
+	faces.reserve(filePaths.size());
 
 	bool success = true;
 	int width = 0, height = 0, channels = 0;
 
-	for (size_t i = 0; i < filenames.size(); ++i)
+	for (size_t i = 0; i < filePaths.size(); ++i)
 	{
-		const auto& faceFile = filenames[i];
+		const AssetPath& faceFilePath = filePaths[i];
+		const std::string faceFilePathStr = faceFilePath.PathOnDisk().string();
 		int texWidth = 0, texHeight = 0, texChannels = 0;
-
-		stbi_uc* pixels = stbi_load(faceFile.data(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+		stbi_uc* pixels = stbi_load(faceFilePathStr.data(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
 		if (pixels == nullptr || texWidth == 0 || texHeight == 0 || texChannels == 0)
 		{
 #ifdef _DEBUG
-			std::cout << "failed to load cubemape face: " << faceFile.data() << std::endl;
+			std::cout << "failed to load cubemape face: " << faceFilePathStr << std::endl;
 #endif
 			success = false;
 		}

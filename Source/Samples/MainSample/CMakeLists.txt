@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.19)
+cmake_minimum_required(VERSION 4.2.1)
 
 project(MainSample)
 
@@ -19,7 +19,7 @@ file(GLOB_RECURSE SRC_FILES
   ${PROJECT_SOURCE_DIR}/spirv.natvis)
 
 add_executable(${PROJECT_NAME} ${SRC_FILES})
-set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD 17)
+set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD 23)
 target_link_libraries(
   ${PROJECT_NAME}
     ${Vulkan_LIBRARY}
@@ -47,4 +47,4 @@ add_custom_target(
   COMMAND py -3
     ${CMAKE_SOURCE_DIR}/Scripts/compile-shaders.py
       ${PROJECT_SOURCE_DIR}/Shaders
-      ${PROJECT_BINARY_DIR}/$<CONFIG>)
+      ${CMAKE_SOURCE_DIR}/Assets/Generated/Shaders)

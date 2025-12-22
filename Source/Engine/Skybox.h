@@ -47,8 +47,6 @@ private:
 	void CreateDescriptors();
 	void UpdateDescriptors();
 
-	// todo: add m_ to each member
-
 	gsl::not_null<TextureSystem*> m_textureSystem;
 	TextureID m_cubeMap = ~0;
 

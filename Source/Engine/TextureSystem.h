@@ -2,6 +2,7 @@
 
 #include "Texture.h"
 #include "SmallVector.h"
+#include "AssetPath.h"
 
 #include <vulkan/vulkan.hpp>
 
@@ -12,6 +13,8 @@
 #include <string>
 #include <string_view>
 #include <memory>
+
+#include <cstdint>
 
 class CommandBufferPool;
 
@@ -46,10 +49,10 @@ public:
 	// todo: support loading as sRGB vs linear for different texture types
 
 	// ImageViewType::e2D
-	TextureID LoadTexture(std::string_view filename);
+	TextureID LoadTexture(const AssetPath& assetPath);
 
 	// ImageViewType::eCube
-	TextureID LoadCubeMapFaces(gsl::span<std::string> filenames); // todo, this is the same as LoadTexture but with vk::ImageViewType::eCube
+	TextureID LoadCubeMapFaces(gsl::span<AssetPath> filenames); // todo, this is the same as LoadTexture but with vk::ImageViewType::eCube
 
 	vk::Sampler CreateSampler(uint32_t nbMipLevels);
 
@@ -64,7 +67,7 @@ public:
 	size_t GetTextureCount(ImageViewType imageViewType) const { return m_imageTypeCount[(size_t)imageViewType]; }
 
 private:
-	TextureID CreateAndUploadTextureImage(std::string_view filename);
+	TextureID CreateAndUploadTextureImage(const AssetPath& assetPath);
 
 	// Internal ID for samplers
 	using SamplerID = uint32_t;

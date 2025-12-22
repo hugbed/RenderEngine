@@ -294,19 +294,21 @@ ShaderReflection::ShaderReflection(uint32_t* code, size_t codeSize) /* how many 
 	specializationMapEntries = ::PopulateSpecializationMapEntries(comp);
 }
 
-ShaderID ShaderSystem::CreateShader(const std::string& filename)
+// todo (hbedard): take an AssetPath once available
+ShaderID ShaderSystem::CreateShader(const std::filesystem::path& filePath)
 {
-	return CreateShader(filename, "main");
+	return CreateShader(filePath, "main");
 }
 
-ShaderID ShaderSystem::CreateShader(const std::string& filename, std::string entryPoint)
+ShaderID ShaderSystem::CreateShader(const std::filesystem::path& filePath, std::string entryPoint)
 {
-	uint64_t filenameID = fnv_hash(reinterpret_cast<const uint8_t*>(filename.c_str()), filename.size());
+	std::string filePathStr = filePath.string();
+	uint64_t filenameID = fnv_hash(reinterpret_cast<const uint8_t*>(filePathStr.c_str()), filePathStr.size());
 	auto shaderIt = m_filenameHashToShaderID.find(filenameID);
 	if (shaderIt != m_filenameHashToShaderID.end())
 		return shaderIt->second;
 
-	auto code = file_utils::ReadFile(filename);
+	auto code = file_utils::ReadFile(filePathStr);
 	auto shaderID = CreateShader(code.data(), code.size(), "main");
 	auto [it, wasAdded] = m_filenameHashToShaderID.emplace(filenameID, shaderID);
 	return shaderID;

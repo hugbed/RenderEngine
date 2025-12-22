@@ -4,6 +4,7 @@
 #include "ShaderSystem.h"
 #include "GraphicsPipelineSystem.h"
 #include "RenderPass.h"
+#include "AssetPath.h"
 
 #include <gsl/gsl>
 
@@ -18,8 +19,8 @@ public:
 		: m_graphicsPipelineSystem(&graphicsPipelineSystem)
 	{
 		ShaderSystem& shaderSystem = m_graphicsPipelineSystem->GetShaderSystem();
-		ShaderID vertexShaderID = shaderSystem.CreateShader("grid_vert.spv", "main");
-		ShaderID fragmentShaderID = shaderSystem.CreateShader("grid_frag.spv", "main");
+		ShaderID vertexShaderID = shaderSystem.CreateShader(AssetPath("/Engine/Generated/Shaders/grid_vert.spv").PathOnDisk(), "main");
+		ShaderID fragmentShaderID = shaderSystem.CreateShader(AssetPath("/Engine/Generated/Shaders/grid_frag.spv").PathOnDisk(), "main");
 		vertexShader = shaderSystem.CreateShaderInstance(vertexShaderID);
 		fragmentShader = shaderSystem.CreateShaderInstance(fragmentShaderID);
 		Reset(renderPass, swapchainExtent);

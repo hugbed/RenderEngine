@@ -3,6 +3,7 @@
 #include "Device.h"
 #include "CommandBufferPool.h"
 #include "RenderPass.h"
+#include "AssetPath.h"
 
 #include <iostream>
 
@@ -61,20 +62,20 @@ Skybox::Skybox(
 	, m_graphicsPipelineSystem(&graphicsPipelineSystem)
 {
 	// Load textures
-	std::vector<std::string> cubeFacesFiles = {
-		"skybox/right.jpg",
-		"skybox/left.jpg",
-		"skybox/top.jpg",
-		"skybox/bottom.jpg",
-		"skybox/front.jpg",
-		"skybox/back.jpg"
+	std::vector<AssetPath> cubeFacesFiles = {
+		AssetPath("/Engine/Textures/skybox/right.jpg"),
+		AssetPath("/Engine/Textures/skybox/left.jpg"),
+		AssetPath("/Engine/Textures/skybox/top.jpg"),
+		AssetPath("/Engine/Textures/skybox/bottom.jpg"),
+		AssetPath("/Engine/Textures/skybox/front.jpg"),
+		AssetPath("/Engine/Textures/skybox/back.jpg")
 	};
 	m_cubeMap = m_textureSystem->LoadCubeMapFaces(cubeFacesFiles);
 
 	// Create graphics pipeline
 	ShaderSystem& shaderSystem = m_graphicsPipelineSystem->GetShaderSystem();
-	ShaderID vertexShaderID = shaderSystem.CreateShader("skybox_vert.spv", "main");
-	ShaderID fragmentShaderID = shaderSystem.CreateShader("skybox_frag.spv", "main");
+	ShaderID vertexShaderID = shaderSystem.CreateShader(AssetPath("/Engine/Generated/Shaders/skybox_vert.spv").PathOnDisk(), "main");
+	ShaderID fragmentShaderID = shaderSystem.CreateShader(AssetPath("/Engine/Generated/Shaders/skybox_frag.spv").PathOnDisk(), "main");
 	m_vertexShader = shaderSystem.CreateShaderInstance(vertexShaderID);
 	m_fragmentShader = shaderSystem.CreateShaderInstance(fragmentShaderID);
 

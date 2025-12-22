@@ -15,6 +15,16 @@ RenderLoop::RenderLoop(vk::SurfaceKHR surface, vk::Extent2D extent, Window& wind
 	, m_commandBufferPool(m_swapchain->GetImageCount(), kMaxFramesInFlight, g_physicalDevice->GetQueueFamilies().graphicsFamily.value())
 {
 	window.SetWindowResizeCallback(reinterpret_cast<void*>(this), OnResize);
+	
+	for (int i = 0; i < m_swapchain->GetImageCount(); ++i)
+	{
+		m_renderFinishedSemaphores.push_back(g_device->Get().createSemaphoreUnique({}));
+	}
+
+	for (int i = 0; i < kMaxFramesInFlight; ++i)
+	{
+		m_imageAvailableSemaphores[i] = g_device->Get().createSemaphoreUnique({});
+	}
 }
 
 void RenderLoop::Init()
@@ -73,7 +83,7 @@ void RenderLoop::Render()
 		static_cast<VkDevice>(g_device->Get()),
 		static_cast<VkSwapchainKHR>(m_swapchain->Get()),
 		UINT64_MAX,
-		static_cast<VkSemaphore>(m_gpuSync.imageAvailableSemaphore.get()),
+		static_cast<VkSemaphore>(m_imageAvailableSemaphores[m_frameIndex] .get()),
 		VK_NULL_HANDLE, // fence
 		&imageIndex);
 	if (result == (VkResult)vk::Result::eErrorOutOfDateKHR) 
@@ -92,10 +102,10 @@ void RenderLoop::Render()
 	// Submit command buffer on graphics queue
 	vk::PipelineStageFlags waitStages[] = { vk::PipelineStageFlagBits::eColorAttachmentOutput };
 	vk::SubmitInfo submitInfo(
-		1, &m_gpuSync.imageAvailableSemaphore.get(),
+		1, &m_imageAvailableSemaphores[m_frameIndex].get(),
 		waitStages,
 		1, &m_commandBufferPool.GetCommandBuffer(),
-		1, &m_gpuSync.renderFinishedSemaphore.get()
+		1, &m_renderFinishedSemaphores[imageIndex].get()
 	);
 	m_commandBufferPool.Submit(std::move(submitInfo));
 	m_commandBufferPool.MoveToNext();
@@ -103,7 +113,7 @@ void RenderLoop::Render()
 	// Presentation
 	vk::PresentInfoKHR presentInfo = {};
 	presentInfo.waitSemaphoreCount = 1;
-	presentInfo.pWaitSemaphores = &m_gpuSync.renderFinishedSemaphore.get();
+	presentInfo.pWaitSemaphores = &m_renderFinishedSemaphores[imageIndex].get();
 
 	presentInfo.swapchainCount = 1;
 	presentInfo.pSwapchains = &m_swapchain->Get();
@@ -123,6 +133,8 @@ void RenderLoop::Render()
 	{
 		throw std::runtime_error("Failed to acquire swapchain image");
 	}
+
+	m_frameIndex = (m_frameIndex + 1) % kMaxFramesInFlight;
 }
 
 void RenderLoop::RecreateSwapchain()
