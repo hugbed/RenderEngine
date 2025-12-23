@@ -25,14 +25,15 @@
 #include "TextureSystem.h"
 #include "LightSystem.h"
 #include "MaterialSystem.h"
-#include "ModelSystem.h"
+#include "MeshAllocator.h"
 #include "ShadowSystem.h"
 #include "DescriptorSetLayouts.h"
 #include "RenderState.h"
-#include "Scene.h"
+#include "AssimpScene.h"
 #include "TexturedQuad.h"
 #include "InputSystem.h"
 #include "CameraController.h"
+#include "SceneTree.h"
 
 #include "Grid.h"
 
@@ -69,19 +70,20 @@ public:
 		, m_framebuffers(Framebuffer::FromSwapchain(*m_swapchain, m_renderPass->Get()))
 		, m_graphicsPipelineSystem(m_shaderSystem)
 		, m_textureSystem(basePath)
-		, m_materialSystem(m_renderPass->Get(), m_swapchain->GetImageDescription().extent, m_graphicsPipelineSystem, m_textureSystem, m_modelSystem)
-		, m_scene(std::make_unique<Scene>(
+		, m_materialSystem(m_renderPass->Get(), m_swapchain->GetImageDescription().extent, m_graphicsPipelineSystem, m_textureSystem, m_meshAllocator)
+		, m_scene(std::make_unique<AssimpScene>(
 			std::move(basePath), std::move(sceneFile),
 			m_commandBufferPool,
 			m_graphicsPipelineSystem,
 			m_textureSystem,
-			m_modelSystem,
+			m_meshAllocator,
 			m_lightSystem,
 			m_materialSystem,
 			m_shadowSystem,
+			m_sceneTree,
 			*m_renderPass, m_swapchain->GetImageDescription().extent)
 		)
-		, m_shadowSystem(m_swapchain->GetImageDescription().extent, m_graphicsPipelineSystem, m_modelSystem, m_lightSystem)
+		, m_shadowSystem(m_swapchain->GetImageDescription().extent, m_graphicsPipelineSystem, m_meshAllocator, m_sceneTree, m_lightSystem)
 		, m_grid(std::make_unique<Grid>(*m_renderPass, m_swapchain->GetImageDescription().extent, m_graphicsPipelineSystem))
 	{
 		window.SetMouseButtonCallback(reinterpret_cast<void*>(&m_inputSystem), InputSystem::OnMouseButton);
@@ -174,7 +176,6 @@ protected:
 
 		// --- Recreate everything that depends on the swapchain images --- //
 
-
 		// Use any command buffer for init
 		auto commandBuffer = m_commandBufferPool.ResetAndGetCommandBuffer();
 		commandBuffer.begin({ vk::CommandBufferUsageFlagBits::eOneTimeSubmit });
@@ -227,7 +228,7 @@ protected:
 		);
 		commandBuffer->begin({ vk::CommandBufferUsageFlagBits::eRenderPassContinue, &info });
 		{
-			RenderState state(m_graphicsPipelineSystem, m_materialSystem, m_modelSystem);
+			RenderState state(m_graphicsPipelineSystem, m_materialSystem);
 
 			// Draw opaque materials first
 			m_scene->DrawOpaqueObjects(commandBuffer.get(), frameIndex, state);
@@ -413,7 +414,8 @@ private:
 	TextureSystem m_textureSystem;
 	LightSystem m_lightSystem;
 	MaterialSystem m_materialSystem;
-	ModelSystem m_modelSystem;
+	MeshAllocator m_meshAllocator;
+	SceneTree m_sceneTree;
 	ShadowSystem m_shadowSystem;
 
 	InputSystem m_inputSystem;
@@ -422,7 +424,7 @@ private:
 	vk::UniqueCommandPool m_secondaryCommandPool;
 	std::vector<vk::UniqueCommandBuffer> m_renderPassCommandBuffers;
 
-	std::unique_ptr<Scene> m_scene;
+	std::unique_ptr<AssimpScene> m_scene;
 	std::unique_ptr<CameraController> m_cameraController;
 	std::unique_ptr<Grid> m_grid;
 	std::unique_ptr<TexturedQuad> m_shadowMapPreviewQuad;

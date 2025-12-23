@@ -20,7 +20,7 @@
 #include <string_view>
 #include <filesystem>
 
-class ModelSystem;
+class MeshAllocator;
 
 // todo: find better naming for those structures
 
@@ -129,7 +129,7 @@ public:
 		vk::Extent2D swapchainExtent,
 		GraphicsPipelineSystem& graphicsPipelineSystem,
 		TextureSystem& textureSystem,
-		ModelSystem& modelSystem
+		MeshAllocator& meshAllocator
 	);
 
 	~MaterialSystem();
@@ -158,8 +158,8 @@ public:
 	) const;
 
 	// Set 1
-	void UpdateModelDescriptorSet(
-		vk::Buffer modelBuffer, size_t modelBufferSize
+	void UpdateSceneDescriptorSet(
+		vk::Buffer sceneBuffer, size_t sceneBufferSize
 	) const;
 
 	// Set 2
@@ -197,7 +197,7 @@ private:
 
 	gsl::not_null<TextureSystem*> m_textureSystem;
 	gsl::not_null<GraphicsPipelineSystem*> m_graphicsPipelineSystem;
-	gsl::not_null<ModelSystem*> m_modelSystem;
+	gsl::not_null<MeshAllocator*> m_meshAllocator;
 
 	std::map<uint64_t, MaterialInstanceID> m_materialHashToInstanceID;
 

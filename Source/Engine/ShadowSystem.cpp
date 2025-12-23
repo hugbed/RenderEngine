@@ -1,6 +1,6 @@
 #include "ShadowSystem.h"
 
-#include "Scene.h"
+#include "AssimpScene.h"
 
 #include <utility>
 
@@ -9,7 +9,7 @@ namespace
 	struct PushConstants
 	{
 		uint32_t shadowIndex = 0;
-		uint32_t modelIndex = 0;
+		uint32_t sceneNodeIndex = 0;
 	};
 
 	[[nodiscard]] vk::UniqueSampler CreateSampler(vk::SamplerAddressMode addressMode)
@@ -117,7 +117,7 @@ namespace
 		g_device->Get().updateDescriptorSets(static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
 	}
 
-	void UpdateModelDescriptorSet(vk::Buffer buffer, size_t size, vk::DescriptorSet descriptorSet)
+	void UpdateSceneDescriptorSet(vk::Buffer buffer, size_t size, vk::DescriptorSet descriptorSet)
 	{
 		vk::DescriptorBufferInfo descriptorBufferInfo(buffer, 0, size);
 		std::vector<vk::WriteDescriptorSet> writeDescriptorSets;
@@ -253,12 +253,14 @@ const AssetPath ShadowSystem::kFragmentShaderFile("/Engine/Generated/Shaders/sha
 ShadowSystem::ShadowSystem(
 	vk::Extent2D extent,
 	GraphicsPipelineSystem& graphicsPipelineSystem,
-	ModelSystem& modelSystem,
+	MeshAllocator& meshAllocator,
+	SceneTree& sceneTree,
 	LightSystem& lightSystem
 )
 	: m_extent(extent)
 	, m_graphicsPipelineSystem(&graphicsPipelineSystem)
-	, m_modelSystem(&modelSystem)
+	, m_meshAllocator(&meshAllocator)
+	, m_sceneTree(&sceneTree)
 	, m_lightSystem(&lightSystem)
 {
 	m_sampler = ::CreateSampler(vk::SamplerAddressMode::eClampToEdge);
@@ -280,7 +282,7 @@ void ShadowSystem::CreateDescriptorPool()
 		descriptorSet.reset();
 
 	// Set 0 (view):     { 1 buffer containing all shadow map transforms }
-	// Set 1 (model):    { 1 buffer containing all model transforms }
+	// Set 1 (scene):    { 1 buffer containing all transforms }
 	std::pair<vk::DescriptorType, uint16_t> descriptorCount[] = {
 		std::make_pair(vk::DescriptorType::eStorageBuffer, 2),
 	};
@@ -291,7 +293,7 @@ void ShadowSystem::CreateDescriptorPool()
 	for (const auto& descriptor : descriptorCount)
 		poolSizes.emplace_back(descriptor.first, descriptor.second);
 
-	uint32_t maxNbSets = 2; // View + Model
+	uint32_t maxNbSets = 2; // View + Scene
 	m_descriptorPool = g_device->Get().createDescriptorPool(vk::DescriptorPoolCreateInfo(
 		vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
 		maxNbSets,
@@ -343,10 +345,10 @@ void ShadowSystem::UploadToGPU()
 		GetDescriptorSet(DescriptorSetIndex::View)
 	);
 
-	const UniqueBuffer& modelBuffer = m_modelSystem->GetBuffer();
-	::UpdateModelDescriptorSet(
-		modelBuffer.Get(), modelBuffer.Size(),
-		GetDescriptorSet(DescriptorSetIndex::Model)
+	const UniqueBuffer& transformsBuffer = m_sceneTree->GetTransformsBuffer();
+	::UpdateSceneDescriptorSet(
+		transformsBuffer.Get(), transformsBuffer.Size(),
+		GetDescriptorSet(DescriptorSetIndex::Scene)
 	);
 }
 
@@ -366,11 +368,11 @@ void ShadowSystem::CreateGraphicsPipeline()
 
 void ShadowSystem::CreateDescriptorSets()
 {
-	const int nbDescriptorSets = 2; // View + Model
+	const int nbDescriptorSets = 2; // View + Scene
 
 	std::vector<vk::DescriptorSetLayout> layouts;
 	layouts.reserve(nbDescriptorSets);
-	for (DescriptorSetIndex setIndex : { DescriptorSetIndex::View, DescriptorSetIndex::Model })
+	for (DescriptorSetIndex setIndex : { DescriptorSetIndex::View, DescriptorSetIndex::Scene })
 	{
 		layouts.push_back(m_graphicsPipelineSystem->GetDescriptorSetLayout(
 			m_graphicsPipelineID, (uint8_t)setIndex
@@ -387,7 +389,7 @@ void ShadowSystem::CreateDescriptorSets()
 
 void ShadowSystem::Update(const Camera& camera, BoundingBox sceneBoundingBox)
 {
-	BoundingBox sceneBox = m_modelSystem->ComputeWorldBoundingBox();
+	BoundingBox sceneBox = m_sceneTree->ComputeWorldBoundingBox();
 
 	for (ShadowID id = 0; id < m_lights.size(); ++id)
 	{
@@ -397,8 +399,8 @@ void ShadowSystem::Update(const Camera& camera, BoundingBox sceneBoundingBox)
 			m_lightSystem->GetLight(id),
 			camera,
 			sceneBox,
-			m_modelSystem->GetBoundingBoxes(),
-			m_modelSystem->GetTransforms()
+			m_sceneTree->GetBoundingBoxes(),
+			m_sceneTree->GetTransforms()
 		);
 
 		m_transforms[id] = m_properties[id].proj * m_properties[id].view;
@@ -454,29 +456,29 @@ void ShadowSystem::Render(vk::CommandBuffer& commandBuffer, uint32_t frameIndex,
 				offsetof(PushConstants, shadowIndex), sizeof(PushConstants::shadowIndex), &shadowIndex
 			);
 
-			uint8_t modelSetIndex = (uint8_t)DescriptorSetIndex::Model;
+			uint8_t modelSetIndex = (uint8_t)DescriptorSetIndex::Scene;
 			vk::PipelineLayout modelPipelineLayout = m_graphicsPipelineSystem->GetPipelineLayout(m_graphicsPipelineID, modelSetIndex);
 
 			// Bind the one big vertex + index buffers
-			m_modelSystem->BindGeometry(commandBuffer);
+			m_meshAllocator->BindGeometry(commandBuffer);
 
 			// Bind the model transforms buffer
 			commandBuffer.bindDescriptorSets(
 				vk::PipelineBindPoint::eGraphics,
-				modelPipelineLayout, (uint32_t)DescriptorSetIndex::Model,
+				modelPipelineLayout, (uint32_t)DescriptorSetIndex::Scene,
 				1, &m_descriptorSets[modelSetIndex].get(),
 				0, nullptr
 			);
 			
 			for (const auto& drawItem : drawCommands)
 			{
-				uint32_t modelIndex = drawItem.model;
+				uint32_t sceneNodeIndex = static_cast<uint32_t>(drawItem.sceneNodeID);
 
 				// Set model index push constant
 				commandBuffer.pushConstants(
 					modelPipelineLayout,
 					vk::ShaderStageFlagBits::eVertex,
-					offsetof(PushConstants, modelIndex), sizeof(PushConstants::modelIndex), &modelIndex
+					offsetof(PushConstants, sceneNodeIndex), sizeof(PushConstants::sceneNodeIndex), &sceneNodeIndex
 				);
 
 				commandBuffer.drawIndexed(drawItem.mesh.nbIndices, 1, drawItem.mesh.indexOffset, 0, 0);

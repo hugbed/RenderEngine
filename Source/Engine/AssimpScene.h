@@ -20,20 +20,22 @@
 #include <iostream>
 
 class ShadowSystem;
+class SceneTree;
 
-class Scene
+class AssimpScene
 {
 public:
-	Scene(
+	AssimpScene(
 		std::string basePath,
 		std::string sceneFilename,
 		CommandBufferPool& commandBufferPool,
 		GraphicsPipelineSystem& graphicsPipelineSystem,
 		TextureSystem& textureSystem,
-		ModelSystem& modelSystem,
+		MeshAllocator& meshAllocator,
 		LightSystem& lightSystem,
 		MaterialSystem& materialSystem,
 		ShadowSystem& shadowSystem,
+		SceneTree& sceneTree,
 		const RenderPass& renderPass, vk::Extent2D imageExtent
 	);
 
@@ -53,7 +55,7 @@ public:
 
 	const Camera& GetCamera() const { return m_camera; } // todo: there should be a camera control or something
 
-	// todo: move to model system
+	// todo: take the world bounding box from the scene tree
 	BoundingBox GetBoundingBox() const { return m_boundingBox; }
 
 	void ResetCamera();
@@ -72,7 +74,7 @@ private:
 	void LoadCamera();
 	void LoadSceneNodes(vk::CommandBuffer commandBuffer);
 	void LoadNodeAndChildren(aiNode* node, glm::mat4 transform);
-	ModelID LoadModel(const aiNode& fileNode, glm::mat4 transform);
+	SceneNodeID LoadSceneNode(const aiNode& fileNode, glm::mat4 transform);
 	void LoadMaterials(vk::CommandBuffer commandBuffer);
 
 	void CreateViewUniformBuffers();
@@ -107,12 +109,13 @@ private:
 	std::vector<vk::UniqueDescriptorSet> m_unlitViewDescriptorSets;
 	std::vector<UniqueBuffer> m_viewUniformBuffers; // one per in flight frame since these change every frame
 
-	// --- Model --- //
+	// --- Scene --- //
 	
 	BoundingBox m_boundingBox;
 
 	float m_maxVertexDist = 0.0f;
-	gsl::not_null<ModelSystem*> m_modelSystem;
+	gsl::not_null<MeshAllocator*> m_meshAllocator;
+	gsl::not_null<SceneTree*> m_sceneTree;
 
 	// --- Materials --- ///
 

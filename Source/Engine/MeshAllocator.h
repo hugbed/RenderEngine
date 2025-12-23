@@ -3,6 +3,7 @@
 #include "MaterialSystem.h"
 #include "DescriptorSetLayouts.h"
 #include "BoundingBox.h"
+#include "SceneTree.h" // todo (hbedard) only for the ID, that's a shame
 
 #include "Buffers.h"
 #include "Device.h"
@@ -37,21 +38,21 @@ using ModelID = uint32_t;
 
 struct MeshDrawInfo
 {
-	ModelID model = std::numeric_limits<uint32_t>::max();
+	SceneNodeID sceneNodeID = SceneNodeID::Invalid;
 	Mesh mesh;
 };
 
-class ModelSystem
+class MeshAllocator
 {
 public:
-	ModelID CreateModel(glm::mat4 transform, BoundingBox boundingBox, const std::vector<Mesh>& meshes);
+	// todo (hbedard): store meshes associated to a scene node in the scene instead of here
+	void GroupMeshes(SceneNodeID sceneNodeID, const std::vector<Mesh>& meshes);
 
-	size_t GetModelCount() const { return m_transforms.size(); }
-
+	// todo (hbedard): implement a "RenderResource" interface
 	void UploadToGPU(CommandBufferPool& commandBufferPool);
 
 	// Vertices, Indices
-	void BindGeometry(const vk::CommandBuffer& commandBuffer) const;
+	void BindGeometry(const vk::CommandBuffer& commandBuffer) const; 
 
 	// --- Vertices, meshes and indices --- //
 
@@ -63,49 +64,20 @@ public:
 	size_t GetVertexCount() const { return m_vertices.size(); }
 	size_t GetIndexCount() const { return m_indices.size(); }
 
-	// --- Bounding boxes --- //
-
-	BoundingBox ComputeWorldBoundingBox() const
-	{
-		BoundingBox worldBox;
-
-		for (int i = 0; i < m_transforms.size(); ++i)
-		{
-			BoundingBox box = m_boundingBoxes[i];
-			box = box.Transform(m_transforms[i]);
-			worldBox = worldBox.Union(box);
-		}
-
-		return worldBox;
-	}
-
-	// --- Transforms --- //
-
-	glm::mat4 GetTransform(ModelID id) const { return m_transforms[id]; }
-
-	const UniqueBuffer& GetBuffer() const { return *m_transformsBuffer; }
-
-	const std::vector<glm::mat4>& GetTransforms() const { return m_transforms; }
-
-	const std::vector<BoundingBox>& GetBoundingBoxes() const { return m_boundingBoxes; }
-
 	template <class Func>
 	void ForEachMesh(Func f)
 	{
-		for (auto&& meshEntry : m_meshEntries)
+		for (const auto& [sceneNodeID, meshEntry] : m_meshEntries)
 		{
 			for (int i = meshEntry.offset; i < meshEntry.offset + meshEntry.size; ++i)
 			{
-				f((ModelID)i, m_meshes[i]);
+				f(sceneNodeID, m_meshes[i]);
 			}
 		}
 	}
 
 private:
-	// ModelID -> Array Index
-	std::vector<BoundingBox> m_boundingBoxes;
-	std::vector<glm::mat4> m_transforms;
-	std::vector<Entry> m_meshEntries;
+	std::vector<std::pair<SceneNodeID, Entry>> m_meshEntries;
 
 	// Contains all geometry (vertices and indices)
 	std::vector<Vertex> m_vertices;
@@ -113,9 +85,6 @@ private:
 	std::unique_ptr<UniqueBufferWithStaging> m_vertexBuffer{ nullptr };
 	std::unique_ptr<UniqueBufferWithStaging> m_indexBuffer{ nullptr };
 
-	// Contains all meshes, referenced by meshOffsets for each model
+	// Contains all meshes, referenced by meshOffsets
 	std::vector<Mesh> m_meshes;
-
-	// GPU resources
-	std::unique_ptr<UniqueBuffer> m_transformsBuffer{ nullptr }; // buffer of transforms
 };

@@ -191,7 +191,10 @@ if __name__ == '__main__':
 		print("[SPIRV] Building shader '{}' -> '{}'".format(file, file_spv))
 		shader_in = os.path.join(shaders_path, file)
 		shader_out = os.path.join(output_path, file_spv)
-		build_shader(shader_in, shader_out)
+		try:
+			build_shader(shader_in, shader_out)
+		except Exception as e:
+			print(e)
 
 	# Save current hashes
 	with open(config_file, 'w+') as f:

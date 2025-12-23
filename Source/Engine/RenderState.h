@@ -1,7 +1,7 @@
 #pragma once
 
 #include "MaterialSystem.h"
-#include "ModelSystem.h"
+#include "MeshAllocator.h"
 #include "GraphicsPipelineSystem.h"
 #include "DescriptorSetLayouts.h"
 
@@ -14,85 +14,83 @@ class RenderState
 public:
 	RenderState(
 		GraphicsPipelineSystem& graphicsPipelineSystem,
-		MaterialSystem& materialSystem,
-		ModelSystem& modelSystem
+		MaterialSystem& materialSystem
 	)
 		: m_graphicsPipelineSystem(&graphicsPipelineSystem)
 		, m_materialSystem(&materialSystem)
-		, m_modelSystem(&modelSystem)
 	{}
 
 	void BindPipeline(vk::CommandBuffer& commandBuffer, GraphicsPipelineID newPipelineID)
 	{
 		// Bind Graphics Pipeline
-		if (newPipelineID != pipelineID)
+		if (newPipelineID != m_pipelineID)
 		{
-			if (pipelineID != ~0U)
+			if (m_pipelineID != ~0U)
 			{
-				for (int i = 0; i < isSetCompatible.size(); ++i)
+				for (int i = 0; i < m_isSetCompatible.size(); ++i)
 				{
-					isSetCompatible[i] = m_graphicsPipelineSystem->IsSetLayoutCompatible(pipelineID, newPipelineID, i);
+					m_isSetCompatible[i] = m_graphicsPipelineSystem->IsSetLayoutCompatible(m_pipelineID, newPipelineID, i);
 				}
 			}
 			commandBuffer.bindPipeline(
 				vk::PipelineBindPoint::eGraphics,
 				m_graphicsPipelineSystem->GetPipeline(newPipelineID)
 			);
-			pipelineID = newPipelineID;
+			m_pipelineID = newPipelineID;
 		}
 	}
 
 	void BindView(vk::CommandBuffer& commandBuffer, Material::ShadingModel newShadingModel, vk::DescriptorSet viewDescriptorSet)
 	{
 		uint8_t set = (uint16_t)DescriptorSetIndex::View;
-		if (newShadingModel != shadingModel || isSetCompatible[set] == false)
+		if (newShadingModel != m_shadingModel || m_isSetCompatible[set] == false)
 		{
-			vk::PipelineLayout pipelineLayout = m_graphicsPipelineSystem->GetPipelineLayout(pipelineID, set);
+			vk::PipelineLayout pipelineLayout = m_graphicsPipelineSystem->GetPipelineLayout(m_pipelineID, set);
 			commandBuffer.bindDescriptorSets(
 				vk::PipelineBindPoint::eGraphics,
 				pipelineLayout, set,
 				1, &viewDescriptorSet,
 				0, nullptr
 			);
-			shadingModel = newShadingModel;
-			isSetCompatible[set] = true;
+			m_shadingModel = newShadingModel;
+			m_isSetCompatible[set] = true;
 		}
 	}
 
-	void BindModel(vk::CommandBuffer& commandBuffer, ModelID newModel)
+	void BindSceneNode(vk::CommandBuffer& commandBuffer, SceneNodeID newSceneNodeID)
 	{
-		uint8_t set = (uint8_t)DescriptorSetIndex::Model;
+		uint8_t set = (uint8_t)DescriptorSetIndex::Scene;
 
-		if (isSetCompatible[set] == false)
+		if (m_isSetCompatible[set] == false)
 		{
 			// Bind the model transforms buffer
-			vk::PipelineLayout pipelineLayout = m_graphicsPipelineSystem->GetPipelineLayout(pipelineID, (uint8_t)set);
-			vk::DescriptorSet descriptorSet = m_materialSystem->GetDescriptorSet(DescriptorSetIndex::Model);
+			vk::PipelineLayout pipelineLayout = m_graphicsPipelineSystem->GetPipelineLayout(m_pipelineID, (uint8_t)set);
+			vk::DescriptorSet descriptorSet = m_materialSystem->GetDescriptorSet(DescriptorSetIndex::Scene);
 
 			commandBuffer.bindDescriptorSets(
 				vk::PipelineBindPoint::eGraphics,
-				pipelineLayout, (uint32_t)DescriptorSetIndex::Model,
+				pipelineLayout, (uint32_t)DescriptorSetIndex::Scene,
 				1, &descriptorSet,
 				0, nullptr
 			);
 
-			isSetCompatible[set] = true;
+			m_isSetCompatible[set] = true;
 		}
 
-		if (newModel != model)
+		if (newSceneNodeID != m_sceneNodeID)
 		{
-			vk::PipelineLayout pipelineLayout = m_graphicsPipelineSystem->GetPipelineLayout(pipelineID, (uint8_t)set);
+			vk::PipelineLayout pipelineLayout = m_graphicsPipelineSystem->GetPipelineLayout(m_pipelineID, (uint8_t)set);
 
-			uint32_t modelIndex = newModel;
+			uint32_t sceneNodeIndex = static_cast<uint32_t>(newSceneNodeID);
 
-			// Set model index push constant
+			// Set scene node index push constant
 			commandBuffer.pushConstants(
 				pipelineLayout,
 				vk::ShaderStageFlagBits::eVertex,
-				0, sizeof(uint32_t), &modelIndex
+				0, sizeof(uint32_t), &sceneNodeIndex
 			);
 
-			model = newModel;
+			m_sceneNodeID = newSceneNodeID;
 		}
 	}
 
@@ -100,10 +98,10 @@ public:
 	{
 		uint8_t set = (uint16_t)DescriptorSetIndex::Material;
 
-		if (isSetCompatible[set] == false)
+		if (m_isSetCompatible[set] == false)
 		{
 			vk::DescriptorSet descriptorSet = m_materialSystem->GetDescriptorSet(DescriptorSetIndex::Material);
-			vk::PipelineLayout pipelineLayout = m_graphicsPipelineSystem->GetPipelineLayout(pipelineID, set);
+			vk::PipelineLayout pipelineLayout = m_graphicsPipelineSystem->GetPipelineLayout(m_pipelineID, set);
 			
 			commandBuffer.bindDescriptorSets(
 				vk::PipelineBindPoint::eGraphics,
@@ -111,12 +109,12 @@ public:
 				1, &descriptorSet, 0, nullptr
 			);
 
-			isSetCompatible[set] = true;
+			m_isSetCompatible[set] = true;
 		}
 
-		if (newMaterial != material)
+		if (newMaterial != m_material)
 		{
-			vk::PipelineLayout pipelineLayout = m_graphicsPipelineSystem->GetPipelineLayout(pipelineID, (uint8_t)set);
+			vk::PipelineLayout pipelineLayout = m_graphicsPipelineSystem->GetPipelineLayout(m_pipelineID, (uint8_t)set);
 
 			uint32_t materialIndex = newMaterial;
 
@@ -127,19 +125,18 @@ public:
 				4, sizeof(uint32_t), &materialIndex
 			);
 
-			material = newMaterial;
+			m_material = newMaterial;
 		}
 	}
 
 private:
-	std::array<bool, (size_t)DescriptorSetIndex::Count> isSetCompatible = {}; // all false by default
+	std::array<bool, (size_t)DescriptorSetIndex::Count> m_isSetCompatible = {}; // all false by default
 
 	gsl::not_null<GraphicsPipelineSystem*> m_graphicsPipelineSystem;
 	gsl::not_null<MaterialSystem*> m_materialSystem;
-	gsl::not_null<ModelSystem*> m_modelSystem;
 
-	Material::ShadingModel shadingModel = Material::ShadingModel::Count;
-	ModelID model = ~0U;
-	GraphicsPipelineID pipelineID = ~0U;
-	MaterialInstanceID material = ~0U;
+	Material::ShadingModel m_shadingModel = Material::ShadingModel::Count;
+	SceneNodeID m_sceneNodeID = SceneNodeID::Invalid;
+	GraphicsPipelineID m_pipelineID = ~0U;
+	MaterialInstanceID m_material = ~0U;
 };

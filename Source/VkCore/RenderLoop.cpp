@@ -9,13 +9,15 @@
 #include <thread>
 
 RenderLoop::RenderLoop(vk::SurfaceKHR surface, vk::Extent2D extent, Window& window)
-	: m_window(window)
+	: m_deltaTime({})
+	, m_window(window)
 	, m_surface(surface)
 	, m_swapchain(std::make_unique<Swapchain>(surface, extent))
 	, m_commandBufferPool(m_swapchain->GetImageCount(), kMaxFramesInFlight, g_physicalDevice->GetQueueFamilies().graphicsFamily.value())
 {
 	window.SetWindowResizeCallback(reinterpret_cast<void*>(this), OnResize);
 	
+	m_renderFinishedSemaphores.reserve(m_swapchain->GetImageCount());
 	for (int i = 0; i < m_swapchain->GetImageCount(); ++i)
 	{
 		m_renderFinishedSemaphores.push_back(g_device->Get().createSemaphoreUnique({}));

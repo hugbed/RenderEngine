@@ -17,9 +17,9 @@
 #define BINDING_VIEW_SHADOW_MAPS 2
 #define BINDING_VIEW_SHADOW_DATA 3
 
-// Set 1 (Model)
-#define SET_MODEL 1
-#define BINDING_MODEL_UNIFORMS 0
+// Set 1 (Scene)
+#define SET_SCENE 1
+#define BINDING_SCENE_UNIFORMS 0
 
 // Set 2 (Material)
 #define SET_MATERIAL 2

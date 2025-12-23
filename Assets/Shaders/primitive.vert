@@ -13,20 +13,20 @@ layout(location = 3) out vec3 viewPos;
 //--- Set 0 (Scene Uniforms) --- //
 #include "view_set.glsl"
 
-// --- Set 1 (Model Uniforms) --- //
+// --- Set 1 (Scene Uniforms) --- //
 
 layout(push_constant)
-    uniform ModelIndex {
-	    layout(offset = 0) uint modelIndex; // index into model.transforms
+    uniform SceneNodeIndex {
+	    layout(offset = 0) uint sceneNodeIndex; // index into sceneTree.transforms
     } pc;
 
-layout(set = SET_MODEL, binding = BINDING_MODEL_UNIFORMS)
+layout(set = SET_SCENE, binding = BINDING_SCENE_UNIFORMS)
     readonly buffer ModelUniforms {
         mat4 transforms[];
-    } model;
+    } scene;
 
 void main() {
-    mat4 transform = model.transforms[pc.modelIndex];
+    mat4 transform = scene.transforms[pc.sceneNodeIndex];
     fragPos = vec3(transform * vec4(inPosition, 1.0));
     gl_Position = view.proj * view.view * vec4(fragPos, 1.0);
     fragTexCoord = inTexCoord;

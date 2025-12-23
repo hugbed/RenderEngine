@@ -1,7 +1,7 @@
 #pragma once
 
 #include "LightSystem.h"
-#include "ModelSystem.h"
+#include "MeshAllocator.h"
 #include "Camera.h"
 #include "BoundingBox.h"
 
@@ -38,7 +38,8 @@ public:
 	ShadowSystem(
 		vk::Extent2D extent,
 		GraphicsPipelineSystem& graphicsPipelineSystem,
-		ModelSystem& modelSystem,
+		MeshAllocator& meshAllocator,
+		SceneTree& sceneTree,
 		LightSystem& lightSystem
 	);
 
@@ -96,7 +97,8 @@ private:
 	vk::UniqueRenderPass m_renderPass;
 
 	gsl::not_null<GraphicsPipelineSystem*> m_graphicsPipelineSystem;
-	gsl::not_null<ModelSystem*> m_modelSystem;
+	gsl::not_null<MeshAllocator*> m_meshAllocator;
+	gsl::not_null<SceneTree*> m_sceneTree;
 	gsl::not_null<LightSystem*> m_lightSystem;
 
 	// ShadowID -> Array index

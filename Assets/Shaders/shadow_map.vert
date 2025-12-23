@@ -8,7 +8,7 @@ layout(location = 2) in vec3 inNormal;
 layout(push_constant)
     uniform ShadowIndex {
 	    layout(offset = 0) uint shadowIndex; // index into shadow.transforms
-	    layout(offset = 4) uint modelIndex; // index into model.transforms
+	    layout(offset = 4) uint sceneTreeNodeIndex; // index into model.transforms
     } pc;
 
 //--- Set 0 (Scene Uniforms) --- //
@@ -29,10 +29,10 @@ layout(set = 0, binding = 0)
 layout(set = 1, binding = 0)
     readonly buffer ModelUniforms {
         mat4 transforms[];
-    } model;
+    } sceneTree;
 
 void main() {
-    vec3 fragPos = vec3(model.transforms[pc.modelIndex] * vec4(inPosition, 1.0));
+    vec3 fragPos = vec3(sceneTree.transforms[pc.sceneTreeNodeIndex] * vec4(inPosition, 1.0));
     ShadowView shadow = shadow.transforms[pc.shadowIndex];
     gl_Position = shadow.proj * shadow.view * vec4(fragPos, 1.0);
 }

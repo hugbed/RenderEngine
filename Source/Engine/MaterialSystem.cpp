@@ -2,7 +2,7 @@
 
 #include "ShaderSystem.h"
 #include "GraphicsPipelineSystem.h"
-#include "ModelSystem.h"
+#include "MeshAllocator.h"
 #include "CommandBufferPool.h"
 #include "DescriptorSetLayouts.h"
 
@@ -25,9 +25,9 @@ namespace
 		eShadowData = 3
 	};
 
-	enum class ModelSetBindings
+	enum class SceneSetBindings
 	{
-		eModelData = 0,
+		eSceneData = 0,
 	};
 
 	enum class MaterialSetBindings
@@ -59,13 +59,13 @@ MaterialSystem::MaterialSystem(
 	vk::Extent2D swapchainExtent,
 	GraphicsPipelineSystem& graphicsPipelineSystem,
 	TextureSystem& textureSystem,
-	ModelSystem& modelSystem
+	MeshAllocator& meshAllocator
 )
 	: m_renderPass(renderPass)
 	, m_imageExtent(swapchainExtent)
 	, m_graphicsPipelineSystem(&graphicsPipelineSystem)
 	, m_textureSystem(&textureSystem)
-	, m_modelSystem(&modelSystem)
+	, m_meshAllocator(&meshAllocator)
 {
 }
 
@@ -197,10 +197,10 @@ void MaterialSystem::CreateDescriptorSets(size_t nbConcurrentSubmits)
 		m_descriptorPool.get(), static_cast<uint32_t>(layouts.size()), layouts.data()
 	));
 
-	// Model
-	vk::DescriptorSetLayout modelSetLayout = GetDescriptorSetLayout(DescriptorSetIndex::Model);
-	m_descriptorSets[(size_t)DescriptorSetIndex::Model] = g_device->Get().allocateDescriptorSetsUnique(vk::DescriptorSetAllocateInfo(
-		m_descriptorPool.get(), 1U, &modelSetLayout
+	// Scene
+	vk::DescriptorSetLayout sceneSetLayout = GetDescriptorSetLayout(DescriptorSetIndex::Scene);
+	m_descriptorSets[(size_t)DescriptorSetIndex::Scene] = g_device->Get().allocateDescriptorSetsUnique(vk::DescriptorSetAllocateInfo(
+		m_descriptorPool.get(), 1U, &sceneSetLayout
 	));
 
 	// Material
@@ -234,7 +234,7 @@ void MaterialSystem::CreateDescriptorPool(uint8_t numConcurrentFrames)
 	//                   - 1 uniform buffer containing all lights +
 	//					 - 1 image sampler per shadow map texture
 	//					 - 1 storage buffer with all shadow map transforms
-	// Set 1 (model):    - 1 storage buffer containing all models
+	// Set 1 (scene):    - 1 storage buffer containing scene nodes (transforms, etc.)
 	// Set 2 (material): - 1 storage buffer containing all material properties +
 	//                   - 1 image sampler per texture in the texture system
 	std::array<std::pair<vk::DescriptorType, uint16_t>, 3ULL> descriptorCount = {
@@ -316,13 +316,13 @@ void MaterialSystem::UpdateShadowDescriptorSets(
 	g_device->Get().updateDescriptorSets(static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
 }
 
-void MaterialSystem::UpdateModelDescriptorSet(vk::Buffer modelBuffer, size_t modelBufferSize) const
+void MaterialSystem::UpdateSceneDescriptorSet(vk::Buffer transformsBuffer, size_t transformsBufferSize) const
 {
-	vk::DescriptorSet descriptorSet = GetDescriptorSet(DescriptorSetIndex::Model);
+	vk::DescriptorSet descriptorSet = GetDescriptorSet(DescriptorSetIndex::Scene);
 
-	vk::DescriptorBufferInfo descriptorBufferInfo(modelBuffer, 0, modelBufferSize);
+	vk::DescriptorBufferInfo descriptorBufferInfo(transformsBuffer, 0, transformsBufferSize);
 	vk::WriteDescriptorSet writeDescriptorSet(
-		descriptorSet, (uint32_t)ModelSetBindings::eModelData, {},
+		descriptorSet, (uint32_t)SceneSetBindings::eSceneData, {},
 		1, vk::DescriptorType::eStorageBuffer, nullptr, &descriptorBufferInfo
 	);
 	g_device->Get().updateDescriptorSets(1, &writeDescriptorSet, 0, nullptr); // kind of sad that these updates are not batched together (todo: descriptor set system)
