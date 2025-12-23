@@ -1,17 +1,15 @@
 #pragma once
 
-#include "MaterialSystem.h"
-#include "DescriptorSetLayouts.h"
+#include "Renderer/MaterialSystem.h"
+#include "Renderer/DescriptorSetLayouts.h"
 #include "BoundingBox.h"
-#include "SceneTree.h" // todo (hbedard) only for the ID, that's a shame
+#include "Renderer/SceneTree.h" // todo (hbedard) only for the ID, that's a shame
 
-#include "Buffers.h"
-#include "Device.h"
+#include "RHI/Buffers.h"
+#include "RHI/Device.h"
 
 #include "glm_includes.h"
-
 #include <vulkan/vulkan.hpp>
-
 #include <memory>
 
 struct Vertex

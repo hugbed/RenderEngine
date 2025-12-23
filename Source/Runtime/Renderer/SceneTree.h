@@ -1,7 +1,7 @@
 #pragma once
 
 #include "BoundingBox.h"
-#include "Buffers.h"
+#include "RHI/Buffers.h"
 
 #include "glm_includes.h"
 

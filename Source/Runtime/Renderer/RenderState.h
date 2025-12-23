@@ -1,12 +1,11 @@
 #pragma once
 
-#include "MaterialSystem.h"
-#include "MeshAllocator.h"
-#include "GraphicsPipelineSystem.h"
-#include "DescriptorSetLayouts.h"
+#include "Renderer/MaterialSystem.h"
+#include "Renderer/MeshAllocator.h"
+#include "Renderer/DescriptorSetLayouts.h"
+#include "RHI/GraphicsPipelineSystem.h"
 
 #include <vulkan/vulkan.hpp>
-
 #include <gsl/pointers>
 
 class RenderState

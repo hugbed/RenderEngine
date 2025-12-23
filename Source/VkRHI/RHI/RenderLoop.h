@@ -1,7 +1,7 @@
 #pragma once
 
-#include "Window.h"
-#include "CommandBufferPool.h"
+#include "RHI/Window.h"
+#include "RHI/CommandBufferPool.h"
 
 #include <vulkan/vulkan.hpp>
 

@@ -1,7 +1,7 @@
-#include "Image.h"
+#include "RHI/Image.h"
 
-#include "Device.h"
-#include "PhysicalDevice.h"
+#include "RHI/Device.h"
+#include "RHI/PhysicalDevice.h"
 
 Image::Image(
 	uint32_t width, uint32_t height, uint32_t depth,

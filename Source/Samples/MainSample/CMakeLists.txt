@@ -15,16 +15,11 @@ include_directories(
 file(GLOB_RECURSE SRC_FILES
   ${PROJECT_SOURCE_DIR}/*.h
   ${PROJECT_SOURCE_DIR}/*.cpp
-  ${GLM_INCLUDE_DIRS}/util/glm.natvis
-  ${PROJECT_SOURCE_DIR}/spirv.natvis)
+  ${GLM_INCLUDE_DIRS}/util/glm.natvis)
 
 add_executable(${PROJECT_NAME} ${SRC_FILES})
 target_link_libraries(
   ${PROJECT_NAME}
-    ${Vulkan_LIBRARY}
-    glfw
     VkRHI
-    Runtime
-    assimp
-    imgui)
+    Runtime)
 add_dependencies(${PROJECT_NAME} BuildShaders)

@@ -1,22 +1,20 @@
 #pragma once
 
-#include "TextureSystem.h"
-#include "MaterialSystem.h"
-#include "LightSystem.h"
-#include "ShadowSystem.h"
-#include "RenderState.h"
+#include "Renderer/TextureSystem.h"
+#include "Renderer/MaterialSystem.h"
+#include "Renderer/LightSystem.h"
+#include "Renderer/ShadowSystem.h"
+#include "Renderer/RenderState.h"
+#include "Renderer/Skybox.h"
 #include "Camera.h"
-#include "Skybox.h"
 
 #include <assimp/Importer.hpp> 
 #include <assimp/scene.h>     
 #include <assimp/postprocess.h>
 #include <assimp/cimport.h>
-
 #include "glm_includes.h"
 
 #include <gsl/pointers>
-
 #include <iostream>
 
 class ShadowSystem;

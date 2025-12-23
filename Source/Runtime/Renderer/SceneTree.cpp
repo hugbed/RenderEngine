@@ -1,6 +1,6 @@
-#include "SceneTree.h"
+#include "Renderer/SceneTree.h"
 
-#include "CommandBufferPool.h"
+#include "RHI/CommandBufferPool.h"
 
 SceneNodeID SceneTree::CreateNode(glm::mat4 transform, BoundingBox boundingBox, SceneNodeID parent)
 {

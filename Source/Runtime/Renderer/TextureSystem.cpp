@@ -1,7 +1,7 @@
-#include "TextureSystem.h"
+#include "Renderer/TextureSystem.h"
 
-#include "Texture.h"
-#include "CommandBufferPool.h"
+#include "RHI/Texture.h"
+#include "RHI/CommandBufferPool.h"
 #include "hash.h"
 
 #define STB_IMAGE_IMPLEMENTATION

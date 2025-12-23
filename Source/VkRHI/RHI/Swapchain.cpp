@@ -1,8 +1,8 @@
 #include "SwapChain.h"
 
-#include "Device.h"
-#include "PhysicalDevice.h"
-#include "Image.h"
+#include "RHI/Device.h"
+#include "RHI/PhysicalDevice.h"
+#include "RHI/Image.h"
 
 #include "defines.h"
 

@@ -1,7 +1,7 @@
 #include "Buffers.h"
 
-#include "PhysicalDevice.h"
-#include "Device.h"
+#include "RHI/PhysicalDevice.h"
+#include "RHI/Device.h"
 
 UniqueBuffer::UniqueBuffer(const vk::BufferCreateInfo& createInfo, const VmaAllocationCreateInfo& allocInfo)
 	: m_size(createInfo.size)

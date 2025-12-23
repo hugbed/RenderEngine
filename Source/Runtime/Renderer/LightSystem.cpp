@@ -1,7 +1,7 @@
-#include "LightSystem.h"
+#include "Renderer/LightSystem.h"
 
-#include "Buffers.h"
-#include "CommandBufferPool.h"
+#include "RHI/Buffers.h"
+#include "RHI/CommandBufferPool.h"
 
 void LightSystem::UploadToGPU(CommandBufferPool& commandBufferPool)
 {

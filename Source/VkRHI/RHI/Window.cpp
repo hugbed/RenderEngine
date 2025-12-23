@@ -4,7 +4,6 @@
 #include <GLFW/glfw3.h>
 
 #include "defines.h"
-#include "iostream"
 
 Window::Window(vk::Extent2D extent, std::string_view apiName)
 {

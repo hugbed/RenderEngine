@@ -1,10 +1,11 @@
 #include "MaterialSystem.h"
 
-#include "ShaderSystem.h"
-#include "GraphicsPipelineSystem.h"
-#include "MeshAllocator.h"
-#include "CommandBufferPool.h"
-#include "DescriptorSetLayouts.h"
+#include "Renderer/DescriptorSetLayouts.h"
+#include "Renderer/MeshAllocator.h"
+#include "RHI/ShaderSystem.h"
+#include "RHI/GraphicsPipelineSystem.h"
+#include "RHI/CommandBufferPool.h"
+
 
 namespace
 {

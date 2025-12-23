@@ -1,9 +1,9 @@
-#include "GraphicsPipelineSystem.h"
+#include "RHI/GraphicsPipelineSystem.h"
 
-#include "Image.h"
-#include "Device.h"
-#include "PhysicalDevice.h"
-#include "vk_utils.h"
+#include "RHI/Image.h"
+#include "RHI/Device.h"
+#include "RHI/PhysicalDevice.h"
+#include "RHI/vk_utils.h"
 #include "hash.h"
 
 #include <array>

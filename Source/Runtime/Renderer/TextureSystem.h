@@ -1,19 +1,17 @@
 #pragma once
 
-#include "Texture.h"
-#include "SmallVector.h"
+#include "RHI/Texture.h"
+#include "RHI/SmallVector.h"
 #include "AssetPath.h"
 
 #include <vulkan/vulkan.hpp>
 
 #include <gsl/span>
-
 #include <array>
 #include <map>
 #include <string>
 #include <string_view>
 #include <memory>
-
 #include <cstdint>
 
 class CommandBufferPool;

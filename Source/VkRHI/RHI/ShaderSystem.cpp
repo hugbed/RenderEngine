@@ -1,6 +1,6 @@
 #include "ShaderSystem.h"
 
-#include "Device.h"
+#include "RHI/Device.h"
 #include "file_utils.h"
 #include "hash.h"
 

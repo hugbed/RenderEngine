@@ -1,8 +1,8 @@
-#include "RenderLoop.h"
+#include "RHI/RenderLoop.h"
 
-#include "Swapchain.h"
-#include "Device.h"
-#include "PhysicalDevice.h"
+#include "RHI/Swapchain.h"
+#include "RHI/Device.h"
+#include "RHI/PhysicalDevice.h"
 
 #include <thread>
 #include <iostream>

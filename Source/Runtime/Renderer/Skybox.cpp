@@ -1,8 +1,8 @@
-#include "Skybox.h"
+#include "Renderer/Skybox.h"
 
-#include "Device.h"
-#include "CommandBufferPool.h"
-#include "RenderPass.h"
+#include "RHI/Device.h"
+#include "RHI/CommandBufferPool.h"
+#include "RHI/RenderPass.h"
 #include "AssetPath.h"
 
 #include <iostream>

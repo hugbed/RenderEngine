@@ -1,26 +1,23 @@
 #pragma once
 
-#include "LightSystem.h"
-#include "MeshAllocator.h"
+#include "Renderer/LightSystem.h"
+#include "Renderer/MeshAllocator.h"
 #include "Camera.h"
 #include "BoundingBox.h"
 
-#include "RenderPass.h"
-#include "Swapchain.h"
-#include "GraphicsPipelineSystem.h"
-#include "ShaderSystem.h"
-#include "Framebuffer.h"
-#include "Texture.h"
-#include "Image.h"
+#include "RHI/RenderPass.h"
+#include "RHI/Swapchain.h"
+#include "RHI/GraphicsPipelineSystem.h"
+#include "RHI/ShaderSystem.h"
+#include "RHI/Framebuffer.h"
+#include "RHI/Texture.h"
+#include "RHI/Image.h"
+#include "RHI/Device.h"
+#include "RHI/PhysicalDevice.h"
 
-#include "Device.h"
-#include "PhysicalDevice.h"
 #include "hash.h"
-
 #include "glm_includes.h"
-
 #include <vulkan/vulkan.hpp>
-
 #include <gsl/pointers>
 
 class Scene;

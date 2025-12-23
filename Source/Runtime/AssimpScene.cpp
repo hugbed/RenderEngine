@@ -1,9 +1,9 @@
 #include "AssimpScene.h"
 
-#include "CommandBufferPool.h"
-#include "MaterialSystem.h"
-#include "ShadowSystem.h"
-#include "SceneTree.h"
+#include "RHI/CommandBufferPool.h"
+#include "Renderer/MaterialSystem.h"
+#include "Renderer/ShadowSystem.h"
+#include "Renderer/SceneTree.h"
 
 #define _USE_MATH_DEFINES
 #include <math.h>

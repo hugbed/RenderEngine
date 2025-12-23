@@ -10,7 +10,7 @@ include_directories(
   ${VMA_INCLUDE_DIRS}
 )
 
-file(GLOB SRC_FILES
+file(GLOB_RECURSE SRC_FILES
     ${PROJECT_SOURCE_DIR}/*.h
     ${PROJECT_SOURCE_DIR}/*.cpp
     ${PROJECT_SOURCE_DIR}/spirv.natvis) 

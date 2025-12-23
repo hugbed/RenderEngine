@@ -1,16 +1,15 @@
 #pragma once
 
-#include "Image.h"
-#include "ShaderSystem.h"
-#include "GraphicsPipelineSystem.h"
-#include "CommandBufferPool.h"
-#include "RenderPass.h"
-#include "TextureSystem.h"
+#include "Renderer/TextureSystem.h"
+#include "RHI/Image.h"
+#include "RHI/ShaderSystem.h"
+#include "RHI/GraphicsPipelineSystem.h"
+#include "RHI/CommandBufferPool.h"
+#include "RHI/RenderPass.h"
 
 #include "glm_includes.h"
 
 #include <gsl/pointers>
-
 #include <memory>
 
 // Utility to draw a texture on a small viewport on the screen

@@ -1,9 +1,8 @@
-#include "RenderPass.h"
+#include "RHI/RenderPass.h"
 
-#include "PhysicalDevice.h"
-#include "Device.h"
-
-#include "Framebuffer.h"
+#include "RHI/PhysicalDevice.h"
+#include "RHI/Device.h"
+#include "RHI/Framebuffer.h"
 
 RenderPass::RenderPass(vk::Format colorAttachmentFormat)
 {

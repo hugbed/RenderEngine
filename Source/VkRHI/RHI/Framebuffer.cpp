@@ -1,7 +1,7 @@
-#include "Framebuffer.h"
+#include "RHI/Framebuffer.h"
 
-#include "Swapchain.h"
-#include "Device.h"
+#include "RHI/Swapchain.h"
+#include "RHI/Device.h"
 
 std::vector<Framebuffer> Framebuffer::FromSwapchain(const Swapchain& swapchain, vk::RenderPass renderPass)
 {

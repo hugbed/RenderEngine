@@ -1,6 +1,6 @@
-#include "Device.h"
+#include "RHI/Device.h"
 
-#include "PhysicalDevice.h"
+#include "RHI/PhysicalDevice.h"
 
 #include "debug_utils.h"
 #include "defines.h"
