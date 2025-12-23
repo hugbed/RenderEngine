@@ -4,7 +4,6 @@ project(RenderEngine)
 
 set(CMAKE_DISABLE_IN_SOURCE_BUILD ON)
 set(CMAKE_DISABLE_SOURCE_CHANGES  ON)
-
 if ("${CMAKE_SOURCE_DIR}" STREQUAL "${CMAKE_BINARY_DIR}")
   message(SEND_ERROR "In-source builds are not allowed.")
 endif ()
@@ -25,6 +24,9 @@ set(CMAKE_BINARY_DIR ${CMAKE_BINARY_DIR}/../../Binaries/Win64)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+
+# Support folders
+set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 # Dependencies 
 add_subdirectory(ThirdParty)
@@ -50,9 +52,12 @@ file(GLOB_RECURSE SHADER_FILES
     ${PROJECT_SOURCE_DIR}/Shaders/*.glsl)
 
 add_custom_target(
-  ${PROJECT_NAME}_Build_Shaders ALL
+  BuildShaders ALL
   DEPENDS ${SHADER_FILES}
   COMMAND py -3
     ${CMAKE_SOURCE_DIR}/Scripts/compile-shaders.py
       ${CMAKE_SOURCE_DIR}/Assets/Shaders
       ${CMAKE_SOURCE_DIR}/Assets/Generated/Shaders)
+
+# Group all CMake projects under CMakePredefinedTargets
+set_target_properties(uninstall PROPERTIES FOLDER "CMakePredefinedTargets")

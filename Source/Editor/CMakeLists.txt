@@ -30,4 +30,5 @@ target_link_libraries(
     Engine
     assimp
     imgui)
+add_dependencies(${PROJECT_NAME} BuildShaders)
 
