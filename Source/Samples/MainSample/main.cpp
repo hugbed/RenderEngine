@@ -174,16 +174,15 @@ protected:
 
 		// --- Recreate everything that depends on the swapchain images --- //
 
-		vk::Extent2D imageExtent = m_swapchain->GetImageDescription().extent;
-
-		m_cameraController->SetViewportExtent(imageExtent);
 
 		// Use any command buffer for init
 		auto commandBuffer = m_commandBufferPool.ResetAndGetCommandBuffer();
 		commandBuffer.begin({ vk::CommandBufferUsageFlagBits::eOneTimeSubmit });
 		{
+			vk::Extent2D imageExtent = m_swapchain->GetImageDescription().extent;
 			m_scene->Reset(commandBuffer, *m_renderPass, imageExtent);
-			
+			m_cameraController->Reset(m_scene->GetCamera(), imageExtent);
+
 			// Reset Shadow Maps
 			if (m_shadowSystem.GetShadowCount() > 0)
 			{

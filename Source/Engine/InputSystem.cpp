@@ -17,9 +17,13 @@ void InputSystem::OnMouseButton(void* data, int button, int action, int mods)
 	InputSystem* inputSystem = reinterpret_cast<InputSystem*>(data);
 
 	if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS)
-		inputSystem->m_inputs.isMouseDown = true;
+		inputSystem->m_inputs.isLeftMouseDown = true;
 	if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_RELEASE)
-		inputSystem->m_inputs.isMouseDown = false;
+		inputSystem->m_inputs.isLeftMouseDown = false;
+	if (button == GLFW_MOUSE_BUTTON_RIGHT && action == GLFW_PRESS)
+		inputSystem->m_inputs.isRightMouseDown = true;
+	if (button == GLFW_MOUSE_BUTTON_RIGHT && action == GLFW_RELEASE)
+		inputSystem->m_inputs.isRightMouseDown = false;
 }
 
 // static
@@ -45,4 +49,6 @@ void InputSystem::OnKey(void* data, int key, int scancode, int action, int mods)
 		inputSystem->m_inputs.keyState[key] = KeyAction::eRepeated;
 	else if (action == GLFW_PRESS)
 		inputSystem->m_inputs.keyState[key] = KeyAction::ePressed;
+	else if (action == GLFW_RELEASE)
+		inputSystem->m_inputs.keyState[key] = KeyAction::eReleased;
 }

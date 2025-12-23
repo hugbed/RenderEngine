@@ -70,8 +70,7 @@ public:
 		UpdateViewMatrix();
 	}
 
-	// todo: rename this to Move()
-	void MoveCamera(const glm::vec3& direction, float speed, bool updateLookat)
+	void Move(const glm::vec3& direction, float speed)
 	{
 		m_eye += speed * direction;
 		m_lookAt += speed * direction;

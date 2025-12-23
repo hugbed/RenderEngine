@@ -9,7 +9,8 @@ using KeyID = int;
 enum class KeyAction
 {
 	ePressed = 1,
-	eRepeated = 2
+	eRepeated = 2,
+	eReleased = 3,
 };
 
 struct Inputs
@@ -21,7 +22,8 @@ struct Inputs
 	glm::vec2 scrollOffset = glm::vec2(0.0f);
 
 	bool scrollOffsetReceived = false;
-	bool isMouseDown = false;
+	bool isLeftMouseDown = false;
+	bool isRightMouseDown = false;
 	bool mouseWasCaptured = false;
 };
 

@@ -14,93 +14,107 @@ namespace
 }
 
 CameraController::CameraController(Camera& camera, vk::Extent2D viewportExtent)
-	: m_camera(&camera)
+	: m_initialCamera(camera)
+	, m_camera(&camera)
 	, m_viewportExtent(viewportExtent)
 {
 }
 
-void CameraController::SetViewportExtent(vk::Extent2D extent)
+void CameraController::Reset(Camera& camera, vk::Extent2D extent)
 {
+	m_initialCamera = camera;
 	m_viewportExtent = extent;
 }
 
 bool CameraController::Update(std::chrono::duration<float> dt_s, const Inputs& inputs)
 {
-	bool cameraMoved = HandleCameraKeys(dt_s, inputs);
+	bool shouldUpdateCamera = HandleInputs(dt_s, inputs);
+	shouldUpdateCamera |= MoveCamera(dt_s);
+	return shouldUpdateCamera;
+}
+
+bool CameraController::HandleInputs(std::chrono::duration<float> dt_s, const Inputs& inputs)
+{
+	bool shouldUpdateCamera = HandleCameraKeys(dt_s, inputs);
 
 	if (inputs.mouseWasCaptured == false)
 	{
-		cameraMoved = HandleCameraMouseScroll(dt_s, inputs) || cameraMoved;
-		cameraMoved = HandleCameraMouseMove(dt_s, inputs) || cameraMoved;
+		shouldUpdateCamera |= HandleCameraMouseScroll(dt_s, inputs);
+		shouldUpdateCamera |= HandleCameraMouseMove(dt_s, inputs);
 	}
 
-	return cameraMoved;
+	return shouldUpdateCamera;
 }
 
 bool CameraController::HandleCameraKeys(std::chrono::duration<float> dt_s, const Inputs& inputs)
 {
-	bool cameraMoved = false;
-
-	const float speed = 1.0f; // in m/s
+	bool shouldUpdateCamera = false;
 
 	for (const std::pair<KeyID, KeyAction>& key : inputs.keyState)
 	{
 		KeyID keyID = key.first;
 		KeyAction keyAction = key.second;
 
-		// Handle free camera
-		if (keyAction == KeyAction::ePressed || keyAction == KeyAction::eRepeated && m_cameraMode == CameraMode::FreeCamera)
-		{
-			glm::vec3 forward = glm::normalize(m_camera->GetLookAt() - m_camera->GetEye());
-			glm::vec3 rightVector = glm::normalize(glm::cross(forward, m_camera->GetUpVector()));
-			float dx = speed * dt_s.count(); // in m / s
+		bool keyValue = keyAction == KeyAction::ePressed || keyAction == KeyAction::eRepeated;
+		assert(keyValue || keyAction == KeyAction::eReleased); // it's either pressde or released
 
-			switch (keyID) {
-			case GLFW_KEY_W:
-				m_camera->MoveCamera(forward, dx, false);
-				cameraMoved = true;
-				break;
-			case GLFW_KEY_A:
-				m_camera->MoveCamera(rightVector, -dx, true);
-				cameraMoved = true;
-				break;
-			case GLFW_KEY_S:
-				m_camera->MoveCamera(forward, -dx, false);
-				cameraMoved = true;
-				break;
-			case GLFW_KEY_D:
-				m_camera->MoveCamera(rightVector, dx, true);
-				cameraMoved = true;
-				break;
-			case GLFW_KEY_F:
-				//m_scene->ResetCamera(); // m_camera->Reset()
-				cameraMoved = true;
-				break;
-			default:
-				break;
+		switch (keyID) {
+		case GLFW_KEY_W:
+			m_keys[Key_W] = keyValue;
+			break;
+		case GLFW_KEY_A:
+			m_keys[Key_A] = keyValue;
+			break;
+		case GLFW_KEY_S:
+			m_keys[Key_S] = keyValue;
+			break;
+		case GLFW_KEY_D:
+			m_keys[Key_D] = keyValue;
+			break;
+		case GLFW_KEY_F:
+			if (keyAction == KeyAction::ePressed)
+			{
+				if (m_cameraMode == CameraMode::FreeCamera)
+				{
+					*m_camera = m_initialCamera; // reset to orbit around center
+					m_cameraMode = CameraMode::OrbitCamera;
+				}
+				else
+				{
+					m_cameraMode = CameraMode::FreeCamera;
+				}
+				shouldUpdateCamera = true;
 			}
-		}
-
-		// Handle camera mode change
-		if (keyID == GLFW_KEY_F && keyAction == KeyAction::ePressed)
-		{
-			m_cameraMode = m_cameraMode == CameraMode::FreeCamera ? CameraMode::OrbitCamera : CameraMode::FreeCamera;
-			cameraMoved = true;
+			break;
+		default:
+			break;
 		}
 	}
 
-	return cameraMoved;
+	return shouldUpdateCamera;
 }
 
 bool CameraController::HandleCameraMouseScroll(std::chrono::duration<float> dt_s, const Inputs& inputs)
 {
+	if (!inputs.scrollOffsetReceived)
+	{
+		return false;
+	}
+
 	const double scrollOffsetY = inputs.scrollOffset.y;
-	if (inputs.scrollOffsetReceived)
+
+	if ((m_cameraMode == CameraMode::OrbitCamera || m_cameraMode == CameraMode::FreeCamera && !inputs.isRightMouseDown))
 	{
 		float fov = std::clamp(m_camera->GetFieldOfView() - scrollOffsetY, 30.0, 130.0);
 		m_camera->SetFieldOfView(fov);
 		return true;
 	}
+	else if (m_cameraMode == CameraMode::FreeCamera && inputs.isRightMouseDown)
+	{
+		m_speed += scrollOffsetY;
+		return true;
+	}
+
 	return false;
 }
 
@@ -108,7 +122,7 @@ bool CameraController::HandleCameraMouseMove(std::chrono::duration<float> dt_s, 
 {
 	bool cameraMoved = false;
 
-	if ((inputs.isMouseDown) && m_cameraMode == CameraMode::OrbitCamera)
+	if ((inputs.isRightMouseDown) && m_cameraMode == CameraMode::OrbitCamera)
 	{
 		glm::vec4 position(m_camera->GetEye().x, m_camera->GetEye().y, m_camera->GetEye().z, 1);
 		glm::vec4 target(m_camera->GetLookAt().x, m_camera->GetLookAt().y, m_camera->GetLookAt().z, 1);
@@ -125,7 +139,7 @@ bool CameraController::HandleCameraMouseMove(std::chrono::duration<float> dt_s, 
 
 		// Rotate in X
 		glm::mat4x4 rotationMatrixX(1.0f);
-		rotationMatrixX = glm::rotate(rotationMatrixX, deltaAngle.x, kUpVector);
+		rotationMatrixX = glm::rotate(rotationMatrixX, -deltaAngle.x, kUpVector);
 		position = (rotationMatrixX * (position - target)) + target;
 
 		// Rotate in Y
@@ -137,11 +151,11 @@ bool CameraController::HandleCameraMouseMove(std::chrono::duration<float> dt_s, 
 
 		cameraMoved = true;
 	}
-	else if (inputs.isMouseDown && m_cameraMode == CameraMode::FreeCamera)
+	else if (inputs.isRightMouseDown && m_cameraMode == CameraMode::FreeCamera)
 	{
-		glm::vec2 delta = glm::vec2(
-			inputs.lastCursorPos.x - inputs.cursorPos.x,
-			inputs.lastCursorPos.y - inputs.cursorPos.y
+		glm::vec2 delta = m_mouseSensitivity * glm::vec2(
+			inputs.cursorPos.x - inputs.lastCursorPos.x,
+			inputs.cursorPos.y -inputs.lastCursorPos.y
 		);
 
 		float m_fovV = m_camera->GetFieldOfView() / m_viewportExtent.width * m_viewportExtent.height;
@@ -166,5 +180,20 @@ bool CameraController::HandleCameraMouseMove(std::chrono::duration<float> dt_s, 
 		cameraMoved = true;
 	}
 
+	return cameraMoved;
+}
+
+bool CameraController::MoveCamera(std::chrono::duration<float> dt_s)
+{
+	bool cameraMoved = false;
+	if (m_cameraMode == CameraMode::FreeCamera)
+	{
+		glm::vec3 forward = glm::normalize(m_camera->GetLookAt() - m_camera->GetEye());
+		glm::vec3 right = glm::normalize(glm::cross(forward, m_camera->GetUpVector()));
+		float forwardAmount = (m_keys[Key_W] ? 1.0f : 0.0f) + (m_keys[Key_S] ? -1.0f : 0.0f);
+		float rightAmount = (m_keys[Key_D] ? 1.0f : 0.0f) + (m_keys[Key_A] ? -1.0f : 0.0f);
+		m_camera->Move(forwardAmount * forward + rightAmount * right, m_speed * dt_s.count());
+		cameraMoved = forwardAmount > 0.0f && rightAmount > 0.0f;
+	}
 	return cameraMoved;
 }
