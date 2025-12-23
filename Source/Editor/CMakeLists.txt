@@ -24,10 +24,11 @@ add_executable(${PROJECT_NAME} ${SRC_FILES})
 set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD 23)
 target_link_libraries(
   ${PROJECT_NAME}
+    Core
+    VkRHI
     ${Vulkan_LIBRARY}
     glfw
-    VkCore
-    Engine
+    Runtime
     assimp
     imgui)
 add_dependencies(${PROJECT_NAME} BuildShaders)

@@ -23,8 +23,8 @@ target_link_libraries(
   ${PROJECT_NAME}
     ${Vulkan_LIBRARY}
     glfw
-    VkCore
-    Engine
+    VkRHI
+    Runtime
     assimp
     imgui)
 add_dependencies(${PROJECT_NAME} BuildShaders)

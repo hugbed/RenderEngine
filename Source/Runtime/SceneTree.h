@@ -9,6 +9,8 @@
 #include <limits>
 #include <memory>
 
+class CommandBufferPool;
+
 enum class SceneNodeID : uint32_t { Invalid = std::numeric_limits<uint32_t>::max() };
 
 template <typename EnumType, typename NumberType>

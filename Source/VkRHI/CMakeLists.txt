@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.19)
 
-project(VkCore)
+project(VkRHI)
 
 find_package(Vulkan REQUIRED)
 
@@ -19,6 +19,7 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE VK_USE_PLATFORM_WIN32_KHR)
 target_include_directories(${PROJECT_NAME} PUBLIC ${PROJECT_SOURCE_DIR})
 target_link_libraries(
   ${PROJECT_NAME}
+    Core
     ${Vulkan_LIBRARY}
     glfw
     spirv-cross-core

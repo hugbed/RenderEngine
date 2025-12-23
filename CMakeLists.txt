@@ -34,8 +34,9 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 add_subdirectory(ThirdParty)
 
 # Targets
-add_subdirectory(Source/VkCore)
-add_subdirectory(Source/Engine)
+add_subdirectory(Source/Core)
+add_subdirectory(Source/VkRHI)
+add_subdirectory(Source/Runtime)
 add_subdirectory(Source/Editor)
 add_subdirectory(Source/Samples/MainSample)
 
