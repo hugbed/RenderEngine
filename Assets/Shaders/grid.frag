@@ -56,13 +56,13 @@ float computeLinearDepth(vec3 pos) {
 
 void main() {
     float t = -nearPoint.y / (farPoint.y - nearPoint.y);
-	vec3 pos3D = nearPoint + t * (farPoint - nearPoint);
+    vec3 pos3D = nearPoint + t * (farPoint - nearPoint);
 
     vec4 c = (grid(pos3D, 10) + grid(pos3D, 1) ) * float(t > 0);
 
     float depth = computeDepth(pos3D);
     float linearDepth = computeLinearDepth(pos3D);
-    float spotLight = max(0, (0.5 - linearDepth));
+    float spotLight = max(0, (1.0 - linearDepth));
 
     gl_FragDepth = depth;
     outColor = c;

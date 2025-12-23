@@ -41,3 +41,18 @@ if (WIN32)
   set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT ${DEFAULT_PROJECT})
 endif ()
 
+# Always build shaders,
+# compile-shaders2.py will rebuild only when necessary.
+
+file(GLOB_RECURSE SHADER_FILES
+    ${PROJECT_SOURCE_DIR}/Shaders/*.vert
+    ${PROJECT_SOURCE_DIR}/Shaders/*.frag
+    ${PROJECT_SOURCE_DIR}/Shaders/*.glsl)
+
+add_custom_target(
+  ${PROJECT_NAME}_Build_Shaders ALL
+  DEPENDS ${SHADER_FILES}
+  COMMAND py -3
+    ${CMAKE_SOURCE_DIR}/Scripts/compile-shaders.py
+      ${CMAKE_SOURCE_DIR}/Assets/Shaders
+      ${CMAKE_SOURCE_DIR}/Assets/Generated/Shaders)

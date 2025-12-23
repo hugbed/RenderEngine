@@ -28,19 +28,3 @@ target_link_libraries(
     Engine
     assimp
     imgui)
-
-# Always build shaders,
-# compile-shaders2.py will rebuild only when necessary.
-
-file(GLOB_RECURSE SHADER_FILES
-    ${PROJECT_SOURCE_DIR}/Shaders/*.vert
-    ${PROJECT_SOURCE_DIR}/Shaders/*.frag
-    ${PROJECT_SOURCE_DIR}/Shaders/*.glsl)
-
-add_custom_target(
-  ${PROJECT_NAME}_Build_Shaders ALL
-  DEPENDS ${SHADER_FILES}
-  COMMAND py -3
-    ${CMAKE_SOURCE_DIR}/Scripts/compile-shaders.py
-      ${PROJECT_SOURCE_DIR}/Shaders
-      ${CMAKE_SOURCE_DIR}/Assets/Generated/Shaders)
