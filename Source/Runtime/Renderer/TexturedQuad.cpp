@@ -1,6 +1,6 @@
-#include "Renderer/TexturedQuad.h"
+#include <Renderer/TexturedQuad.h>
 
-#include "AssetPath.h"
+#include <AssetPath.h>
 
 TexturedQuad::TexturedQuad(
 	CombinedImageSampler combinedImageSampler,

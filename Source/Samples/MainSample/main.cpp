@@ -3,46 +3,43 @@
 #define _USE_MATH_DEFINES
 #endif
 
-#include "AssimpScene.h"
-#include "InputSystem.h"
-#include "Camera.h"
-#include "CameraController.h"
-#include "Renderer/TextureSystem.h"
-#include "Renderer/LightSystem.h"
-#include "Renderer/MaterialSystem.h"
-#include "Renderer/MeshAllocator.h"
-#include "Renderer/ShadowSystem.h"
-#include "Renderer/DescriptorSetLayouts.h"
-#include "Renderer/RenderState.h"
-#include "Renderer/TexturedQuad.h"
-#include "Renderer/SceneTree.h"
-#include "Renderer/Grid.h"
-#include "Renderer/Skybox.h"
-#include "Renderer/ImGuiVulkan.h"
-#include "RHI/RenderLoop.h"
-#include "RHI/Window.h"
-#include "RHI/Instance.h"
-#include "RHI/Device.h"
-#include "RHI/PhysicalDevice.h"
-#include "RHI/CommandBufferPool.h"
-#include "RHI/Swapchain.h"
-#include "RHI/RenderPass.h"
-#include "RHI/Framebuffer.h"
-#include "RHI/GraphicsPipelineSystem.h"
-#include "RHI/ShaderSystem.h"
-#include "RHI/Image.h"
-#include "RHI/Texture.h"
-#include "RHI/vk_utils.h"
-#include "ArgumentParser.h"
-#include "file_utils.h"
-
+#include <AssimpScene.h>
+#include <InputSystem.h>
+#include <Camera.h>
+#include <CameraController.h>
+#include <Renderer/TextureSystem.h>
+#include <Renderer/LightSystem.h>
+#include <Renderer/MaterialSystem.h>
+#include <Renderer/MeshAllocator.h>
+#include <Renderer/ShadowSystem.h>
+#include <Renderer/DescriptorSetLayouts.h>
+#include <Renderer/RenderState.h>
+#include <Renderer/TexturedQuad.h>
+#include <Renderer/SceneTree.h>
+#include <Renderer/Grid.h>
+#include <Renderer/Skybox.h>
+#include <Renderer/ImGuiVulkan.h>
+#include <RHI/RenderLoop.h>
+#include <RHI/Window.h>
+#include <RHI/Instance.h>
+#include <RHI/Device.h>
+#include <RHI/PhysicalDevice.h>
+#include <RHI/CommandBufferPool.h>
+#include <RHI/Swapchain.h>
+#include <RHI/RenderPass.h>
+#include <RHI/Framebuffer.h>
+#include <RHI/GraphicsPipelineSystem.h>
+#include <RHI/ShaderSystem.h>
+#include <RHI/Image.h>
+#include <RHI/Texture.h>
+#include <RHI/vk_utils.h>
+#include <ArgumentParser.h>
+#include <file_utils.h>
 #include <GLFW/glfw3.h>
-#include "imgui.h"
-#include "backends/imgui_impl_glfw.h"
-#include "backends/imgui_impl_vulkan.h"
-
-// For Uniform Buffer
-#include "glm_includes.h"
+#include <imgui.h>
+#include <backends/imgui_impl_glfw.h>
+#include <backends/imgui_impl_vulkan.h>
+#include <glm_includes.h> // for Uniform Buffer
 
 #include <algorithm>
 #include <chrono>

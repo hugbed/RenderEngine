@@ -1,4 +1,4 @@
-#include "RHI/CommandBufferPool.h"
+#include <RHI/CommandBufferPool.h>
 
 CommandBufferPool::CommandBufferPool(size_t count, size_t nbConcurrentSubmit, uint32_t queueFamily, vk::CommandPoolCreateFlags flags)
 	: m_queueFamily(queueFamily)

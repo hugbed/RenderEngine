@@ -1,8 +1,7 @@
 #pragma once
 
+#include <defines.h>
 #include <vulkan/vulkan.hpp>
-
-#include "defines.h"
 
 #include <optional>
 #include <vector>

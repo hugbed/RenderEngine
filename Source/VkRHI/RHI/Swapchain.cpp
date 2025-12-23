@@ -1,10 +1,9 @@
-#include "SwapChain.h"
+#include <RHI/SwapChain.h>
 
-#include "RHI/Device.h"
-#include "RHI/PhysicalDevice.h"
-#include "RHI/Image.h"
-
-#include "defines.h"
+#include <RHI/Device.h>
+#include <RHI/PhysicalDevice.h>
+#include <RHI/Image.h>
+#include <defines.h>
 
 namespace
 {

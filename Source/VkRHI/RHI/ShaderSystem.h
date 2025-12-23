@@ -1,9 +1,7 @@
 #pragma once
 
-#include "RHI/SmallVector.h"
-
-#include "spirv_vk.h"
-
+#include <RHI/SmallVector.h>
+#include <RHI/spirv_vk.h>
 #include <vulkan/vulkan.hpp>
 
 #include <string>

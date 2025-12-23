@@ -1,9 +1,8 @@
 #include "Window.h"
 
+#include <defines.h>
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
-
-#include "defines.h"
 
 Window::Window(vk::Extent2D extent, std::string_view apiName)
 {

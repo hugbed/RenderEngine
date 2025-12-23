@@ -1,4 +1,4 @@
-#include "ProjectSettings.h"
+#include <ProjectSettings.h>
 
 #define TOML_EXCEPTIONS 0
 #include <toml++/toml.hpp>

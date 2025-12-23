@@ -1,9 +1,7 @@
 #pragma once
 
-#include "defines.h"
-
-#include "vk_mem_alloc.h"
-
+#include <defines.h>
+#include <vk_mem_alloc.h>
 #include <vulkan/vulkan.hpp>
 
 #include <vector>

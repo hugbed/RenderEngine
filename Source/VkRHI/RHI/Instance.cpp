@@ -1,6 +1,6 @@
-#include "RHI/Instance.h"
+#include <RHI/Instance.h>
 
-#include "RHI/Window.h"
+#include <RHI/Window.h>
 
 static char const* AppName = "RenderEngineTest";
 static char const* EngineName = "RenderEngine";

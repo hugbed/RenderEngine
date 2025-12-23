@@ -1,9 +1,8 @@
-#include "ShaderSystem.h"
+#include <RHI/ShaderSystem.h>
 
-#include "RHI/Device.h"
-#include "file_utils.h"
-#include "hash.h"
-
+#include <RHI/Device.h>
+#include <file_utils.h>
+#include <hash.h>
 #include <gsl/span>
 
 namespace

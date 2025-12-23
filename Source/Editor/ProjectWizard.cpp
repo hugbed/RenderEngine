@@ -1,6 +1,6 @@
-#include "ProjectWizard.h"
+#include <ProjectWizard.h>
 
-#include "ProjectSettings.h"
+#include <ProjectSettings.h>
 
 void ProjectWizard::CreateNewProject(std::filesystem::path projectDir, std::string projectName)
 {

@@ -1,4 +1,4 @@
-#include "BoundingBox.h"
+#include <BoundingBox.h>
 
 BoundingBox operator*(const glm::mat4& transform, const BoundingBox& box)
 {

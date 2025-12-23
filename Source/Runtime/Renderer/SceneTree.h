@@ -1,9 +1,8 @@
 #pragma once
 
-#include "BoundingBox.h"
-#include "RHI/Buffers.h"
-
-#include "glm_includes.h"
+#include <BoundingBox.h>
+#include <RHI/Buffers.h>
+#include <glm_includes.h>
 
 #include <cstdint>
 #include <limits>

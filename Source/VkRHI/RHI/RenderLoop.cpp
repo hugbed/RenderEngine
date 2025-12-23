@@ -1,12 +1,11 @@
-#include "RHI/RenderLoop.h"
+#include <RHI/RenderLoop.h>
 
-#include "RHI/Swapchain.h"
-#include "RHI/Device.h"
-#include "RHI/PhysicalDevice.h"
+#include <RHI/Swapchain.h>
+#include <RHI/Device.h>
+#include <RHI/PhysicalDevice.h>
 
 #include <thread>
 #include <iostream>
-#include <thread>
 
 RenderLoop::RenderLoop(vk::SurfaceKHR surface, vk::Extent2D extent, Window& window)
 	: m_deltaTime({})

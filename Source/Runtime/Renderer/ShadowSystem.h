@@ -1,22 +1,21 @@
 #pragma once
 
-#include "Renderer/LightSystem.h"
-#include "Renderer/MeshAllocator.h"
-#include "Camera.h"
-#include "BoundingBox.h"
 
-#include "RHI/RenderPass.h"
-#include "RHI/Swapchain.h"
-#include "RHI/GraphicsPipelineSystem.h"
-#include "RHI/ShaderSystem.h"
-#include "RHI/Framebuffer.h"
-#include "RHI/Texture.h"
-#include "RHI/Image.h"
-#include "RHI/Device.h"
-#include "RHI/PhysicalDevice.h"
-
-#include "hash.h"
-#include "glm_includes.h"
+#include <Camera.h>
+#include <BoundingBox.h>
+#include <Renderer/LightSystem.h>
+#include <Renderer/MeshAllocator.h>
+#include <RHI/RenderPass.h>
+#include <RHI/Swapchain.h>
+#include <RHI/GraphicsPipelineSystem.h>
+#include <RHI/ShaderSystem.h>
+#include <RHI/Framebuffer.h>
+#include <RHI/Texture.h>
+#include <RHI/Image.h>
+#include <RHI/Device.h>
+#include <RHI/PhysicalDevice.h>
+#include <hash.h>
+#include <glm_includes.h>
 #include <vulkan/vulkan.hpp>
 #include <gsl/pointers>
 
