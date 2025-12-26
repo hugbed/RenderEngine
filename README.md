@@ -12,7 +12,7 @@ Vulkan rendering engine.
 
 # Prerequisites
 
-- CMake >= 4.2.1
+- CMake >= 4.1.1
 - C++17 compatible toolchain
 - Vulkan SDK >= 1.4.328.1
 - python 3.14.2

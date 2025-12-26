@@ -1,0 +1,37 @@
+﻿{
+  "configurations": [
+    {
+      "name": "Win64_Debug",
+      "generator": "Visual Studio 18 2026 Win64",
+      "configurationType": "Debug",
+      "inheritEnvironments": [ "msvc_x64_x64" ],
+      "buildRoot": "${projectDir}/Intermediate/Projects/${name}",
+      "installRoot": "${projectDir}/Intermediate/Install/${name}",
+      "cmakeCommandArgs": "",
+      "buildCommandArgs": "",
+      "ctestCommandArgs": ""
+    },
+    {
+      "name": "Win64_RelWithDebInfo",
+      "generator": "Visual Studio 18 2026 Win64",
+      "configurationType": "RelWithDebInfo",
+      "inheritEnvironments": [ "msvc_x64_x64" ],
+      "buildRoot": "${projectDir}/Intermediate/Projects/${name}",
+      "installRoot": "${projectDir}/Intermediate/Install/${name}",
+      "cmakeCommandArgs": "",
+      "buildCommandArgs": "",
+      "ctestCommandArgs": ""
+    },
+    {
+      "name": "Win64_Release",
+      "generator": "Visual Studio 18 2026 Win64",
+      "configurationType": "Release",
+      "inheritEnvironments": [ "msvc_x64_x64" ],
+      "buildRoot": "${projectDir}/Intermediate/Projects/${name}",
+      "installRoot": "${projectDir}/Intermediate/Install/${name}",
+      "cmakeCommandArgs": "",
+      "buildCommandArgs": "",
+      "ctestCommandArgs": ""
+    }
+  ]
+}
