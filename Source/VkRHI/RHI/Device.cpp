@@ -37,15 +37,28 @@ Device::Device(const Instance& instance, const PhysicalDevice& physicalDevice)
 		);
 	}
 
+	vk::PhysicalDeviceFeatures2 deviceFeatures;
+	vk::PhysicalDeviceDescriptorIndexingFeatures descriptorIndexingFeatures;
+	deviceFeatures.pNext = descriptorIndexingFeatures;
+	vkGetPhysicalDeviceFeatures2(physicalDevice.Get(), deviceFeatures);
+	deviceFeatures.features.samplerAnisotropy = true;
+
+	// Non-uniform indexing and update after bind
+	// binding flags for textures, uniforms, and buffers
+	// are required for our extension
+	assert(descriptorIndexingFeatures.shaderSampledImageArrayNonUniformIndexing);
+	assert(descriptorIndexingFeatures.descriptorBindingSampledImageUpdateAfterBind);
+	assert(descriptorIndexingFeatures.shaderUniformBufferArrayNonUniformIndexing);
+	assert(descriptorIndexingFeatures.descriptorBindingUniformBufferUpdateAfterBind);
+	assert(descriptorIndexingFeatures.shaderStorageBufferArrayNonUniformIndexing);
+	assert(descriptorIndexingFeatures.descriptorBindingStorageBufferUpdateAfterBind);
+
 	vk::DeviceCreateInfo createInfo(
 		vk::DeviceCreateFlags{},						// flags
 		static_cast<uint32_t>(queueCreateInfos.size()),	// queueCreateInfoCount
 		queueCreateInfos.data()							// pQueueCreateInfos
 	);
-
-	vk::PhysicalDeviceFeatures deviceFeatures;
-	deviceFeatures.samplerAnisotropy = true;
-	createInfo.pEnabledFeatures = &deviceFeatures;
+	createInfo.pNext = &deviceFeatures;
 
 	auto deviceExtensions = physicalDevice.GetDeviceExtensions();
 	createInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
