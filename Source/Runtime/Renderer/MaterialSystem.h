@@ -2,8 +2,8 @@
 
 #include <Renderer/LightSystem.h>
 #include <Renderer/TextureSystem.h>
-#include <Renderer/DescriptorSetLayouts.h>
 #include <Renderer/MeshAllocator.h>
+#include <Renderer/MaterialDefines.h>
 #include <RHI/GraphicsPipelineSystem.h>
 #include <RHI/RenderPass.h>
 #include <AssetPath.h>
@@ -69,30 +69,7 @@ struct LitMaterialProperties
 {
 	PhongMaterialProperties phong;
 	EnvironmentMaterialProperties env;
-	TextureHandle textures[(uint8_t)PhongMaterialTextures::eCount]; // todo (hbedard): should I used aligned everywhere?
-};
-
-struct Material
-{
-	// Each shading model can have different view descriptors
-	enum class ShadingModel
-	{
-		Unlit = 0,
-		Lit = 1,
-		Count
-	};
-
-	enum class Type
-	{
-		Textured = 0,
-		Phong = 1,
-		Count
-	};
-
-	static constexpr ShadingModel kShadingModel[] = {
-		ShadingModel::Unlit,
-		ShadingModel::Lit
-	};
+	TextureHandle textures[(uint8_t)PhongMaterialTextures::eCount];
 };
 
 struct LitMaterialPipelineProperties
@@ -102,34 +79,34 @@ struct LitMaterialPipelineProperties
 
 struct LitMaterialInstanceInfo
 {
-	LitMaterialProperties properties;
-	LitMaterialPipelineProperties pipelineProperties;
+	LitMaterialProperties properties = {};
+	LitMaterialPipelineProperties pipelineProperties = {};
 };
-
-using MaterialInstanceID = uint32_t;
 
 /* Loads and creates resources for base materials so that
  * material instance creation reuses graphics pipelines 
  * and shaders whenever possible. Owns materials to update them
  * when resources are reset. */
-class MaterialSystem
+class SurfaceLitMaterialSystem
 {
 public:
-	static constexpr Material::ShadingModel kShadingModel = Material::ShadingModel::Lit; // todo (hbedard): also shading model = surface
 	static const AssetPath kVertexShader;
 	static const AssetPath kFragmentShader;
 
-	MaterialSystem(
+	SurfaceLitMaterialSystem(
 		vk::RenderPass renderPass,
 		vk::Extent2D swapchainExtent,
 		GraphicsPipelineSystem& graphicsPipelineSystem,
 		TextureSystem& textureSystem,
 		MeshAllocator& meshAllocator,
 		BindlessDescriptors& bindlessDescriptors,
-		BindlessDrawParams& bindlessDrawParams
+		BindlessDrawParams& bindlessDrawParams,
+		SceneTree& sceneTree,
+		LightSystem& lightSystem,
+		ShadowSystem& shadowSystem
 	);
 
-	IMPLEMENT_MOVABLE_ONLY(MaterialSystem)
+	IMPLEMENT_MOVABLE_ONLY(SurfaceLitMaterialSystem)
 
 	void Reset(vk::RenderPass renderPass, vk::Extent2D extent);
 	
@@ -139,15 +116,11 @@ public:
 
 	// Reserve a material ID for a given set of material properties
 	// The graphics pipeline and GPU resources will not be created until UploadToGPU is called
-	MaterialInstanceID CreateMaterialInstance(const LitMaterialInstanceInfo& materialInfo);
+	MaterialHandle CreateMaterialInstance(const LitMaterialInstanceInfo& materialInfo);
 
 	// This can be called once the total number of resources is known (constants)
 	// So that actual GPU resources are created and uploaded
-	void UploadToGPU(
-		CommandBufferPool& commandBufferPool,
-		gsl::not_null<SceneTree*> sceneTree,
-		gsl::not_null<LightSystem*> lightSystem,
-		gsl::not_null<ShadowSystem*> shadowSystem);
+	void UploadToGPU(CommandBufferPool& commandBufferPool);
 
 	// -- Getters -- //
 
@@ -157,9 +130,9 @@ public:
 
 	const std::vector<GraphicsPipelineID>& GetGraphicsPipelinesIDs() const { return m_graphicsPipelineIDs; }
 	
-	GraphicsPipelineID GetGraphicsPipelineID(MaterialInstanceID materialInstanceID) const { return m_graphicsPipelineIDs[materialInstanceID]; }
+	GraphicsPipelineID GetGraphicsPipelineID(MaterialHandle materialHandle) const { return m_graphicsPipelineIDs[materialHandle.GetID()]; }
 
-	bool IsTransparent(MaterialInstanceID materialInstanceID) const { return m_pipelineProperties[materialInstanceID].isTransparent; }
+	bool IsTransparent(MaterialHandle materialHandle) const { return m_pipelineProperties[materialHandle.GetID()].isTransparent; }
 
 	BufferHandle GetUniformBufferHandle() const { return m_uniformBufferHandle; }
 
@@ -194,8 +167,11 @@ private:
 	gsl::not_null<TextureSystem*> m_textureSystem;
 	gsl::not_null<GraphicsPipelineSystem*> m_graphicsPipelineSystem;
 	gsl::not_null<MeshAllocator*> m_meshAllocator;
+	gsl::not_null<SceneTree*> m_sceneTree;
+	gsl::not_null<LightSystem*> m_lightSystem;
+	gsl::not_null<ShadowSystem*> m_shadowSystem;
 
-	std::map<uint64_t, MaterialInstanceID> m_materialHashToInstanceID;
+	std::map<uint64_t, MaterialHandle> m_materialHashToHandle;
 
 	// MaterialInstanceID -> Array Index
 	std::vector<LitMaterialInstanceInfo> m_materialInstanceInfo;
@@ -203,7 +179,7 @@ private:
 	std::vector<LitMaterialProperties> m_properties;
 	std::vector<LitMaterialPipelineProperties> m_pipelineProperties;
 
-	std::vector<std::pair<MaterialInstanceID, LitMaterialInstanceInfo>> m_toInstantiate;
+	std::vector<std::pair<MaterialHandle, LitMaterialInstanceInfo>> m_toInstantiate;
 
 	// GPU resources
 	std::unique_ptr<UniqueBufferWithStaging> m_uniformBuffer; // containing all LitMaterialProperties
@@ -212,5 +188,5 @@ private:
 	BufferHandle m_uniformBufferHandle = BufferHandle::Invalid;
 	vk::PipelineLayout m_pipelineLayout;
 
-	MaterialInstanceID m_nextID = 0;
+	MaterialHandle m_nextHandle;
 };

@@ -50,7 +50,7 @@ AssimpScene::AssimpScene(
 	TextureSystem& textureSystem,
 	MeshAllocator& meshAllocator,
 	LightSystem& lightSystem,
-	MaterialSystem& materialSystem,
+	SurfaceLitMaterialSystem& materialSystem,
 	ShadowSystem& shadowSystem,
 	SceneTree& sceneTree,
 	Grid& grid,
@@ -106,16 +106,8 @@ void AssimpScene::Load(vk::CommandBuffer commandBuffer)
 
 	m_lightSystem->UploadToGPU(*m_commandBufferPool);
 	CreateViewUniformBuffers();
-	m_materialSystem->UploadToGPU(*m_commandBufferPool, m_sceneTree, m_lightSystem, m_shadowSystem);
+	m_materialSystem->UploadToGPU(*m_commandBufferPool);
 	m_skybox->UploadToGPU(commandBuffer, *m_commandBufferPool);
-}
-
-void AssimpScene::InitBindlessDescriptors()
-{
-	// These won't change so we can create them once
-	m_bindlessHandles.transforms = m_sceneTree->GetTransformsBufferHandle();
-	m_bindlessHandles.lights = m_lightSystem->GetLightsBufferHandle();
-	m_bindlessHandles.materials = m_materialSystem->GetUniformBufferHandle();
 }
 
 void AssimpScene::Update(uint32_t imageIndex)
@@ -277,7 +269,7 @@ void AssimpScene::LoadSceneNodes(vk::CommandBuffer commandBuffer)
 	m_meshAllocator->UploadToGPU(*m_commandBufferPool);
 	m_meshAllocator->ForEachMesh([this](SceneNodeID sceneNodeID, Mesh mesh) {
 		MeshDrawInfo info = { sceneNodeID, std::move(mesh) };
-		if (m_materialSystem->IsTransparent(mesh.materialInstanceID) == false)
+		if (m_materialSystem->IsTransparent(mesh.materialHandle) == false)
 			m_opaqueDrawCache.push_back(std::move(info));
 		else
 			m_transparentDrawCache.push_back(std::move(info));
@@ -295,12 +287,9 @@ void AssimpScene::LoadSceneNodes(vk::CommandBuffer commandBuffer)
 	//
 	std::sort(m_opaqueDrawCache.begin(), m_opaqueDrawCache.end(),
 		[](const MeshDrawInfo& a, const MeshDrawInfo& b) {
-			// Sort by material type
-			if (a.mesh.shadingModel != b.mesh.shadingModel)
-				return a.mesh.shadingModel < b.mesh.shadingModel;
 			// Then material instance
-			else if (a.mesh.materialInstanceID != b.mesh.materialInstanceID)
-				return a.mesh.materialInstanceID < b.mesh.materialInstanceID;
+			if (a.mesh.materialHandle != b.mesh.materialHandle)
+				return a.mesh.materialHandle < b.mesh.materialHandle;
 			// Then scene node
 			else
 				return a.sceneNodeID < b.sceneNodeID;
@@ -327,12 +316,9 @@ void AssimpScene::SortTransparentObjects()
 			// Sort by distance first
 			if (distA != distB)
 				return distA > distB; // back to front
-			// Then by material type
-			if (a.mesh.shadingModel != b.mesh.shadingModel)
-				return a.mesh.shadingModel < b.mesh.shadingModel;
-			// Then material instance
-			else if (a.mesh.materialInstanceID != b.mesh.materialInstanceID)
-				return a.mesh.materialInstanceID < b.mesh.materialInstanceID;
+			// Then material
+			if (a.mesh.materialHandle != b.mesh.materialHandle)
+				return a.mesh.materialHandle < b.mesh.materialHandle;
 			// Then model
 			else
 				return a.sceneNodeID < b.sceneNodeID;
@@ -371,8 +357,7 @@ SceneNodeID AssimpScene::LoadSceneNode(const aiNode& fileNode, glm::mat4 transfo
 			Mesh mesh;
 			mesh.indexOffset = m_meshAllocator->GetIndexCount();
 			mesh.nbIndices = (vk::DeviceSize)aMesh->mNumFaces * aMesh->mFaces->mNumIndices;
-			mesh.materialInstanceID = m_materials[aMesh->mMaterialIndex];
-			mesh.shadingModel = static_cast<uint32_t>(Material::ShadingModel::Lit);
+			mesh.materialHandle = m_materials[aMesh->mMaterialIndex];
 			meshes.push_back(std::move(mesh));
 		}
 
@@ -491,10 +476,10 @@ void AssimpScene::LoadMaterials(vk::CommandBuffer commandBuffer)
 		if (skyboxTexture != TextureHandle::Invalid)
 			materialInfo.properties.env.cubeMapTexture = static_cast<glm::aligned_int32>(skyboxTexture);
 
-		auto materialInstanceID = m_materialSystem->CreateMaterialInstance(materialInfo);
+		auto materialHandle = m_materialSystem->CreateMaterialInstance(materialInfo);
 
 		// Keep ownership of the material instance
-		m_materials[i] = materialInstanceID;
+		m_materials[i] = materialHandle;
 	}
 }
 
@@ -515,15 +500,15 @@ void AssimpScene::CreateViewUniformBuffers()
 		);
 	}
 
-	m_bindlessHandles.views.reserve(m_viewUniformBuffers.size());
+	m_viewBufferHandles.reserve(m_viewUniformBuffers.size());
 	for (uint32_t i = 0; i < m_viewUniformBuffers.size(); ++i)
 	{
-		m_bindlessHandles.views.push_back(m_bindlessDescriptors->StoreBuffer(m_viewUniformBuffers[i].Get(), bufferUsage));
+		m_viewBufferHandles.push_back(m_bindlessDescriptors->StoreBuffer(m_viewUniformBuffers[i].Get(), bufferUsage));
 	}
 
-	m_grid->SetViewBufferHandles(m_bindlessHandles.views);
-	m_skybox->SetViewBufferHandles(m_bindlessHandles.views);
-	m_materialSystem->SetViewBufferHandles(m_bindlessHandles.views);
+	m_grid->SetViewBufferHandles(m_viewBufferHandles);
+	m_skybox->SetViewBufferHandles(m_viewBufferHandles);
+	m_materialSystem->SetViewBufferHandles(m_viewBufferHandles);
 }
 
 UniqueBuffer& AssimpScene::GetViewUniformBuffer(uint32_t imageIndex)

@@ -94,11 +94,10 @@ void BindlessDrawParams::Build(vk::CommandBuffer& commandBuffer)
 	UpdateDescriptorSets();
 }
 
-vk::DescriptorSet BindlessDrawParams::GetDescriptorSet(uint32_t frameIndex) const
+vk::DescriptorSet BindlessDrawParams::GetDescriptorSet(uint32_t concurrentFrameIndex) const
 {
-	// todo (hbedard): if frameIndex would be just a globally accessible value
-	assert(m_descriptorSets[frameIndex].get() != VK_NULL_HANDLE);
-	return m_descriptorSets[frameIndex].get();
+	assert(m_descriptorSets[concurrentFrameIndex].get() != VK_NULL_HANDLE);
+	return m_descriptorSets[concurrentFrameIndex].get();
 }
 
 vk::DescriptorSetLayout BindlessDrawParams::GetDescriptorSetLayout() const
@@ -140,7 +139,6 @@ std::unique_ptr<UniqueBufferWithStaging> BindlessDrawParams::CreateBuffer(vk::Co
 {
 	using namespace Bindless_Private;
 
-	// todo (hbedard): is this required?
 	// Make sure that the buffer size is a multiple of the descriptor range
 	size_t maxRangeSize = std::accumulate(m_ranges.front().begin(), m_ranges.front().end(), 0ULL,
 		[](size_t val, const Range& range) {
@@ -343,7 +341,6 @@ void BindlessDescriptors::CreateDescriptorPool()
 
 void BindlessDescriptors::CreateDescriptorSet()
 {
-	// todo (hbedard): copy paste
 	vk::DescriptorSetAllocateInfo allocateInfo;
 	allocateInfo.descriptorPool = m_descriptorPool.get();
 	allocateInfo.pSetLayouts = &m_descriptorSetLayout.get();
@@ -358,9 +355,8 @@ void BindlessDescriptors::CreatePipelineLayout()
 {
 	using namespace Bindless_Private;
 	
-	// todo (hbedard): use draw indirect instead
 	std::array<vk::DescriptorSetLayout, 1> layouts = { m_descriptorSetLayout.get() };
-	auto pushConstants = GetPushConstantRanges();
+	std::array pushConstants = GetPushConstantRanges();
 	vk::PipelineLayoutCreateInfo createInfo({}, layouts, pushConstants);
 	m_pipelineLayout = g_device->Get().createPipelineLayoutUnique(createInfo);
 }

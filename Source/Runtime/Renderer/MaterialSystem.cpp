@@ -1,6 +1,5 @@
 #include <Renderer/MaterialSystem.h>
 
-#include <Renderer/DescriptorSetLayouts.h>
 #include <Renderer/Bindless.h>
 #include <Renderer/RenderState.h>
 #include <Renderer/SceneTree.h>
@@ -9,17 +8,20 @@
 #include <RHI/GraphicsPipelineSystem.h>
 #include <RHI/CommandBufferPool.h>
 
-const AssetPath MaterialSystem::kVertexShader = AssetPath("/Engine/Generated/Shaders/primitive_vert.spv");
-const AssetPath MaterialSystem::kFragmentShader = AssetPath("/Engine/Generated/Shaders/surface_frag.spv");
+const AssetPath SurfaceLitMaterialSystem::kVertexShader = AssetPath("/Engine/Generated/Shaders/primitive_vert.spv");
+const AssetPath SurfaceLitMaterialSystem::kFragmentShader = AssetPath("/Engine/Generated/Shaders/surface_frag.spv");
 
-MaterialSystem::MaterialSystem(
+SurfaceLitMaterialSystem::SurfaceLitMaterialSystem(
 	vk::RenderPass renderPass,
 	vk::Extent2D swapchainExtent,
 	GraphicsPipelineSystem& graphicsPipelineSystem,
 	TextureSystem& textureSystem,
 	MeshAllocator& meshAllocator,
 	BindlessDescriptors& bindlessDescriptors,
-	BindlessDrawParams& bindlessDrawParams
+	BindlessDrawParams& bindlessDrawParams,
+	SceneTree& sceneTree,
+	LightSystem& lightSystem,
+	ShadowSystem& shadowSystem
 )
 	: m_renderPass(renderPass)
 	, m_imageExtent(swapchainExtent)
@@ -28,11 +30,15 @@ MaterialSystem::MaterialSystem(
 	, m_meshAllocator(&meshAllocator)
 	, m_bindlessDescriptors(&bindlessDescriptors)
 	, m_bindlessDrawParams(&bindlessDrawParams)
+	, m_sceneTree(&sceneTree)
+	, m_lightSystem(&lightSystem)
+	, m_shadowSystem(&shadowSystem)
+	, m_nextHandle(MaterialShadingDomain::Surface, MaterialShadingModel::Lit, 0)
 {
 	m_drawParamsHandle = m_bindlessDrawParams->DeclareParams<SurfaceLitDrawParams>();
 }
 
-void MaterialSystem::Reset(vk::RenderPass renderPass, vk::Extent2D extent)
+void SurfaceLitMaterialSystem::Reset(vk::RenderPass renderPass, vk::Extent2D extent)
 {
 	m_renderPass = renderPass;
 	m_imageExtent = extent;
@@ -48,41 +54,36 @@ void MaterialSystem::Reset(vk::RenderPass renderPass, vk::Extent2D extent)
 	}
 }
 
-MaterialInstanceID MaterialSystem::CreateMaterialInstance(const LitMaterialInstanceInfo& materialInfo)
+MaterialHandle SurfaceLitMaterialSystem::CreateMaterialInstance(const LitMaterialInstanceInfo& materialInfo)
 {
-	MaterialInstanceID id = m_nextID;
+	MaterialHandle id = m_nextHandle;
 
 	m_toInstantiate.emplace_back(std::make_pair(id, materialInfo));
 	m_pipelineProperties.push_back(materialInfo.pipelineProperties);
 	m_properties.push_back(materialInfo.properties);
 
-	m_nextID++;
+	m_nextHandle.IncrementID();
 	return id;
 }
 
-void MaterialSystem::SetViewBufferHandles(gsl::span<BufferHandle> viewBufferHandles)
+void SurfaceLitMaterialSystem::SetViewBufferHandles(gsl::span<BufferHandle> viewBufferHandles)
 {
 	m_viewBufferHandles.reserve(viewBufferHandles.size());
 	std::copy(viewBufferHandles.begin(), viewBufferHandles.end(), std::back_inserter(m_viewBufferHandles));
 }
 
-// todo (hbedard): that's a weird place to pass dependencies
-void MaterialSystem::UploadToGPU(
-	CommandBufferPool& commandBufferPool,
-	gsl::not_null<SceneTree*> sceneTree,
-	gsl::not_null<LightSystem*> lightSystem,
-	gsl::not_null<ShadowSystem*> shadowSystem)
+void SurfaceLitMaterialSystem::UploadToGPU(CommandBufferPool& commandBufferPool)
 {
 	CreatePendingInstances();
 	CreateAndUploadUniformBuffer(commandBufferPool);
 
 	assert(!m_viewBufferHandles.empty());
 	SurfaceLitDrawParams drawParams = m_drawParams;
-	drawParams.lights = lightSystem->GetLightsBufferHandle();
-	drawParams.lightCount = lightSystem->GetLightCount();
+	drawParams.lights = m_lightSystem->GetLightsBufferHandle();
+	drawParams.lightCount = m_lightSystem->GetLightCount();
 	drawParams.materials = m_uniformBufferHandle;
-	drawParams.transforms = sceneTree->GetTransformsBufferHandle();
-	drawParams.shadowTransforms = shadowSystem->GetMaterialShadowsBufferHandle();
+	drawParams.transforms = m_sceneTree->GetTransformsBufferHandle();
+	drawParams.shadowTransforms = m_shadowSystem->GetMaterialShadowsBufferHandle();
 
 	for (uint32_t i = 0; i < m_viewBufferHandles.size(); ++i)
 	{
@@ -91,7 +92,7 @@ void MaterialSystem::UploadToGPU(
 	}
 }
 
-void MaterialSystem::Draw(RenderState& renderState, gsl::span<const MeshDrawInfo> drawCalls) const
+void SurfaceLitMaterialSystem::Draw(RenderState& renderState, gsl::span<const MeshDrawInfo> drawCalls) const
 {
 	vk::CommandBuffer commandBuffer = renderState.GetCommandBuffer();
 
@@ -99,32 +100,32 @@ void MaterialSystem::Draw(RenderState& renderState, gsl::span<const MeshDrawInfo
 
 	for (const auto& drawItem : drawCalls)
 	{
-		auto shadingModel = drawItem.mesh.shadingModel;
-		renderState.BindPipeline(GetGraphicsPipelineID(drawItem.mesh.materialInstanceID));
+		renderState.BindPipeline(GetGraphicsPipelineID(drawItem.mesh.materialHandle));
 		renderState.BindSceneNode(drawItem.sceneNodeID);
-		renderState.BindMaterial(drawItem.mesh.materialInstanceID);
+		renderState.BindMaterial(drawItem.mesh.materialHandle);
 		commandBuffer.drawIndexed(drawItem.mesh.nbIndices, 1, drawItem.mesh.indexOffset, 0, 0);
 	}
 }
 
-void MaterialSystem::CreatePendingInstances()
+void SurfaceLitMaterialSystem::CreatePendingInstances()
 {
 	for (const auto& instanceInfo : m_toInstantiate)
 	{
-		const MaterialInstanceID id = instanceInfo.first;
+		const MaterialHandle handle = instanceInfo.first;
 		const LitMaterialInstanceInfo& materialInfo = instanceInfo.second;
-		m_graphicsPipelineIDs.resize(id + 1ULL);
-		m_graphicsPipelineIDs[id] = LoadGraphicsPipeline(materialInfo);
+		uint32_t materialIndex = handle.GetID();
+		m_graphicsPipelineIDs.resize(materialIndex + 1ULL);
+		m_graphicsPipelineIDs[materialIndex] = LoadGraphicsPipeline(materialInfo);
 	}
 
 	m_toInstantiate.clear();
 }
 
-GraphicsPipelineID MaterialSystem::LoadGraphicsPipeline(const LitMaterialInstanceInfo& materialInfo)
+GraphicsPipelineID SurfaceLitMaterialSystem::LoadGraphicsPipeline(const LitMaterialInstanceInfo& materialInfo)
 {
-	auto instanceIDIt = m_materialHashToInstanceID.find(fnv_hash(&materialInfo));
-	if (instanceIDIt != m_materialHashToInstanceID.end())
-		return m_graphicsPipelineIDs[instanceIDIt->second];
+	auto instanceIDIt = m_materialHashToHandle.find(fnv_hash(&materialInfo));
+	if (instanceIDIt != m_materialHashToHandle.end())
+		return m_graphicsPipelineIDs[instanceIDIt->second.GetID()];
 
 	ShaderSystem& shaderSystem = m_graphicsPipelineSystem->GetShaderSystem();
 
@@ -141,11 +142,13 @@ GraphicsPipelineID MaterialSystem::LoadGraphicsPipeline(const LitMaterialInstanc
 		vertexInstanceID, fragmentInstanceID, info
 	);
 
-	auto [it, wasAdded] = m_materialHashToInstanceID.emplace(fnv_hash(&materialInfo), pipelineIndex);
+	MaterialHandle handle;
+	handle.SetID(pipelineIndex);
+	auto [it, wasAdded] = m_materialHashToHandle.emplace(fnv_hash(&materialInfo), handle);
 	return id;
 }
 
-void MaterialSystem::CreateAndUploadUniformBuffer(CommandBufferPool& commandBufferPool)
+void SurfaceLitMaterialSystem::CreateAndUploadUniformBuffer(CommandBufferPool& commandBufferPool)
 {
 	if (m_uniformBuffer != nullptr)
 		return; // nothing to do
@@ -163,7 +166,7 @@ void MaterialSystem::CreateAndUploadUniformBuffer(CommandBufferPool& commandBuff
 	m_uniformBufferHandle = m_bindlessDescriptors->StoreBuffer(m_uniformBuffer->Get(), bufferUsage);
 }
 
-vk::PipelineLayout MaterialSystem::GetPipelineLayout() const
+vk::PipelineLayout SurfaceLitMaterialSystem::GetPipelineLayout() const
 {
 	// all materials should have the same pipeline layout
 	return m_graphicsPipelineSystem->GetPipelineLayout(m_graphicsPipelineIDs.back());

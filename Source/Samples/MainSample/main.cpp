@@ -12,7 +12,6 @@
 #include <Renderer/MaterialSystem.h>
 #include <Renderer/MeshAllocator.h>
 #include <Renderer/ShadowSystem.h>
-#include <Renderer/DescriptorSetLayouts.h>
 #include <Renderer/RenderState.h>
 #include <Renderer/TexturedQuad.h>
 #include <Renderer/SceneTree.h>
@@ -66,15 +65,25 @@ public:
 		, m_graphicsPipelineSystem(m_shaderSystem)
 		, m_bindlessFactory(m_bindlessDescriptors, m_bindlessDrawParams, m_graphicsPipelineSystem)
 		, m_textureSystem(basePath, m_bindlessDescriptors)
+		, m_sceneTree(m_bindlessDescriptors)
+		, m_lightSystem(m_bindlessDescriptors)
+		, m_shadowSystem(m_swapchain->GetImageDescription().extent,
+			m_graphicsPipelineSystem,
+			m_meshAllocator,
+			m_sceneTree,
+			m_lightSystem,
+			m_bindlessDescriptors,
+			m_bindlessDrawParams)
 		, m_materialSystem(
 			m_renderPass->Get(),
 			m_swapchain->GetImageDescription().extent,
 			m_graphicsPipelineSystem, m_textureSystem,
 			m_meshAllocator,
 			m_bindlessDescriptors,
-			m_bindlessDrawParams)
-		, m_lightSystem(m_bindlessDescriptors)
-		, m_sceneTree(m_bindlessDescriptors)
+			m_bindlessDrawParams,
+			m_sceneTree,
+			m_lightSystem,
+			m_shadowSystem)
 		, m_grid(std::make_unique<Grid>(
 			*m_renderPass,
 			m_swapchain->GetImageDescription().extent,
@@ -95,7 +104,6 @@ public:
 			*m_grid,
 			*m_renderPass, m_swapchain->GetImageDescription().extent)
 		)
-		, m_shadowSystem(m_swapchain->GetImageDescription().extent, m_graphicsPipelineSystem, m_meshAllocator, m_sceneTree, m_lightSystem, m_bindlessDescriptors, m_bindlessDrawParams)
 	{
 		window.SetMouseButtonCallback(reinterpret_cast<void*>(&m_inputSystem), InputSystem::OnMouseButton);
 		window.SetMouseScrollCallback(reinterpret_cast<void*>(&m_inputSystem), InputSystem::OnMouseScroll);
@@ -436,10 +444,10 @@ private:
 	BindlessFactory m_bindlessFactory; // todo (hbedard): remove that
 	TextureSystem m_textureSystem;
 	LightSystem m_lightSystem;
-	MaterialSystem m_materialSystem;
-	MeshAllocator m_meshAllocator;
 	SceneTree m_sceneTree;
 	ShadowSystem m_shadowSystem;
+	SurfaceLitMaterialSystem m_materialSystem;
+	MeshAllocator m_meshAllocator;
 
 	InputSystem m_inputSystem;
 

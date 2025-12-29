@@ -2,7 +2,6 @@
 
 #include <Renderer/MaterialSystem.h>
 #include <Renderer/MeshAllocator.h>
-#include <Renderer/DescriptorSetLayouts.h>
 #include <RHI/GraphicsPipelineSystem.h>
 #include <Renderer/Bindless.h>
 
@@ -17,7 +16,7 @@ class RenderState
 public:
 	RenderState(
 		GraphicsPipelineSystem& graphicsPipelineSystem,
-		MaterialSystem& materialSystem,
+		SurfaceLitMaterialSystem& materialSystem,
 		const BindlessDrawParams& bindlessDrawParams
 	)
 		: m_graphicsPipelineSystem(&graphicsPipelineSystem)
@@ -107,13 +106,13 @@ public:
 		}
 	}
 
-	void BindMaterial(MaterialInstanceID newMaterial)
+	void BindMaterial(MaterialHandle newMaterial)
 	{
 		if (newMaterial != m_material)
 		{
 			vk::PipelineLayout pipelineLayout = m_graphicsPipelineSystem->GetPipelineLayout(m_pipelineID, 0); // todo (hbedard): is that right?
 
-			uint32_t materialIndex = newMaterial;
+			uint32_t materialIndex = newMaterial.GetID();
 
 			// Set material index push constant
 			m_commandBuffer->pushConstants(
@@ -128,12 +127,12 @@ public:
 
 private:
 	gsl::not_null<GraphicsPipelineSystem*> m_graphicsPipelineSystem;
-	gsl::not_null<MaterialSystem*> m_materialSystem;
+	gsl::not_null<SurfaceLitMaterialSystem*> m_materialSystem;
 	gsl::not_null<const BindlessDrawParams*> m_bindlessDrawParams;
 
 	uint32_t m_frameIndex = 0;
 	vk::CommandBuffer* m_commandBuffer = nullptr;
 	SceneNodeID m_sceneNodeID = SceneNodeID::Invalid;
 	GraphicsPipelineID m_pipelineID = ~0U;
-	MaterialInstanceID m_material = ~0U;
+	MaterialHandle m_material = MaterialHandle::Invalid();
 };

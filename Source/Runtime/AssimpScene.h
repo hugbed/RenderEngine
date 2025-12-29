@@ -36,7 +36,7 @@ public:
 		TextureSystem& textureSystem,
 		MeshAllocator& meshAllocator,
 		LightSystem& lightSystem,
-		MaterialSystem& materialSystem,
+		SurfaceLitMaterialSystem& materialSystem,
 		ShadowSystem& shadowSystem,
 		SceneTree& sceneTree,
 		Grid& grid,
@@ -87,8 +87,6 @@ private:
 	SceneNodeID LoadSceneNode(const aiNode& fileNode, glm::mat4 transform);
 	void LoadMaterials(vk::CommandBuffer commandBuffer);
 
-	void InitBindlessDescriptors();
-
 	void CreateViewUniformBuffers();
 
 	UniqueBuffer& GetViewUniformBuffer(uint32_t imageIndex);
@@ -120,7 +118,6 @@ private:
 	// --- View --- //
 
 	LitViewProperties m_viewUniforms;
-	std::vector<vk::UniqueDescriptorSet> m_unlitViewDescriptorSets;
 	std::vector<UniqueBuffer> m_viewUniformBuffers; // one per in flight frame since these change every frame
 
 	// --- Scene --- //
@@ -135,8 +132,8 @@ private:
 	// --- Materials --- ///
 
 	gsl::not_null<TextureSystem*> m_textureSystem;
-	gsl::not_null<MaterialSystem*> m_materialSystem;
-	std::vector<MaterialInstanceID> m_materials; // todo: don't need that
+	gsl::not_null<SurfaceLitMaterialSystem*> m_materialSystem;
+	std::vector<MaterialHandle> m_materials;
 
 	// ---
 
@@ -150,27 +147,9 @@ private:
 
 	std::vector<MeshDrawInfo> m_opaqueDrawCache;
 	std::vector<MeshDrawInfo> m_transparentDrawCache;
-
 	std::unique_ptr<Skybox> m_skybox;
 
-	// todo (hbedard): not necessary?
-	struct BindlessHandles
-	{
-		std::vector<BufferHandle> views;
-		BufferHandle transforms = BufferHandle::Invalid;
-		BufferHandle lights = BufferHandle::Invalid;
-		BufferHandle materials = BufferHandle::Invalid;
-	} m_bindlessHandles;
-
-	struct BindlessRanges
-	{
-		BindlessDrawParamsHandle Surface = BindlessDrawParamsHandle::Invalid;
-		BindlessDrawParamsHandle Skybox = BindlessDrawParamsHandle::Invalid;
-		BindlessDrawParamsHandle ShadowMaps = BindlessDrawParamsHandle::Invalid;
-		BindlessDrawParamsHandle TexturedQuad = BindlessDrawParamsHandle::Invalid;
-		BindlessDrawParamsHandle Grid = BindlessDrawParamsHandle::Invalid;
-	} m_bindlessRanges;
-
+	std::vector<BufferHandle> m_viewBufferHandles;
 	gsl::not_null<BindlessDrawParams*> m_bindlessDrawParams;
 	gsl::not_null<BindlessDescriptors*> m_bindlessDescriptors;
 };
