@@ -120,17 +120,6 @@ void MaterialSystem::CreatePendingInstances()
 	m_toInstantiate.clear();
 }
 
-vk::DescriptorSetLayout MaterialSystem::GetDescriptorSetLayout(DescriptorSetIndex setIndex) const
-{
-	if (m_graphicsPipelineIDs.empty())
-	{
-		assert(!"Fetching empty descriptor set layout");
-		return {};
-	}
-
-	return m_graphicsPipelineSystem->GetDescriptorSetLayout(m_graphicsPipelineIDs.front(), (uint8_t)setIndex);
-}
-
 GraphicsPipelineID MaterialSystem::LoadGraphicsPipeline(const LitMaterialInstanceInfo& materialInfo)
 {
 	auto instanceIDIt = m_materialHashToInstanceID.find(fnv_hash(&materialInfo));

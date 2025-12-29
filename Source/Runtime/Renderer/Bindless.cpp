@@ -128,7 +128,7 @@ vk::UniqueDescriptorPool BindlessDrawParams::CreateDescriptorPool()
 	vk::DescriptorPoolSize poolSize(vk::DescriptorType::eUniformBufferDynamic, RHIConstants::kMaxFramesInFlight);
 
 	vk::DescriptorPoolCreateInfo descriptorPoolCreateInfo;
-	descriptorPoolCreateInfo.flags = vk::DescriptorPoolCreateFlagBits::eUpdateAfterBind;
+	descriptorPoolCreateInfo.flags = vk::DescriptorPoolCreateFlagBits::eUpdateAfterBind | vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet;
 	descriptorPoolCreateInfo.pPoolSizes = &poolSize;
 	descriptorPoolCreateInfo.poolSizeCount = 1;
 	descriptorPoolCreateInfo.maxSets = RHIConstants::kMaxFramesInFlight;
@@ -333,7 +333,7 @@ void BindlessDescriptors::CreateDescriptorPool()
 	};
 
 	vk::DescriptorPoolCreateInfo descriptorPoolCreateInfo;
-	descriptorPoolCreateInfo.flags = vk::DescriptorPoolCreateFlagBits::eUpdateAfterBind;
+	descriptorPoolCreateInfo.flags = vk::DescriptorPoolCreateFlagBits::eUpdateAfterBind | vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet;
 	descriptorPoolCreateInfo.pPoolSizes = poolSizes.data();
 	descriptorPoolCreateInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
 	descriptorPoolCreateInfo.maxSets = 1;
@@ -382,5 +382,5 @@ BindlessFactory::BindlessFactory(
 		bindlessDescriptors.GetPipelineLayout(),
 		bindlessDrawParams.GetPipelineLayout()
 	};
-	graphicsPipelineSystem.SetDefaultLayout(std::move(bindings), std::move(descriptorSetLayouts), std::move(pipelineLayouts));
+	graphicsPipelineSystem.SetCommonLayout(std::move(bindings), std::move(descriptorSetLayouts), std::move(pipelineLayouts));
 }

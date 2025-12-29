@@ -188,8 +188,6 @@ private:
 	void CreatePendingInstances();
 	void CreateAndUploadUniformBuffer(CommandBufferPool& commandBufferPool);
 
-	vk::DescriptorSetLayout GetDescriptorSetLayout(DescriptorSetIndex setIndex) const;
-
 	vk::RenderPass m_renderPass; // light/color pass, there could be others
 	vk::Extent2D m_imageExtent;
 

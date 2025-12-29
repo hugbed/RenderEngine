@@ -66,8 +66,6 @@ public:
 
 	void ResetCamera();
 
-	void UpdateMaterialDescriptors();
-
 	const std::vector<MeshDrawInfo>& GetOpaqueDrawCommands() const { return m_opaqueDrawCache; }
 	const std::vector<MeshDrawInfo>& GetTransparentDrawCommands() const { return m_transparentDrawCache; }
 

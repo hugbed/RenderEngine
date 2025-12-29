@@ -50,6 +50,7 @@ struct GraphicsPipelineInfo
 
 using GraphicsPipelineID = uint32_t;
 
+// Handles all graphics pipeline that share the same layout
 class GraphicsPipelineSystem
 {
 public:
@@ -57,59 +58,25 @@ public:
 
 	ShaderSystem& GetShaderSystem() const { return *m_shaderSystem; }
 
-	// todo (hbedard): maybe pass this in CreateGraphicsPipeline optionally, and if not passed it's read from reflection
-	void SetDefaultLayout(
+	void SetCommonLayout(
 		SetVector<SmallVector<vk::DescriptorSetLayoutBinding>> descriptorSetLayoutBindingOverrides,
 		SetVector<vk::DescriptorSetLayout> descriptorSetLayoutOverrides,
 		SetVector<vk::PipelineLayout> pipelineLayoutOverrides);
 
-	auto CreateGraphicsPipeline(
+	GraphicsPipelineID CreateGraphicsPipeline(
 		ShaderInstanceID vertexShaderID,
 		ShaderInstanceID fragmentShaderID,
-		const GraphicsPipelineInfo& info
-	) -> GraphicsPipelineID;
+		const GraphicsPipelineInfo& info);
 
 	void ResetGraphicsPipeline(
 		GraphicsPipelineID graphicsPipelineID,
-		const GraphicsPipelineInfo& info
-	);
-
-	auto GetDescriptorSetLayoutBindings(
-	) const -> const std::vector<SetVector<SmallVector<vk::DescriptorSetLayoutBinding>>>&
-	{
-		return m_descriptorSetLayoutBindings;
-	}
-
-	auto GetDescriptorSetLayoutBindings(
-		GraphicsPipelineID id
-	) const -> const SetVector<SmallVector<vk::DescriptorSetLayoutBinding>>&
-	{
-		return m_descriptorSetLayoutBindings[id];
-	}
-
-	auto GetDescriptorSetLayoutBindings(
-		GraphicsPipelineID id,
-		uint8_t set
-	) const -> const SmallVector<vk::DescriptorSetLayoutBinding>&
-	{
-		return m_descriptorSetLayoutBindings[id][set];
-	}
-
-	auto GetDescriptorSetLayout(
-		GraphicsPipelineID id,
-		uint8_t set
-	) const -> vk::DescriptorSetLayout
-	{
-		return m_descriptorSetLayouts[id][set].get();
-	}
+		const GraphicsPipelineInfo& info);
 
 	// --- todo: reorganize calls to navigate the arrays instead --- //
 
-	bool IsSetLayoutCompatible(GraphicsPipelineID a, GraphicsPipelineID b, uint8_t set) const;
-
 	vk::Pipeline GetPipeline(GraphicsPipelineID id) const { return m_pipelines[id].get(); }
 
-	vk::PipelineLayout GetPipelineLayout(GraphicsPipelineID id, uint8_t set) const { return m_pipelineLayouts[id][set].get(); }
+	vk::PipelineLayout GetPipelineLayout(GraphicsPipelineID id, uint8_t set) const { return m_pipelineLayouts[set]; }
 
 	vk::PipelineLayout GetPipelineLayout(GraphicsPipelineID id);
 
@@ -125,16 +92,12 @@ private:
 	// todo (hbedard): convert to linear arrays
 	// GrapicsPipelineID -> Array Index
 	std::vector<GraphicsPipelineShaders> m_shaders; // [id]
-	std::vector<SetVector<SmallVector<vk::DescriptorSetLayoutBinding>>> m_descriptorSetLayoutBindings; // [id][set][binding]
-	std::vector<SetVector<uint64_t>> m_pipelineCompatibility; // [id][set] (for each set, hash of bindings and constants)
-	std::vector<SetVector<vk::UniqueDescriptorSetLayout>> m_descriptorSetLayouts; // [id][set]
-	std::vector<SetVector<vk::UniquePipelineLayout>> m_pipelineLayouts; // [id][set]
 	std::vector<vk::UniquePipeline> m_pipelines; // [id]
 
 	// Skips shader reflection if set
-	SetVector<SmallVector<vk::DescriptorSetLayoutBinding>> m_descriptorSetLayoutBindingOverrides;
-	SetVector<vk::DescriptorSetLayout> m_descriptorSetLayoutOverrides; 
-	SetVector<vk::PipelineLayout> m_pipelineLayoutOverrides;
+	SetVector<SmallVector<vk::DescriptorSetLayoutBinding>> m_descriptorSetLayoutBindings;
+	SetVector<vk::DescriptorSetLayout> m_descriptorSetLayouts; 
+	SetVector<vk::PipelineLayout> m_pipelineLayouts;
 
 	GraphicsPipelineID m_nextID = 0;
 };

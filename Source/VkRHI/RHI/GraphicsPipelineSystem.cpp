@@ -222,14 +222,14 @@ GraphicsPipelineSystem::GraphicsPipelineSystem(ShaderSystem& shaderSystem)
 	: m_shaderSystem(&shaderSystem)
 {}
 
-void GraphicsPipelineSystem::SetDefaultLayout(
+void GraphicsPipelineSystem::SetCommonLayout(
 	SetVector<SmallVector<vk::DescriptorSetLayoutBinding>> descriptorSetLayoutBindingOverrides,
 	SetVector<vk::DescriptorSetLayout> descriptorSetLayoutOverrides,
 	SetVector<vk::PipelineLayout> pipelineLayoutOverrides)
 {
-	m_descriptorSetLayoutBindingOverrides = std::move(descriptorSetLayoutBindingOverrides);
-	m_descriptorSetLayoutOverrides = std::move(descriptorSetLayoutOverrides);
-	m_pipelineLayoutOverrides = std::move(pipelineLayoutOverrides);
+	m_descriptorSetLayoutBindings = std::move(descriptorSetLayoutBindingOverrides);
+	m_descriptorSetLayouts = std::move(descriptorSetLayoutOverrides);
+	m_pipelineLayouts = std::move(pipelineLayoutOverrides);
 }
 
 GraphicsPipelineID GraphicsPipelineSystem::CreateGraphicsPipeline(
@@ -317,63 +317,6 @@ void GraphicsPipelineSystem::ResetGraphicsPipeline(
 		1, &colorBlendAttachment
 	);
 
-	// Combine descriptor set layout bindings from vertex and fragment shader
-	if (!m_pipelineLayoutOverrides.empty())
-	{
-		// todo (hbedard): pretty sure it's not legit to make another unique handle
-		// from raw handles that already have a unique handle
-		::ReserveIndex(id, m_descriptorSetLayoutBindings);
-		m_descriptorSetLayoutBindings[id] = m_descriptorSetLayoutBindingOverrides;
-
-		::ReserveIndex(id, m_descriptorSetLayouts);
-		m_descriptorSetLayouts[id].reserve(m_descriptorSetLayoutOverrides.size());
-		for (const auto& layout : m_descriptorSetLayoutOverrides)
-		{
-			m_descriptorSetLayouts[id].emplace_back(layout);
-		}
-
-		::ReserveIndex(id, m_pipelineLayouts);
-		m_pipelineLayouts[id].reserve(m_pipelineLayoutOverrides.size());
-		for (const auto& layout : m_pipelineLayoutOverrides)
-		{
-			m_pipelineLayouts[id].emplace_back(layout);
-		}
-	}
-	else
-	{
-		auto vertexBindings = m_shaderSystem->GetDescriptorSetLayoutBindings(vertexShaderID);
-		GraphicsPipelineHelpers::RemoveDuplicateBindings(vertexBindings);
-
-		auto fragmentBindings = m_shaderSystem->GetDescriptorSetLayoutBindings(fragmentShaderID);
-		GraphicsPipelineHelpers::RemoveDuplicateBindings(fragmentBindings);
-
-		::ReserveIndex(id, m_descriptorSetLayoutBindings);
-		m_descriptorSetLayoutBindings[id] = GraphicsPipelineHelpers::CombineDescriptorSetLayoutBindings(vertexBindings, fragmentBindings);
-
-		// Create descriptor set layouts
-		::ReserveIndex(id, m_descriptorSetLayouts);
-		m_descriptorSetLayouts[id] = GraphicsPipelineHelpers::CreateDescriptorSetLayoutsFromBindings(m_descriptorSetLayoutBindings[id]);
-
-		// Combine push constants from vertex and fragment shader
-		auto vertexPushConstantRanges = m_shaderSystem->GetPushConstantRanges(vertexShaderID);
-		auto fragmentPushConstantRanges = m_shaderSystem->GetPushConstantRanges(fragmentShaderID);
-		auto pushConstantRanges = GraphicsPipelineHelpers::CombinePushConstantRanges(vertexPushConstantRanges, fragmentPushConstantRanges);
-
-		// Build pipeline layouts for each set
-		::ReserveIndex(id, m_pipelineLayouts);
-		m_pipelineLayouts[id] = GraphicsPipelineHelpers::CreatePipelineLayoutsFromDescriptorSetLayouts(m_descriptorSetLayouts[id], pushConstantRanges);
-
-		// Compute hash pipeline descriptor bindings and push constants
-		// If two Graphics Pipelien have the same hash for a set,
-		// it means their pipeline layout for this set is compatible
-		::ReserveIndex(id, m_pipelineCompatibility);
-		m_pipelineCompatibility[id].resize(m_descriptorSetLayoutBindings[id].size());
-		for (size_t set = 0; set < m_descriptorSetLayoutBindings[id].size(); ++set)
-		{
-			m_pipelineCompatibility[id][set] = GraphicsPipelineHelpers::HashPipelineLayout(m_descriptorSetLayoutBindings[id][set], pushConstantRanges);
-		}
-	}
-
 	vk::PipelineDepthStencilStateCreateInfo depthStencilState(
 		{},
 		info.depthTestEnable, // depthTestEnable
@@ -398,7 +341,7 @@ void GraphicsPipelineSystem::ResetGraphicsPipeline(
 		&depthStencilState,
 		&colorBlending,
 		nullptr, // dynamicState
-		m_pipelineLayouts[id].back().get(), // the last one contains all sets
+		m_pipelineLayouts.back(),
 		info.renderPass
 	);
 
@@ -406,17 +349,7 @@ void GraphicsPipelineSystem::ResetGraphicsPipeline(
 	m_pipelines[id] = g_device->Get().createGraphicsPipelineUnique({}, graphicsPipelineCreateInfo).value; // todo (hbedard): only if it succeeds
 }
 
-bool GraphicsPipelineSystem::IsSetLayoutCompatible(GraphicsPipelineID a, GraphicsPipelineID b, uint8_t set) const
-{
-	const auto& compatibility = m_pipelineCompatibility[a];
-	const auto& otherCompatibility = m_pipelineCompatibility[b];
-	if (set >= compatibility.size() || set >= otherCompatibility.size())
-		return false;
-
-	return compatibility[set] == otherCompatibility[set];
-}
-
 vk::PipelineLayout GraphicsPipelineSystem::GetPipelineLayout(GraphicsPipelineID id)
 {
-	return m_pipelineLayouts[id].back().get(); // last one contains all sets
+	return m_pipelineLayouts.back(); // last one contains all sets
 }

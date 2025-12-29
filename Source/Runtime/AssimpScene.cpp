@@ -90,8 +90,6 @@ void AssimpScene::Reset(vk::CommandBuffer& commandBuffer, const RenderPass& rend
 
 	m_materialSystem->Reset(m_renderPass->Get(), m_imageExtent);
 	m_skybox->Reset(*m_renderPass, m_imageExtent);
-
-	UpdateMaterialDescriptors();
 }
 
 void AssimpScene::Load(vk::CommandBuffer commandBuffer)
@@ -108,7 +106,7 @@ void AssimpScene::Load(vk::CommandBuffer commandBuffer)
 
 	m_lightSystem->UploadToGPU(*m_commandBufferPool);
 	CreateViewUniformBuffers();
-	UpdateMaterialDescriptors();
+	m_materialSystem->UploadToGPU(*m_commandBufferPool, m_sceneTree, m_lightSystem, m_shadowSystem);
 	m_skybox->UploadToGPU(commandBuffer, *m_commandBufferPool);
 }
 
@@ -526,11 +524,6 @@ void AssimpScene::CreateViewUniformBuffers()
 	m_grid->SetViewBufferHandles(m_bindlessHandles.views);
 	m_skybox->SetViewBufferHandles(m_bindlessHandles.views);
 	m_materialSystem->SetViewBufferHandles(m_bindlessHandles.views);
-}
-
-void AssimpScene::UpdateMaterialDescriptors()
-{
-	m_materialSystem->UploadToGPU(*m_commandBufferPool, m_sceneTree, m_lightSystem, m_shadowSystem);
 }
 
 UniqueBuffer& AssimpScene::GetViewUniformBuffer(uint32_t imageIndex)
