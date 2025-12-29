@@ -1,12 +1,14 @@
 #pragma once
 
-#include "Renderer/TextureSystem.h"
-#include "Renderer/MaterialSystem.h"
-#include "Renderer/LightSystem.h"
-#include "Renderer/ShadowSystem.h"
-#include "Renderer/RenderState.h"
-#include "Renderer/Skybox.h"
-#include "Camera.h"
+#include <Renderer/TextureSystem.h>
+#include <Renderer/MaterialSystem.h>
+#include <Renderer/LightSystem.h>
+#include <Renderer/ShadowSystem.h>
+#include <Renderer/RenderState.h>
+#include <Renderer/Skybox.h>
+#include <Renderer/Bindless.h>
+#include <Renderer/Grid.h>
+#include <Camera.h>
 
 #include <assimp/Importer.hpp> 
 #include <assimp/scene.h>     
@@ -29,12 +31,15 @@ public:
 		std::string sceneFilename,
 		CommandBufferPool& commandBufferPool,
 		GraphicsPipelineSystem& graphicsPipelineSystem,
+		BindlessDescriptors& bindlessDescriptors,
+		BindlessDrawParams& bindlessDrawParams,
 		TextureSystem& textureSystem,
 		MeshAllocator& meshAllocator,
 		LightSystem& lightSystem,
 		MaterialSystem& materialSystem,
 		ShadowSystem& shadowSystem,
 		SceneTree& sceneTree,
+		Grid& grid,
 		const RenderPass& renderPass, vk::Extent2D imageExtent
 	);
 
@@ -44,11 +49,13 @@ public:
 
 	void Update(uint32_t imageIndex);
 
-	void DrawOpaqueObjects(vk::CommandBuffer commandBuffer, uint32_t frameIndex, RenderState& renderState) const;
-	
+	void BeginRender(RenderState& renderState, uint32_t frameIndex);
+	void DrawOpaqueObjects(RenderState& renderState) const;
+	void EndRender();
+
 	bool HasTransparentObjects() const { return m_transparentDrawCache.empty() == false; }
 	void SortTransparentObjects();
-	void DrawTransparentObjects(vk::CommandBuffer commandBuffer, uint32_t frameIndex, RenderState& renderState) const;
+	void DrawTransparentObjects(RenderState& renderState) const;
 
 	Camera& GetCamera() { return m_camera; } // todo: there should be a camera control or something
 
@@ -64,9 +71,15 @@ public:
 	const std::vector<MeshDrawInfo>& GetOpaqueDrawCommands() const { return m_opaqueDrawCache; }
 	const std::vector<MeshDrawInfo>& GetTransparentDrawCommands() const { return m_transparentDrawCache; }
 
+	const BindlessDrawParams& GetBindlessDrawParams() const
+	{
+		assert(m_bindlessDrawParams != nullptr);
+		return *m_bindlessDrawParams;
+	}
+
 private:
 	// Uses scene materials
-	void DrawSceneObjects(vk::CommandBuffer commandBuffer, uint32_t frameIndex, RenderState& state, const std::vector<MeshDrawInfo>& drawCalls) const;
+	void DrawSceneObjects(RenderState& state, const std::vector<MeshDrawInfo>& drawCalls) const;
 
 	void LoadScene(vk::CommandBuffer commandBuffer);
 	void LoadLights(vk::CommandBuffer buffer);
@@ -75,6 +88,8 @@ private:
 	void LoadNodeAndChildren(aiNode* node, glm::mat4 transform);
 	SceneNodeID LoadSceneNode(const aiNode& fileNode, glm::mat4 transform);
 	void LoadMaterials(vk::CommandBuffer commandBuffer);
+
+	void InitBindlessDescriptors();
 
 	void CreateViewUniformBuffers();
 
@@ -91,6 +106,8 @@ private:
 
 	const RenderPass* m_renderPass;
 	vk::Extent2D m_imageExtent;
+
+	uint32_t m_concurrentFrameIndex = 0;
 
 	// --- Camera --- //
 
@@ -115,6 +132,7 @@ private:
 	float m_maxVertexDist = 0.0f;
 	gsl::not_null<MeshAllocator*> m_meshAllocator;
 	gsl::not_null<SceneTree*> m_sceneTree;
+	gsl::not_null<Grid*> m_grid;
 
 	// --- Materials --- ///
 
@@ -136,4 +154,25 @@ private:
 	std::vector<MeshDrawInfo> m_transparentDrawCache;
 
 	std::unique_ptr<Skybox> m_skybox;
+
+	// todo (hbedard): not necessary?
+	struct BindlessHandles
+	{
+		std::vector<BufferHandle> views;
+		BufferHandle transforms = BufferHandle::Invalid;
+		BufferHandle lights = BufferHandle::Invalid;
+		BufferHandle materials = BufferHandle::Invalid;
+	} m_bindlessHandles;
+
+	struct BindlessRanges
+	{
+		BindlessDrawParamsHandle Surface = BindlessDrawParamsHandle::Invalid;
+		BindlessDrawParamsHandle Skybox = BindlessDrawParamsHandle::Invalid;
+		BindlessDrawParamsHandle ShadowMaps = BindlessDrawParamsHandle::Invalid;
+		BindlessDrawParamsHandle TexturedQuad = BindlessDrawParamsHandle::Invalid;
+		BindlessDrawParamsHandle Grid = BindlessDrawParamsHandle::Invalid;
+	} m_bindlessRanges;
+
+	gsl::not_null<BindlessDrawParams*> m_bindlessDrawParams;
+	gsl::not_null<BindlessDescriptors*> m_bindlessDescriptors;
 };

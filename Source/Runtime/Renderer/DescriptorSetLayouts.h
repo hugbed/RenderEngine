@@ -1,5 +1,6 @@
 #pragma once
 
+// todo (hbedard): obsolete with bindless
 enum class DescriptorSetIndex
 {
 	View = 0,

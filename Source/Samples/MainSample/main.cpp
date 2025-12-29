@@ -61,23 +61,41 @@ public:
 		, m_instance(instance)
 		, m_renderPass(std::make_unique<RenderPass>(m_swapchain->GetImageDescription().format))
 		, m_framebuffers(Framebuffer::FromSwapchain(*m_swapchain, m_renderPass->Get()))
+		, m_bindlessDescriptors()
+		, m_bindlessDrawParams(g_physicalDevice->GetMinUniformBufferOffsetAlignment(), m_bindlessDescriptors.GetDescriptorSetLayout())
 		, m_graphicsPipelineSystem(m_shaderSystem)
-		, m_textureSystem(basePath)
-		, m_materialSystem(m_renderPass->Get(), m_swapchain->GetImageDescription().extent, m_graphicsPipelineSystem, m_textureSystem, m_meshAllocator)
+		, m_bindlessFactory(m_bindlessDescriptors, m_bindlessDrawParams, m_graphicsPipelineSystem)
+		, m_textureSystem(basePath, m_bindlessDescriptors)
+		, m_materialSystem(
+			m_renderPass->Get(),
+			m_swapchain->GetImageDescription().extent,
+			m_graphicsPipelineSystem, m_textureSystem,
+			m_meshAllocator,
+			m_bindlessDescriptors,
+			m_bindlessDrawParams)
+		, m_lightSystem(m_bindlessDescriptors)
+		, m_sceneTree(m_bindlessDescriptors)
+		, m_grid(std::make_unique<Grid>(
+			*m_renderPass,
+			m_swapchain->GetImageDescription().extent,
+			m_graphicsPipelineSystem,
+			m_bindlessDrawParams))
 		, m_scene(std::make_unique<AssimpScene>(
 			std::move(basePath), std::move(sceneFile),
 			m_commandBufferPool,
 			m_graphicsPipelineSystem,
+			m_bindlessDescriptors,
+			m_bindlessDrawParams,
 			m_textureSystem,
 			m_meshAllocator,
 			m_lightSystem,
 			m_materialSystem,
 			m_shadowSystem,
 			m_sceneTree,
+			*m_grid,
 			*m_renderPass, m_swapchain->GetImageDescription().extent)
 		)
-		, m_shadowSystem(m_swapchain->GetImageDescription().extent, m_graphicsPipelineSystem, m_meshAllocator, m_sceneTree, m_lightSystem)
-		, m_grid(std::make_unique<Grid>(*m_renderPass, m_swapchain->GetImageDescription().extent, m_graphicsPipelineSystem))
+		, m_shadowSystem(m_swapchain->GetImageDescription().extent, m_graphicsPipelineSystem, m_meshAllocator, m_sceneTree, m_lightSystem, m_bindlessDescriptors, m_bindlessDrawParams)
 	{
 		window.SetMouseButtonCallback(reinterpret_cast<void*>(&m_inputSystem), InputSystem::OnMouseButton);
 		window.SetMouseScrollCallback(reinterpret_cast<void*>(&m_inputSystem), InputSystem::OnMouseScroll);
@@ -105,6 +123,9 @@ protected:
 		m_scene->Load(commandBuffer);
 		m_cameraController = std::make_unique<CameraController>(m_scene->GetCamera(), m_swapchain->GetImageDescription().extent);
 		InitShadowMaps(commandBuffer);
+		m_grid->UploadToGPU(commandBuffer);
+		m_textureSystem.UploadTextures(m_commandBufferPool);
+		m_bindlessDrawParams.Build(commandBuffer);
 
 		// Init ImGui
 		ImGuiVulkan::Resources resources = PopulateImGuiResources();
@@ -178,14 +199,7 @@ protected:
 			m_cameraController->Reset(m_scene->GetCamera(), imageExtent);
 
 			// Reset Shadow Maps
-			if (m_shadowSystem.GetShadowCount() > 0)
-			{
-				const UniqueBuffer& shadowPropertiesBuffer = m_shadowSystem.GetShadowTransformsBuffer();
-				m_materialSystem.UpdateShadowDescriptorSets(
-					m_shadowSystem.GetTexturesInfo(),
-					shadowPropertiesBuffer.Get(), shadowPropertiesBuffer.Size()
-				);
-			}
+			// todo (hbedard): need to do something here?
 
 			m_grid->Reset(*m_renderPass, imageExtent);
 
@@ -221,21 +235,31 @@ protected:
 		);
 		commandBuffer->begin({ vk::CommandBufferUsageFlagBits::eRenderPassContinue, &info });
 		{
-			RenderState state(m_graphicsPipelineSystem, m_materialSystem);
+			RenderState renderState(m_graphicsPipelineSystem, m_materialSystem, m_scene->GetBindlessDrawParams());
+			renderState.BeginRender(commandBuffer.get(), frameIndex % m_commandBufferPool.GetNbConcurrentSubmits());
+			renderState.BindBindlessDescriptorSet(m_bindlessDescriptors.GetPipelineLayout(), m_bindlessDescriptors.GetDescriptorSet());
+
+			m_scene->BeginRender(renderState, frameIndex);
 
 			// Draw opaque materials first
-			m_scene->DrawOpaqueObjects(commandBuffer.get(), frameIndex, state);
+			m_scene->DrawOpaqueObjects(renderState);
 
 			// Then the grid
 			if (m_options.showGrid)
-				m_grid->Draw(commandBuffer.get());
+			{
+				m_grid->Draw(renderState); // todo (hbedard): grid should be in the scene!
+			}
 
 			// Draw transparent objects last (sorted by distance to camera)
-			m_scene->DrawTransparentObjects(commandBuffer.get(), frameIndex, state);
+			m_scene->DrawTransparentObjects(renderState);
 
 			// UI/Utilities last
 			if (m_options.showShadowMapPreview && m_shadowMapPreviewQuad != nullptr)
-				m_shadowMapPreviewQuad->Draw(commandBuffer.get());
+				m_shadowMapPreviewQuad->Draw(renderState);
+
+			m_scene->EndRender();
+
+			renderState.EndRender();
 		}
 		commandBuffer->end();
 	}
@@ -299,11 +323,6 @@ protected:
 		if (m_shadowSystem.GetShadowCount() > 0)
 		{
 			m_shadowSystem.UploadToGPU();
-			const UniqueBuffer& shadowPropertiesBuffer = m_shadowSystem.GetShadowTransformsBuffer();
-			m_materialSystem.UpdateShadowDescriptorSets(
-				m_shadowSystem.GetTexturesInfo(),
-				shadowPropertiesBuffer.Get(), shadowPropertiesBuffer.Size()
-			);
 		}
 
 		if (m_options.showShadowMapPreview)
@@ -318,6 +337,8 @@ protected:
 						*m_renderPass,
 						m_swapchain->GetImageDescription().extent,
 						m_graphicsPipelineSystem,
+						m_bindlessDescriptors,
+						m_bindlessDrawParams,
 						vk::ImageLayout::eDepthStencilReadOnlyOptimal
 					);
 				}
@@ -335,10 +356,14 @@ protected:
 
 	std::vector<MeshDrawInfo> drawCalls; // to preserve allocated memory
 
-	void RenderShadowMaps(vk::CommandBuffer& commandBuffer, uint32_t frameIndex)
+	void RenderShadowMaps(vk::CommandBuffer& commandBuffer, uint32_t imageIndex)
 	{
 		if (m_shadowSystem.GetShadowCount() > 0)
 		{
+			RenderState renderState(m_graphicsPipelineSystem, m_materialSystem, m_scene->GetBindlessDrawParams());
+			renderState.BeginRender(commandBuffer, imageIndex % m_commandBufferPool.GetNbConcurrentSubmits());
+			renderState.BindBindlessDescriptorSet(m_bindlessDescriptors.GetPipelineLayout(), m_bindlessDescriptors.GetDescriptorSet());
+
 			const std::vector<MeshDrawInfo>& opaqueDrawCalls = m_scene->GetOpaqueDrawCommands();
 			const std::vector<MeshDrawInfo>& transparentDrawCalls = m_scene->GetTransparentDrawCommands();
 
@@ -347,7 +372,9 @@ protected:
 			std::copy(transparentDrawCalls.begin(), transparentDrawCalls.end(), drawCalls.begin() + opaqueDrawCalls.size());
 
 			m_shadowSystem.Update(m_scene->GetCamera(), m_scene->GetBoundingBox());
-			m_shadowSystem.Render(commandBuffer, frameIndex, drawCalls);
+
+			m_shadowSystem.Render(renderState, drawCalls);
+			renderState.EndRender();
 		}
 	}
 
@@ -402,8 +429,11 @@ private:
 	std::unique_ptr<RenderPass> m_renderPass;
 	std::vector<Framebuffer> m_framebuffers;
 
+	BindlessDescriptors m_bindlessDescriptors;
+	BindlessDrawParams m_bindlessDrawParams;
 	ShaderSystem m_shaderSystem;
 	GraphicsPipelineSystem m_graphicsPipelineSystem;
+	BindlessFactory m_bindlessFactory; // todo (hbedard): remove that
 	TextureSystem m_textureSystem;
 	LightSystem m_lightSystem;
 	MaterialSystem m_materialSystem;
@@ -417,9 +447,9 @@ private:
 	vk::UniqueCommandPool m_secondaryCommandPool;
 	std::vector<vk::UniqueCommandBuffer> m_renderPassCommandBuffers;
 
+	std::unique_ptr<Grid> m_grid;
 	std::unique_ptr<AssimpScene> m_scene;
 	std::unique_ptr<CameraController> m_cameraController;
-	std::unique_ptr<Grid> m_grid;
 	std::unique_ptr<TexturedQuad> m_shadowMapPreviewQuad;
 };
 

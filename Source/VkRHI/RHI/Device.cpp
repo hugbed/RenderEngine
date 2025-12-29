@@ -43,15 +43,16 @@ Device::Device(const Instance& instance, const PhysicalDevice& physicalDevice)
 	vkGetPhysicalDeviceFeatures2(physicalDevice.Get(), deviceFeatures);
 	deviceFeatures.features.samplerAnisotropy = true;
 
+	// For bindless:
 	// Non-uniform indexing and update after bind
 	// binding flags for textures, uniforms, and buffers
-	// are required for our extension
 	assert(descriptorIndexingFeatures.shaderSampledImageArrayNonUniformIndexing);
 	assert(descriptorIndexingFeatures.descriptorBindingSampledImageUpdateAfterBind);
 	assert(descriptorIndexingFeatures.shaderUniformBufferArrayNonUniformIndexing);
 	assert(descriptorIndexingFeatures.descriptorBindingUniformBufferUpdateAfterBind);
 	assert(descriptorIndexingFeatures.shaderStorageBufferArrayNonUniformIndexing);
 	assert(descriptorIndexingFeatures.descriptorBindingStorageBufferUpdateAfterBind);
+	assert(descriptorIndexingFeatures.descriptorBindingPartiallyBound);
 
 	vk::DeviceCreateInfo createInfo(
 		vk::DeviceCreateFlags{},						// flags

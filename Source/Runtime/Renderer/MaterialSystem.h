@@ -3,13 +3,14 @@
 #include <Renderer/LightSystem.h>
 #include <Renderer/TextureSystem.h>
 #include <Renderer/DescriptorSetLayouts.h>
+#include <Renderer/MeshAllocator.h>
 #include <RHI/GraphicsPipelineSystem.h>
 #include <RHI/RenderPass.h>
 #include <AssetPath.h>
 #include <hash.h>
 #include <glm_includes.h>
-
 #include <vulkan/vulkan.hpp>
+
 #include <gsl/pointers>
 #include <gsl/span>
 #include <vector>
@@ -19,6 +20,10 @@
 #include <filesystem>
 
 class MeshAllocator;
+class BindlessDescriptors;
+class SceneTree;
+class ShadowSystem;
+class RenderState;
 
 // todo: find better naming for those structures
 
@@ -64,7 +69,7 @@ struct LitMaterialProperties
 {
 	PhongMaterialProperties phong;
 	EnvironmentMaterialProperties env;
-	glm::aligned_int32 textures[(uint8_t)PhongMaterialTextures::eCount];
+	TextureHandle textures[(uint8_t)PhongMaterialTextures::eCount]; // todo (hbedard): should I used aligned everywhere?
 };
 
 struct Material
@@ -110,58 +115,39 @@ using MaterialInstanceID = uint32_t;
 class MaterialSystem
 {
 public:
-	static constexpr Material::ShadingModel kShadingModel = Material::ShadingModel::Lit; // todo: template by ConstantType, PropertiesType
+	static constexpr Material::ShadingModel kShadingModel = Material::ShadingModel::Lit; // todo (hbedard): also shading model = surface
 	static const AssetPath kVertexShader;
 	static const AssetPath kFragmentShader;
-
-	struct ShaderConstants
-	{
-		uint32_t nbLights = 1;
-		uint32_t nbShadowMaps = 12;
-		uint32_t nbSamplers2D = 64;
-		uint32_t nbSamplersCube = 64;
-	};
 
 	MaterialSystem(
 		vk::RenderPass renderPass,
 		vk::Extent2D swapchainExtent,
 		GraphicsPipelineSystem& graphicsPipelineSystem,
 		TextureSystem& textureSystem,
-		MeshAllocator& meshAllocator
+		MeshAllocator& meshAllocator,
+		BindlessDescriptors& bindlessDescriptors,
+		BindlessDrawParams& bindlessDrawParams
 	);
-
-	~MaterialSystem();
 
 	IMPLEMENT_MOVABLE_ONLY(MaterialSystem)
 
 	void Reset(vk::RenderPass renderPass, vk::Extent2D extent);
 	
+	void Draw(RenderState& renderState, gsl::span<const MeshDrawInfo> drawCalls) const;
+
+	void SetViewBufferHandles(gsl::span<BufferHandle> viewBufferHandles);
+
 	// Reserve a material ID for a given set of material properties
 	// The graphics pipeline and GPU resources will not be created until UploadToGPU is called
 	MaterialInstanceID CreateMaterialInstance(const LitMaterialInstanceInfo& materialInfo);
 
 	// This can be called once the total number of resources is known (constants)
 	// So that actual GPU resources are created and uploaded
-	void UploadToGPU(CommandBufferPool& commandBufferPool, ShaderConstants shaderConstants);
-
-	// Set 0
-	void UpdateViewDescriptorSets(
-		const VectorView<vk::Buffer>& viewUniformBuffers, size_t viewBufferSize,
-		vk::Buffer lightsUniformBuffer, size_t lightsBufferSize
-	) const;
-
-	void UpdateShadowDescriptorSets(
-		const SmallVector<vk::DescriptorImageInfo, 16>& shadowMaps,
-		vk::Buffer shadowDataBuffer, size_t shadowDataBufferSize
-	) const;
-
-	// Set 1
-	void UpdateSceneDescriptorSet(
-		vk::Buffer sceneBuffer, size_t sceneBufferSize
-	) const;
-
-	// Set 2
-	void UpdateMaterialDescriptorSet() const;
+	void UploadToGPU(
+		CommandBufferPool& commandBufferPool,
+		gsl::not_null<SceneTree*> sceneTree,
+		gsl::not_null<LightSystem*> lightSystem,
+		gsl::not_null<ShadowSystem*> shadowSystem);
 
 	// -- Getters -- //
 
@@ -173,25 +159,39 @@ public:
 	
 	GraphicsPipelineID GetGraphicsPipelineID(MaterialInstanceID materialInstanceID) const { return m_graphicsPipelineIDs[materialInstanceID]; }
 
-	vk::DescriptorSet GetDescriptorSet(DescriptorSetIndex setIndex, uint8_t imageIndex = 0) const { return m_descriptorSets[(size_t)setIndex][imageIndex].get(); }
-
 	bool IsTransparent(MaterialInstanceID materialInstanceID) const { return m_pipelineProperties[materialInstanceID].isTransparent; }
 
+	BufferHandle GetUniformBufferHandle() const { return m_uniformBufferHandle; }
+
+	vk::PipelineLayout GetPipelineLayout() const;
+
 private:
+	struct SurfaceLitDrawParams
+	{
+		BufferHandle view;
+		BufferHandle transforms;
+		BufferHandle lights;
+		uint32_t lightCount;
+		BufferHandle materials;
+		BufferHandle shadowTransforms; // todo (hbedard): light transforms? what's this?
+		// todo (hbedard): also handle textures through this!
+		//TextureHandle textures2D; // material textures & shadow maps
+		//TextureHandle texturesCube;
+		uint32_t padding[2];
+	};
+	SurfaceLitDrawParams m_drawParams;
+	BindlessDrawParamsHandle m_drawParamsHandle;
+	std::vector<BufferHandle> m_viewBufferHandles;
+
 	GraphicsPipelineID LoadGraphicsPipeline(const LitMaterialInstanceInfo& materialInfo);
 
 	void CreatePendingInstances();
 	void CreateAndUploadUniformBuffer(CommandBufferPool& commandBufferPool);
-	void CreateDescriptorSets(size_t nbConcurrentSubmits);
-	void CreateDescriptorPool(uint8_t numConcurrentFrames);
-
-	const UniqueBufferWithStaging& GetUniformBuffer() const { return *m_uniformBuffer; }
 
 	vk::DescriptorSetLayout GetDescriptorSetLayout(DescriptorSetIndex setIndex) const;
 
 	vk::RenderPass m_renderPass; // light/color pass, there could be others
 	vk::Extent2D m_imageExtent;
-	ShaderConstants m_constants;
 
 	gsl::not_null<TextureSystem*> m_textureSystem;
 	gsl::not_null<GraphicsPipelineSystem*> m_graphicsPipelineSystem;
@@ -209,8 +209,10 @@ private:
 
 	// GPU resources
 	std::unique_ptr<UniqueBufferWithStaging> m_uniformBuffer; // containing all LitMaterialProperties
-	std::array<std::vector<vk::UniqueDescriptorSet>, (size_t)DescriptorSetIndex::Count> m_descriptorSets; // [descriptorSetIndex][frame]
-	vk::UniqueDescriptorPool m_descriptorPool;
+	gsl::not_null<BindlessDescriptors*> m_bindlessDescriptors;
+	gsl::not_null<BindlessDrawParams*> m_bindlessDrawParams;
+	BufferHandle m_uniformBufferHandle = BufferHandle::Invalid;
+	vk::PipelineLayout m_pipelineLayout;
 
 	MaterialInstanceID m_nextID = 0;
 };

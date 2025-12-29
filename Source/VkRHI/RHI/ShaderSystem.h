@@ -4,6 +4,7 @@
 #include <RHI/spirv_vk.h>
 #include <vulkan/vulkan.hpp>
 
+#include <gsl/pointers>
 #include <string>
 #include <optional>
 #include <vector>
@@ -69,7 +70,7 @@ public:
 	ShaderInstanceID CreateShaderInstance(ShaderID shaderID);
 	ShaderInstanceID CreateShaderInstance(
 		ShaderID shaderID,
-		const void* specializationData,
+		gsl::not_null<const void*> specializationData,
 		SmallVector<vk::SpecializationMapEntry> specializationConstants
 	);
 

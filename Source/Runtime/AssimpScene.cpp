@@ -8,6 +8,7 @@
 #define _USE_MATH_DEFINES
 #include <math.h>
 #include <string>
+#include <filesystem>
 
 namespace
 {
@@ -38,17 +39,21 @@ namespace
 	}
 }
 
+// todo (hbedard): makes no sense to create stuff outside and pass all this here :)
 AssimpScene::AssimpScene(
 	std::string basePath,
 	std::string sceneFilename,
 	CommandBufferPool& commandBufferPool,
 	GraphicsPipelineSystem& graphicsPipelineSystem,
+	BindlessDescriptors& bindlessDescriptors,
+	BindlessDrawParams& bindlessDrawParams,
 	TextureSystem& textureSystem,
 	MeshAllocator& meshAllocator,
 	LightSystem& lightSystem,
 	MaterialSystem& materialSystem,
 	ShadowSystem& shadowSystem,
 	SceneTree& sceneTree,
+	Grid& grid,
 	const RenderPass& renderPass, vk::Extent2D imageExtent
 )
 	: m_commandBufferPool(&commandBufferPool)
@@ -64,12 +69,15 @@ AssimpScene::AssimpScene(
 	, m_materialSystem(&materialSystem)
 	, m_shadowSystem(&shadowSystem)
 	, m_sceneTree(&sceneTree)
+	, m_grid(&grid)
 	, m_camera(
 		1.0f * glm::vec3(1.0f, 1.0f, 1.0f),
 		glm::vec3(0.0f, 0.0f, 0.0f),
 		glm::vec3(0.0f, 0.0f, 1.0f), 45.0f, 0.01f, 100.0f,
 		m_imageExtent.width, m_imageExtent.height)
 	, m_boundingBox()
+	, m_bindlessDrawParams(&bindlessDrawParams)
+	, m_bindlessDescriptors(&bindlessDescriptors)
 {
 }
 
@@ -88,7 +96,13 @@ void AssimpScene::Reset(vk::CommandBuffer& commandBuffer, const RenderPass& rend
 
 void AssimpScene::Load(vk::CommandBuffer commandBuffer)
 {
-	m_skybox = std::make_unique<Skybox>(*m_renderPass, m_imageExtent, *m_textureSystem, *m_graphicsPipelineSystem);
+	m_skybox = std::make_unique<Skybox>(
+		*m_renderPass,
+		m_imageExtent,
+		*m_textureSystem,
+		*m_graphicsPipelineSystem,
+		*m_bindlessDescriptors,
+		*m_bindlessDrawParams);
 
 	LoadScene(commandBuffer);
 
@@ -96,6 +110,14 @@ void AssimpScene::Load(vk::CommandBuffer commandBuffer)
 	CreateViewUniformBuffers();
 	UpdateMaterialDescriptors();
 	m_skybox->UploadToGPU(commandBuffer, *m_commandBufferPool);
+}
+
+void AssimpScene::InitBindlessDescriptors()
+{
+	// These won't change so we can create them once
+	m_bindlessHandles.transforms = m_sceneTree->GetTransformsBufferHandle();
+	m_bindlessHandles.lights = m_lightSystem->GetLightsBufferHandle();
+	m_bindlessHandles.materials = m_materialSystem->GetUniformBufferHandle();
 }
 
 void AssimpScene::Update(uint32_t imageIndex)
@@ -111,47 +133,39 @@ void AssimpScene::Update(uint32_t imageIndex)
 	memcpy(uniformBuffer.GetMappedData(), reinterpret_cast<const void*>(&m_viewUniforms), sizeof(LitViewProperties));
 }
 
-void AssimpScene::DrawOpaqueObjects(vk::CommandBuffer commandBuffer, uint32_t frameIndex, RenderState& renderState) const
+void AssimpScene::BeginRender(RenderState& renderState, uint32_t frameIndex)
 {
-	DrawSceneObjects(commandBuffer, frameIndex, renderState, m_opaqueDrawCache);
+	m_concurrentFrameIndex = frameIndex % m_commandBufferPool->GetNbConcurrentSubmits();
+}
+
+void AssimpScene::DrawOpaqueObjects(RenderState& renderState) const
+{
+	DrawSceneObjects(renderState, m_opaqueDrawCache);
 
 	// With Skybox last (to prevent processing fragments for nothing)
-	{
-		uint32_t concurrentFrameIndex = frameIndex % m_commandBufferPool->GetNbConcurrentSubmits();
-		vk::DescriptorSet viewDescriptorSet = m_unlitViewDescriptorSets[concurrentFrameIndex].get();
-		renderState.BindPipeline(commandBuffer, m_skybox->GetGraphicsPipelineID());
-		renderState.BindView(commandBuffer, Material::ShadingModel::Unlit, viewDescriptorSet);
-		m_skybox->Draw(commandBuffer, frameIndex);
-	}
+	m_skybox->Draw(renderState);
 }
 
-void AssimpScene::DrawTransparentObjects(vk::CommandBuffer commandBuffer, uint32_t frameIndex, RenderState& renderState) const
+void AssimpScene::EndRender()
 {
-	DrawSceneObjects(commandBuffer, frameIndex, renderState, m_transparentDrawCache);
+	// todo (hbedard): need to do anything here?
 }
 
-void AssimpScene::DrawSceneObjects(vk::CommandBuffer commandBuffer, uint32_t frameIndex, RenderState& state, const std::vector<MeshDrawInfo>& drawCalls) const
+void AssimpScene::DrawTransparentObjects(RenderState& renderState) const
 {
-	uint32_t currentFrameIndex = frameIndex % m_commandBufferPool->GetNbConcurrentSubmits();
+	DrawSceneObjects(renderState, m_transparentDrawCache);
+}
 
+void AssimpScene::DrawSceneObjects(RenderState& renderState, const std::vector<MeshDrawInfo>& drawCalls) const
+{
 	// Bind the one big vertex + index buffers
 	if (drawCalls.empty() == false)
 	{
+		vk::CommandBuffer commandBuffer = renderState.GetCommandBuffer();
 		m_meshAllocator->BindGeometry(commandBuffer);
 	}
 
-	for (const auto& drawItem : drawCalls)
-	{
-		auto shadingModel = drawItem.mesh.shadingModel;
-		vk::DescriptorSet viewDescriptorSet = m_materialSystem->GetDescriptorSet(DescriptorSetIndex::View, currentFrameIndex);
-		state.BindPipeline(commandBuffer, m_materialSystem->GetGraphicsPipelineID(drawItem.mesh.materialInstanceID));
-		state.BindView(commandBuffer, shadingModel, viewDescriptorSet);
-		state.BindSceneNode(commandBuffer, drawItem.sceneNodeID);
-		state.BindMaterial(commandBuffer, drawItem.mesh.materialInstanceID);
-
-		// Draw
-		commandBuffer.drawIndexed(drawItem.mesh.nbIndices, 1, drawItem.mesh.indexOffset, 0, 0);
-	}
+	m_materialSystem->Draw(renderState, gsl::span(drawCalls.data(), drawCalls.size()));
 }
 
 void AssimpScene::ResetCamera()
@@ -360,7 +374,7 @@ SceneNodeID AssimpScene::LoadSceneNode(const aiNode& fileNode, glm::mat4 transfo
 			mesh.indexOffset = m_meshAllocator->GetIndexCount();
 			mesh.nbIndices = (vk::DeviceSize)aMesh->mNumFaces * aMesh->mFaces->mNumIndices;
 			mesh.materialInstanceID = m_materials[aMesh->mMaterialIndex];
-			mesh.shadingModel = Material::ShadingModel::Lit;
+			mesh.shadingModel = static_cast<uint32_t>(Material::ShadingModel::Lit);
 			meshes.push_back(std::move(mesh));
 		}
 
@@ -449,7 +463,7 @@ void AssimpScene::LoadMaterials(vk::CommandBuffer commandBuffer)
 //#endif
 	
 		// Create default textures
-		TextureID dummyTextureID = m_textureSystem->LoadTexture(AssetPath("/Engine/Textures/dummy_texture.png"));
+		TextureHandle dummyTextureID = m_textureSystem->LoadTexture(AssetPath("/Engine/Textures/dummy_texture.png"));
 		for (int textureIndex = 0; textureIndex < (int)PhongMaterialTextures::eCount; ++textureIndex)
 			materialInfo.properties.textures[textureIndex] = dummyTextureID;
 
@@ -475,22 +489,21 @@ void AssimpScene::LoadMaterials(vk::CommandBuffer commandBuffer)
 		materialInfo.properties.env.metallic = 0.0f;
 		materialInfo.properties.env.transmission = 0.0f;
 
-		TextureID skyboxCubeMap = m_skybox->GetCubeMap();
-		if (skyboxCubeMap != ~0)
-			materialInfo.properties.env.cubeMapTexture = skyboxCubeMap;
+		TextureHandle skyboxTexture = m_skybox->GetTextureHandle();
+		if (skyboxTexture != TextureHandle::Invalid)
+			materialInfo.properties.env.cubeMapTexture = static_cast<glm::aligned_int32>(skyboxTexture);
 
 		auto materialInstanceID = m_materialSystem->CreateMaterialInstance(materialInfo);
 
 		// Keep ownership of the material instance
 		m_materials[i] = materialInstanceID;
 	}
-
-	m_textureSystem->UploadTextures(*m_commandBufferPool);
 }
 
 void AssimpScene::CreateViewUniformBuffers()
 {
 	// Per view
+	const vk::BufferUsageFlagBits bufferUsage = vk::BufferUsageFlagBits::eUniformBuffer;
 	m_viewUniformBuffers.clear();
 	m_viewUniformBuffers.reserve(m_commandBufferPool->GetNbConcurrentSubmits());
 	for (uint32_t i = 0; i < m_commandBufferPool->GetNbConcurrentSubmits(); ++i)
@@ -499,88 +512,25 @@ void AssimpScene::CreateViewUniformBuffers()
 			vk::BufferCreateInfo(
 				{},
 				sizeof(LitViewProperties),
-				vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eTransferSrc // needs TransferSrc?
+				bufferUsage | vk::BufferUsageFlagBits::eTransferSrc // needs TransferSrc?
 			), VmaAllocationCreateInfo{ VMA_ALLOCATION_CREATE_MAPPED_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU }
 		);
 	}
+
+	m_bindlessHandles.views.reserve(m_viewUniformBuffers.size());
+	for (uint32_t i = 0; i < m_viewUniformBuffers.size(); ++i)
+	{
+		m_bindlessHandles.views.push_back(m_bindlessDescriptors->StoreBuffer(m_viewUniformBuffers[i].Get(), bufferUsage));
+	}
+
+	m_grid->SetViewBufferHandles(m_bindlessHandles.views);
+	m_skybox->SetViewBufferHandles(m_bindlessHandles.views);
+	m_materialSystem->SetViewBufferHandles(m_bindlessHandles.views);
 }
 
 void AssimpScene::UpdateMaterialDescriptors()
 {
-	// Create unlit view descriptor set (we don't have a material system for this yet)
-	// todo: this could be handled in skybox
-
-	if (m_descriptorPool)
-	{
-		for (auto& set : m_unlitViewDescriptorSets)
-			set.reset();
-
-		g_device->Get().resetDescriptorPool(m_descriptorPool.get());
-	}
-
-	// Set 0 (view): { 1 uniform buffer for view uniforms per concurrentFrames }
-	std::array<std::pair<vk::DescriptorType, uint16_t>, 1ULL> descriptorCount = {
-		std::make_pair(vk::DescriptorType::eUniformBuffer, static_cast<uint16_t>(m_commandBufferPool->GetNbConcurrentSubmits())),
-	};
-
-	SmallVector<vk::DescriptorPoolSize> poolSizes;
-	for (const auto& descriptor : descriptorCount)
-		poolSizes.emplace_back(descriptor.first, descriptor.second);
-
-	const uint32_t maxNbSets = m_commandBufferPool->GetNbConcurrentSubmits();
-	m_descriptorPool = g_device->Get().createDescriptorPoolUnique(vk::DescriptorPoolCreateInfo(
-		vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-		maxNbSets,
-		static_cast<uint32_t>(poolSizes.size()), poolSizes.data()
-	));
-
-	vk::DescriptorSetLayout viewSetLayout = m_skybox->GetDescriptorSetLayout((uint8_t)DescriptorSetIndex::View);
-	std::vector<vk::DescriptorSetLayout> setLayouts(m_commandBufferPool->GetNbConcurrentSubmits(), viewSetLayout);
-	m_unlitViewDescriptorSets = g_device->Get().allocateDescriptorSetsUnique(vk::DescriptorSetAllocateInfo(
-		m_descriptorPool.get(), (uint32_t)setLayouts.size(), setLayouts.data()
-	));
-
-	for (int frameIndex = 0; frameIndex < m_commandBufferPool->GetNbConcurrentSubmits(); ++frameIndex)
-	{
-		auto& viewDescriptorSet = m_unlitViewDescriptorSets[frameIndex];
-
-		vk::DescriptorBufferInfo descriptorBufferInfoView(m_viewUniformBuffers[frameIndex].Get(), 0, sizeof(LitViewProperties));
-		std::vector<vk::WriteDescriptorSet> writeDescriptorSets = {
-			vk::WriteDescriptorSet(
-				viewDescriptorSet.get(), 0, {},
-				1, vk::DescriptorType::eUniformBuffer, nullptr, &descriptorBufferInfoView
-			) // binding = 0
-		};
-
-		g_device->Get().updateDescriptorSets(static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
-	}
-
-	MaterialSystem::ShaderConstants constants = {
-		static_cast<uint32_t>(m_lightSystem->GetLightCount()),
-		std::max(static_cast<uint32_t>(m_shadowSystem->GetShadowCount()), 1U), // used as an array size, so it needs to be at least 1
-		static_cast<uint32_t>(m_textureSystem->GetTextureCount(ImageViewType::e2D)),
-		static_cast<uint32_t>(m_textureSystem->GetTextureCount(ImageViewType::eCube))
-	};
-	m_materialSystem->UploadToGPU(*m_commandBufferPool, std::move(constants));
-
-	// Bind view to material descriptor set
-	SmallVector<vk::Buffer> viewUniformBuffers;
-	viewUniformBuffers.reserve(m_viewUniformBuffers.size());
-	for (int i = 0; i < (int)m_viewUniformBuffers.size(); ++i)
-		viewUniformBuffers.push_back(m_viewUniformBuffers[i].Get());
-
-	auto [lightsBuffer, size] = m_lightSystem->GetUniformBuffer();
-	m_materialSystem->UpdateViewDescriptorSets(
-		viewUniformBuffers, m_viewUniformBuffers[0].Size(),
-		lightsBuffer, size
-	);
-
-	// Add scene bindings from the 2nd descriptor set to the material (3rd) descriptor set
-	const auto& transformsBuffer = m_sceneTree->GetTransformsBuffer();
-	m_materialSystem->UpdateSceneDescriptorSet(transformsBuffer.Get(), transformsBuffer.Size());
-
-	// Update material descriptor sets
-	m_materialSystem->UpdateMaterialDescriptorSet();
+	m_materialSystem->UploadToGPU(*m_commandBufferPool, m_sceneTree, m_lightSystem, m_shadowSystem);
 }
 
 UniqueBuffer& AssimpScene::GetViewUniformBuffer(uint32_t imageIndex)

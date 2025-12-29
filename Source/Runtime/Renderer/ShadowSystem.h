@@ -1,6 +1,5 @@
 #pragma once
 
-
 #include <Camera.h>
 #include <BoundingBox.h>
 #include <Renderer/LightSystem.h>
@@ -14,12 +13,16 @@
 #include <RHI/Image.h>
 #include <RHI/Device.h>
 #include <RHI/PhysicalDevice.h>
+#include <AssetPath.h>
 #include <hash.h>
 #include <glm_includes.h>
 #include <vulkan/vulkan.hpp>
 #include <gsl/pointers>
 
 class Scene;
+struct LitViewProperties;
+struct CombinedImageSampler;
+class RenderState;
 
 struct ShadowData
 {
@@ -36,10 +39,10 @@ public:
 		GraphicsPipelineSystem& graphicsPipelineSystem,
 		MeshAllocator& meshAllocator,
 		SceneTree& sceneTree,
-		LightSystem& lightSystem
+		LightSystem& lightSystem,
+		BindlessDescriptors& bindlessDescriptors,
+		BindlessDrawParams& bindlessDrawParams
 	);
-
-	~ShadowSystem();
 
 	IMPLEMENT_MOVABLE_ONLY(ShadowSystem)
 
@@ -51,41 +54,39 @@ public:
 	
 	void Update(const Camera& camera, BoundingBox sceneBoundingBox);
 
-	void Render(vk::CommandBuffer& commandBuffer, uint32_t frameIndex, const std::vector<MeshDrawInfo> drawCommands) const;
+	void Render(RenderState& renderState, const std::vector<MeshDrawInfo> drawCommands) const;
 
 	size_t GetShadowCount() const { return m_lights.size(); }
 
-	CombinedImageSampler GetCombinedImageSampler(ShadowID id) const
-	{
-		return CombinedImageSampler{ m_depthImages[id].get(), m_sampler.get() };
-	}
-
-	glm::mat4 GetLightTransform(ShadowID id) const
-	{
-		return m_properties[id].proj * m_properties[id].view;
-	}
-
-	vk::DescriptorSet GetDescriptorSet(DescriptorSetIndex setIndex) const
-	{
-		return m_descriptorSets[(size_t)setIndex].get();
-	}
+	glm::mat4 GetLightTransform(ShadowID id) const;
 
 	SmallVector<vk::DescriptorImageInfo, 16> GetTexturesInfo() const;
 
-	const UniqueBuffer& GetShadowTransformsBuffer() const
-	{
-		return *m_transformsBuffer;
-	}
+	BufferHandle GetMaterialShadowsBufferHandle() const { return m_materialShadowsBufferHandle; }
+
+	CombinedImageSampler GetCombinedImageSampler(ShadowID id) const;
 
 private:
-	// Common resources for all shadow maps
-	void CreateDescriptorPool();
-	
 	// Only created when we know the VertexShaderConstants
 	void CreateGraphicsPipeline();
-	void CreateDescriptorSets();
 
 private:
+	struct MaterialShadow
+	{
+		glm::aligned_mat4 transform;
+		TextureHandle shadowMapTextureHandle = TextureHandle::Invalid;
+		uint32_t padding[3];
+	};
+
+	struct ShadowMapDrawParams
+	{
+		BufferHandle meshTransforms;
+		BufferHandle shadowViews;
+		uint32_t padding[2];
+	};
+	ShadowMapDrawParams m_drawParams;
+	BindlessDrawParamsHandle m_drawParamsHandle = BindlessDrawParamsHandle::Invalid;
+
 	static const AssetPath kVertexShaderFile;
 	static const AssetPath kFragmentShaderFile;
 
@@ -96,19 +97,20 @@ private:
 	gsl::not_null<MeshAllocator*> m_meshAllocator;
 	gsl::not_null<SceneTree*> m_sceneTree;
 	gsl::not_null<LightSystem*> m_lightSystem;
+	gsl::not_null<BindlessDescriptors*> m_bindlessDescriptors;
+	gsl::not_null<BindlessDrawParams*> m_bindlessDrawParams;
 
 	// ShadowID -> Array index
 	std::vector<LightID> m_lights; // casting shadows
-	std::vector<LitViewProperties> m_properties;
+	std::vector<LitViewProperties> m_shadowViews;
+	std::vector<MaterialShadow> m_materialShadows;
 	std::vector<std::unique_ptr<Image>> m_depthImages; // todo: replace with Image (remove nullptr)
 	std::vector<vk::UniqueFramebuffer> m_framebuffers;
-	std::vector<glm::aligned_mat4> m_transforms;
 
 	// Use these resources for all shadow map rendering
 	vk::UniqueSampler m_sampler; // use the same sampler for all images
 	GraphicsPipelineID m_graphicsPipelineID; // all shadows use the same shaders
-	std::array<vk::UniqueDescriptorSet, 2> m_descriptorSets; // View, Model
-	VkDescriptorPool m_descriptorPool;
-	std::unique_ptr<UniqueBuffer> m_viewPropertiesBuffer; // for rendering shadow maps
-	std::unique_ptr<UniqueBuffer> m_transformsBuffer; // for rendering shadows on materials
+	std::unique_ptr<UniqueBuffer> m_shadowViewsBuffer; // for rendering shadow maps
+	std::unique_ptr<UniqueBuffer> m_materialShadowsBuffer; // for using shadows in material rendering
+	BufferHandle m_materialShadowsBufferHandle = BufferHandle::Invalid;
 };

@@ -1,9 +1,11 @@
 #pragma once
 
+#include <Renderer/Bindless.h> // todo (hbedard): sad to include this just for handle defines
 #include <RHI/Buffers.h>
 
 #include <glm_includes.h>
 #include <vulkan/vulkan.hpp>
+#include <gsl/pointers>
 #include <utility>
 
 class CommandBufferPool;
@@ -26,6 +28,8 @@ using LightID = uint32_t;
 class LightSystem
 {
 public:
+	explicit LightSystem(BindlessDescriptors& bindlessDescriptors);
+
 	void ReserveLights(size_t count)
 	{
 		m_lights.reserve(m_lights.size() + count);
@@ -42,16 +46,15 @@ public:
 
 	const PhongLight& GetLight(LightID id) const { return m_lights[id]; }
 
-	size_t GetLightCount() const { return m_lights.size(); }
+	uint32_t GetLightCount() const { return static_cast<uint32_t>(m_lights.size()); }
 
 	void UploadToGPU(CommandBufferPool& commandBufferPool);
 
-	std::pair<vk::Buffer, size_t> GetUniformBuffer() const
-	{
-		return std::make_pair(m_lightsUniformBuffer->Get(), m_lightsUniformBuffer->Size());
-	}
+	BufferHandle GetLightsBufferHandle() const { return m_lightsBufferHandle; }
 
 private:
 	std::vector<PhongLight> m_lights;
-	std::unique_ptr<UniqueBufferWithStaging> m_lightsUniformBuffer;
+	std::unique_ptr<UniqueBufferWithStaging> m_lightsBuffer;
+	gsl::not_null<BindlessDescriptors*> m_bindlessDescriptors;
+	BufferHandle m_lightsBufferHandle = BufferHandle::Invalid;
 };

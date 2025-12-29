@@ -51,6 +51,8 @@ public:
 
 	vk::SampleCountFlagBits GetMsaaSamples() { return m_msaaSamples; }
 
+	uint32_t GetMinUniformBufferOffsetAlignment() const { return m_minUniformBufferOffsetAlignment; }
+
 	value_type Get() const { return value_type(m_physicalDevice); }
 
 protected:
@@ -63,6 +65,8 @@ protected:
 
 	bool CheckDeviceExtensionSupport(vk::PhysicalDevice device) const;
 
+	uint32_t QueryMinUniformBufferOffsetAlignment() const;
+
 private:
 	PhysicalDevice(vk::Instance instance, vk::SurfaceKHR surface);
 
@@ -71,6 +75,7 @@ private:
 	vk::PhysicalDevice m_physicalDevice;
 	vk::SampleCountFlagBits m_msaaSamples;
 	QueueFamilyIndices m_indices;
+	uint32_t m_minUniformBufferOffsetAlignment;
 };
 
 extern PhysicalDevice* g_physicalDevice;

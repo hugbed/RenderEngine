@@ -29,7 +29,7 @@ void ProjectSettings::SaveToFile() const
             }
         }
     };
-    std::filesystem::path settingsFilePath = m_projectDir / (m_projectName + std::string(".pproj"));
+    std::filesystem::path settingsFilePath = m_projectDir / (m_projectName + std::string(".rproj"));
     std::ofstream os(settingsFilePath, std::ios::binary);
     os << tomlTable;
 }

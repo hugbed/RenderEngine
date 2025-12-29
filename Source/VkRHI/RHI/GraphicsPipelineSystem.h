@@ -57,6 +57,12 @@ public:
 
 	ShaderSystem& GetShaderSystem() const { return *m_shaderSystem; }
 
+	// todo (hbedard): maybe pass this in CreateGraphicsPipeline optionally, and if not passed it's read from reflection
+	void SetDefaultLayout(
+		SetVector<SmallVector<vk::DescriptorSetLayoutBinding>> descriptorSetLayoutBindingOverrides,
+		SetVector<vk::DescriptorSetLayout> descriptorSetLayoutOverrides,
+		SetVector<vk::PipelineLayout> pipelineLayoutOverrides);
+
 	auto CreateGraphicsPipeline(
 		ShaderInstanceID vertexShaderID,
 		ShaderInstanceID fragmentShaderID,
@@ -105,6 +111,8 @@ public:
 
 	vk::PipelineLayout GetPipelineLayout(GraphicsPipelineID id, uint8_t set) const { return m_pipelineLayouts[id][set].get(); }
 
+	vk::PipelineLayout GetPipelineLayout(GraphicsPipelineID id);
+
 private:
 	gsl::not_null<ShaderSystem*> m_shaderSystem;
 
@@ -114,6 +122,7 @@ private:
 		ShaderInstanceID fragmentShader;
 	};
 
+	// todo (hbedard): convert to linear arrays
 	// GrapicsPipelineID -> Array Index
 	std::vector<GraphicsPipelineShaders> m_shaders; // [id]
 	std::vector<SetVector<SmallVector<vk::DescriptorSetLayoutBinding>>> m_descriptorSetLayoutBindings; // [id][set][binding]
@@ -121,6 +130,11 @@ private:
 	std::vector<SetVector<vk::UniqueDescriptorSetLayout>> m_descriptorSetLayouts; // [id][set]
 	std::vector<SetVector<vk::UniquePipelineLayout>> m_pipelineLayouts; // [id][set]
 	std::vector<vk::UniquePipeline> m_pipelines; // [id]
+
+	// Skips shader reflection if set
+	SetVector<SmallVector<vk::DescriptorSetLayoutBinding>> m_descriptorSetLayoutBindingOverrides;
+	SetVector<vk::DescriptorSetLayout> m_descriptorSetLayoutOverrides; 
+	SetVector<vk::PipelineLayout> m_pipelineLayoutOverrides;
 
 	GraphicsPipelineID m_nextID = 0;
 };

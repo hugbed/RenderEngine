@@ -8,6 +8,7 @@
 
 #include <array>
 #include <map>
+#include <ranges>
 
 namespace
 {
@@ -24,9 +25,11 @@ namespace GraphicsPipelineHelpers
 		const VectorView<vk::DescriptorSetLayoutBinding>& bindings,
 		const VectorView<vk::PushConstantRange>& pushConstants)
 	{
+		// todo (hbedard): use chaining operation instead
 		size_t bindingsSize = bindings.size() * sizeof(vk::DescriptorSetLayoutBinding);
 		size_t pushConstantsSize = pushConstants.size() * sizeof(vk::PushConstantRange);
 
+		// todo (hbedard): implement templates
 		std::vector<uint8_t> buffer;
 		buffer.resize(bindingsSize + pushConstantsSize, 0);
 		
@@ -43,25 +46,54 @@ namespace GraphicsPipelineHelpers
 		return fnv_hash(buffer.data(), buffer.size());
 	}
 
-	[[nodiscard]] SetVector<SmallVector<vk::DescriptorSetLayoutBinding>> CombineDescriptorSetLayoutBindings(
-		const SetVector<SmallVector<vk::DescriptorSetLayoutBinding>>& bindings1, // bindings[set][binding]
-		const SetVector<SmallVector<vk::DescriptorSetLayoutBinding>>& bindings2)
+	[[nodiscard]] uint64_t HashDescriptorSetLayoutBinding(uint32_t setIndex, const vk::DescriptorSetLayoutBinding& binding)
 	{
-		SetVector<SmallVector<vk::DescriptorSetLayoutBinding>> descriptorSetLayoutBindings((std::max)(bindings1.size(), bindings2.size()));
+		uint64_t hash = fnv_hash(setIndex);
+		hash = fnv_hash(binding.binding, hash);
+		hash = fnv_hash(binding.descriptorType, hash);
+		return hash;
+	}
+
+	[[nodiscard]] SetVector<SmallVector<vk::DescriptorSetLayoutBinding>> CombineDescriptorSetLayoutBindings(
+		const SetVector<SmallVector<vk::DescriptorSetLayoutBinding>>& vertexBindings, // bindings[set][binding]
+		const SetVector<SmallVector<vk::DescriptorSetLayoutBinding>>& fragmentBindings)
+	{
+		SetVector<SmallVector<vk::DescriptorSetLayoutBinding>> descriptorSetLayoutBindings((std::max)(vertexBindings.size(), fragmentBindings.size()));
 
 		for (size_t set = 0; set < descriptorSetLayoutBindings.size(); ++set)
 		{
 			auto& descriptorSetLayoutBinding = descriptorSetLayoutBindings[set];
 
-			if (set < bindings1.size())
+			if (set < vertexBindings.size())
 			{
-				auto& vertexSetLayoutBindings = bindings1[set];
-				descriptorSetLayoutBinding.insert(descriptorSetLayoutBinding.end(), vertexSetLayoutBindings.begin(), vertexSetLayoutBindings.end());
+				const SmallVector<vk::DescriptorSetLayoutBinding>& vertexSetLayoutBindings = vertexBindings[set];
+				for (vk::DescriptorSetLayoutBinding binding : vertexSetLayoutBindings)
+				{
+					binding.stageFlags |= vk::ShaderStageFlagBits::eVertex;
+					descriptorSetLayoutBinding.push_back(binding);
+				}
 			}
-			if (set < bindings2.size())
+			if (set < fragmentBindings.size())
 			{
-				auto& fragmentSetLayoutBindings = bindings2[set];
-				descriptorSetLayoutBinding.insert(descriptorSetLayoutBinding.end(), fragmentSetLayoutBindings.begin(), fragmentSetLayoutBindings.end());
+				const SmallVector<vk::DescriptorSetLayoutBinding>& fragmentSetLayoutBindings = fragmentBindings[set];
+				for (vk::DescriptorSetLayoutBinding binding : fragmentSetLayoutBindings)
+				{
+					//assert(!"this doesn't work");
+					auto it = std::find_if(descriptorSetLayoutBinding.begin(), descriptorSetLayoutBinding.end(),
+						[binding, set](const vk::DescriptorSetLayoutBinding& otherBinding) {
+							return HashDescriptorSetLayoutBinding(set, binding) == HashDescriptorSetLayoutBinding(set, otherBinding)
+								&& binding.stageFlags != otherBinding.stageFlags;
+						});
+					if (it != descriptorSetLayoutBinding.end())
+					{
+						it->stageFlags |= vk::ShaderStageFlagBits::eFragment;
+					}
+					else
+					{
+						binding.stageFlags |= vk::ShaderStageFlagBits::eFragment;
+						descriptorSetLayoutBinding.push_back(binding);
+					}
+				}
 			}
 
 			// and sort them by bindings
@@ -73,6 +105,44 @@ namespace GraphicsPipelineHelpers
 		return descriptorSetLayoutBindings;
 	}
 
+	void RemoveDuplicateBindings(SetVector<SmallVector<vk::DescriptorSetLayoutBinding>>& bindings)
+	{
+		std::unordered_map<uint64_t, std::pair<uint32_t, uint32_t>> hashToIndex;
+		std::vector<std::pair<uint32_t, uint32_t>> bindingsToRemove;
+
+		for (uint32_t setIndex = 0; setIndex < bindings.size(); ++setIndex)
+		{
+			const auto& perSetBindings = bindings[setIndex];
+
+			for (uint32_t bindingIndex = 0; bindingIndex < perSetBindings.size(); ++bindingIndex)
+			{
+				const vk::DescriptorSetLayoutBinding& binding = perSetBindings[bindingIndex];
+				uint64_t hash = HashDescriptorSetLayoutBinding(setIndex, binding);
+				const std::pair<uint32_t, uint32_t> indices = std::make_pair(setIndex, bindingIndex);
+				if (auto [it, wasInserted] = hashToIndex.emplace(hash, indices); !wasInserted)
+				{
+					std::pair<uint32_t, uint32_t> existingIndices = it->second;
+					vk::DescriptorSetLayoutBinding& existingBinding = bindings[existingIndices.first][existingIndices.second];
+					existingBinding.descriptorCount = (std::max)(
+						existingBinding.descriptorCount,
+						binding.descriptorCount);
+
+					bindingsToRemove.push_back(indices);
+				}
+			}
+		}
+
+		for (const auto& [setIndex, bindingIndex] : std::ranges::reverse_view(bindingsToRemove))
+		{
+			bindings[setIndex].erase(bindings[setIndex].data() + bindingIndex);
+
+			if (bindings[setIndex].empty())
+			{
+				bindings.erase(bindings.begin() + setIndex);
+			}
+		}
+	}
+	
 	[[nodiscard]] SetVector<vk::UniqueDescriptorSetLayout> CreateDescriptorSetLayoutsFromBindings(
 		const SetVector<SmallVector<vk::DescriptorSetLayoutBinding>>& descriptorSetsLayoutBindings)
 	{
@@ -82,14 +152,15 @@ namespace GraphicsPipelineHelpers
 		{
 			auto& setBindings = descriptorSetsLayoutBindings[set];
 
+			vk::DescriptorBindingFlags defaultFlags = vk::DescriptorBindingFlagBits::ePartiallyBound | vk::DescriptorBindingFlagBits::eUpdateAfterBind;
 			SmallVector<vk::DescriptorBindingFlags> bindingFlags;
 			bindingFlags.reserve(setBindings.size());
 			for (const auto& setBinding : setBindings)
 			{
 				if (setBinding.descriptorCount == 0)
-					bindingFlags.emplace_back(vk::DescriptorBindingFlagBits::eVariableDescriptorCount);
+					bindingFlags.emplace_back(defaultFlags | vk::DescriptorBindingFlagBits::eVariableDescriptorCount);
 				else
-					bindingFlags.emplace_back();
+					bindingFlags.emplace_back(defaultFlags);
 			}
 
 			vk::DescriptorSetLayoutBindingFlagsCreateInfo bindingsFlagsInfo;
@@ -97,11 +168,10 @@ namespace GraphicsPipelineHelpers
 			bindingsFlagsInfo.pBindingFlags = bindingFlags.data();
 
 			vk::DescriptorSetLayoutCreateInfo createInfo;
+			createInfo.flags = vk::DescriptorSetLayoutCreateFlagBits::eUpdateAfterBindPool;
+			createInfo.setBindings(setBindings);
 			createInfo.pNext = &bindingsFlagsInfo;
-
-			descriptorSetLayouts.push_back(g_device->Get().createDescriptorSetLayoutUnique(vk::DescriptorSetLayoutCreateInfo(
-				{}, static_cast<uint32_t>(setBindings.size()), setBindings.data()
-			)));
+			descriptorSetLayouts.push_back(g_device->Get().createDescriptorSetLayoutUnique(createInfo));
 		}
 
 		return descriptorSetLayouts;
@@ -151,6 +221,16 @@ GraphicsPipelineInfo::GraphicsPipelineInfo(vk::RenderPass renderPass, vk::Extent
 GraphicsPipelineSystem::GraphicsPipelineSystem(ShaderSystem& shaderSystem)
 	: m_shaderSystem(&shaderSystem)
 {}
+
+void GraphicsPipelineSystem::SetDefaultLayout(
+	SetVector<SmallVector<vk::DescriptorSetLayoutBinding>> descriptorSetLayoutBindingOverrides,
+	SetVector<vk::DescriptorSetLayout> descriptorSetLayoutOverrides,
+	SetVector<vk::PipelineLayout> pipelineLayoutOverrides)
+{
+	m_descriptorSetLayoutBindingOverrides = std::move(descriptorSetLayoutBindingOverrides);
+	m_descriptorSetLayoutOverrides = std::move(descriptorSetLayoutOverrides);
+	m_pipelineLayoutOverrides = std::move(pipelineLayoutOverrides);
+}
 
 GraphicsPipelineID GraphicsPipelineSystem::CreateGraphicsPipeline(
 	ShaderInstanceID vertexShaderID,
@@ -238,33 +318,60 @@ void GraphicsPipelineSystem::ResetGraphicsPipeline(
 	);
 
 	// Combine descriptor set layout bindings from vertex and fragment shader
-	auto vertexBindings = m_shaderSystem->GetDescriptorSetLayoutBindings(vertexShaderID);
-	auto fragmentBindings = m_shaderSystem->GetDescriptorSetLayoutBindings(fragmentShaderID);
-
-	::ReserveIndex(id, m_descriptorSetLayoutBindings);
-	m_descriptorSetLayoutBindings[id] = GraphicsPipelineHelpers::CombineDescriptorSetLayoutBindings(vertexBindings, fragmentBindings);
-
-	// Create descriptor set layouts
-	::ReserveIndex(id, m_descriptorSetLayouts);
-	m_descriptorSetLayouts[id] = GraphicsPipelineHelpers::CreateDescriptorSetLayoutsFromBindings(m_descriptorSetLayoutBindings[id]);
-
-	// Combine push constants from vertex and fragment shader
-	auto vertexPushConstantRanges = m_shaderSystem->GetPushConstantRanges(vertexShaderID);
-	auto fragmentPushConstantRanges = m_shaderSystem->GetPushConstantRanges(fragmentShaderID);
-	auto pushConstantRanges = GraphicsPipelineHelpers::CombinePushConstantRanges(vertexPushConstantRanges, fragmentPushConstantRanges);
-
-	// Build pipeline layouts for each set
-	::ReserveIndex(id, m_pipelineLayouts);
-	m_pipelineLayouts[id] = GraphicsPipelineHelpers::CreatePipelineLayoutsFromDescriptorSetLayouts(m_descriptorSetLayouts[id], pushConstantRanges);
-
-	// Compute hash pipeline descriptor bindings and push constants
-	// If two Graphics Pipelien have the same hash for a set,
-	// it means their pipeline layout for this set is compatible
-	::ReserveIndex(id, m_pipelineCompatibility);
-	m_pipelineCompatibility[id].resize(m_descriptorSetLayoutBindings[id].size());
-	for (size_t set = 0; set < m_descriptorSetLayoutBindings[id].size(); ++set)
+	if (!m_pipelineLayoutOverrides.empty())
 	{
-		m_pipelineCompatibility[id][set] = GraphicsPipelineHelpers::HashPipelineLayout(m_descriptorSetLayoutBindings[id][set], pushConstantRanges);
+		// todo (hbedard): pretty sure it's not legit to make another unique handle
+		// from raw handles that already have a unique handle
+		::ReserveIndex(id, m_descriptorSetLayoutBindings);
+		m_descriptorSetLayoutBindings[id] = m_descriptorSetLayoutBindingOverrides;
+
+		::ReserveIndex(id, m_descriptorSetLayouts);
+		m_descriptorSetLayouts[id].reserve(m_descriptorSetLayoutOverrides.size());
+		for (const auto& layout : m_descriptorSetLayoutOverrides)
+		{
+			m_descriptorSetLayouts[id].emplace_back(layout);
+		}
+
+		::ReserveIndex(id, m_pipelineLayouts);
+		m_pipelineLayouts[id].reserve(m_pipelineLayoutOverrides.size());
+		for (const auto& layout : m_pipelineLayoutOverrides)
+		{
+			m_pipelineLayouts[id].emplace_back(layout);
+		}
+	}
+	else
+	{
+		auto vertexBindings = m_shaderSystem->GetDescriptorSetLayoutBindings(vertexShaderID);
+		GraphicsPipelineHelpers::RemoveDuplicateBindings(vertexBindings);
+
+		auto fragmentBindings = m_shaderSystem->GetDescriptorSetLayoutBindings(fragmentShaderID);
+		GraphicsPipelineHelpers::RemoveDuplicateBindings(fragmentBindings);
+
+		::ReserveIndex(id, m_descriptorSetLayoutBindings);
+		m_descriptorSetLayoutBindings[id] = GraphicsPipelineHelpers::CombineDescriptorSetLayoutBindings(vertexBindings, fragmentBindings);
+
+		// Create descriptor set layouts
+		::ReserveIndex(id, m_descriptorSetLayouts);
+		m_descriptorSetLayouts[id] = GraphicsPipelineHelpers::CreateDescriptorSetLayoutsFromBindings(m_descriptorSetLayoutBindings[id]);
+
+		// Combine push constants from vertex and fragment shader
+		auto vertexPushConstantRanges = m_shaderSystem->GetPushConstantRanges(vertexShaderID);
+		auto fragmentPushConstantRanges = m_shaderSystem->GetPushConstantRanges(fragmentShaderID);
+		auto pushConstantRanges = GraphicsPipelineHelpers::CombinePushConstantRanges(vertexPushConstantRanges, fragmentPushConstantRanges);
+
+		// Build pipeline layouts for each set
+		::ReserveIndex(id, m_pipelineLayouts);
+		m_pipelineLayouts[id] = GraphicsPipelineHelpers::CreatePipelineLayoutsFromDescriptorSetLayouts(m_descriptorSetLayouts[id], pushConstantRanges);
+
+		// Compute hash pipeline descriptor bindings and push constants
+		// If two Graphics Pipelien have the same hash for a set,
+		// it means their pipeline layout for this set is compatible
+		::ReserveIndex(id, m_pipelineCompatibility);
+		m_pipelineCompatibility[id].resize(m_descriptorSetLayoutBindings[id].size());
+		for (size_t set = 0; set < m_descriptorSetLayoutBindings[id].size(); ++set)
+		{
+			m_pipelineCompatibility[id][set] = GraphicsPipelineHelpers::HashPipelineLayout(m_descriptorSetLayoutBindings[id][set], pushConstantRanges);
+		}
 	}
 
 	vk::PipelineDepthStencilStateCreateInfo depthStencilState(
@@ -307,4 +414,9 @@ bool GraphicsPipelineSystem::IsSetLayoutCompatible(GraphicsPipelineID a, Graphic
 		return false;
 
 	return compatibility[set] == otherCompatibility[set];
+}
+
+vk::PipelineLayout GraphicsPipelineSystem::GetPipelineLayout(GraphicsPipelineID id)
+{
+	return m_pipelineLayouts[id].back().get(); // last one contains all sets
 }

@@ -1,5 +1,6 @@
 #include <Renderer/SceneTree.h>
 
+#include <Renderer/Bindless.h>
 #include <RHI/CommandBufferPool.h>
 
 SceneNodeID SceneTree::CreateNode(glm::mat4 transform, BoundingBox boundingBox, SceneNodeID parent)
@@ -22,4 +23,6 @@ void SceneTree::UploadToGPU(CommandBufferPool& commandBufferPool)
 	size_t writeSize = m_transforms.size() * sizeof(m_transforms[0]);
 	memcpy((char*)m_transformsBuffer->GetMappedData(), m_transforms.data(), writeSize);
 	m_transformsBuffer->Flush(0, writeSize);
+
+	m_transformsBufferHandle = m_bindlessDescriptors->StoreBuffer(m_transformsBuffer->Get(), vk::BufferUsageFlagBits::eStorageBuffer);
 }

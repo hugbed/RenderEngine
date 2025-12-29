@@ -34,6 +34,7 @@ private:
 	VmaAllocationInfo m_allocationInfo;
 };
 
+// todo (hbedard): would be nice if this didn't need a dynamic allocation just to call the constructor later
 class UniqueBufferWithStaging : public DeferredDestructible
 {
 public:

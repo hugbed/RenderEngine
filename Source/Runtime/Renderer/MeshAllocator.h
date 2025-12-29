@@ -1,11 +1,11 @@
 #pragma once
 
 #include <BoundingBox.h>
-#include <Renderer/MaterialSystem.h>
 #include <Renderer/DescriptorSetLayouts.h>
 #include <Renderer/SceneTree.h> // todo (hbedard) only for the ID, that's a shame
 #include <RHI/Buffers.h>
 #include <RHI/Device.h>
+#include <RHI/ShaderSystem.h> // todo (hbedard): for Entry, that seems odd
 
 #include <glm_includes.h>
 #include <vulkan/vulkan.hpp>
@@ -27,8 +27,8 @@ struct Mesh
 {
 	vk::DeviceSize indexOffset = 0;
 	vk::DeviceSize nbIndices = 0;
-	Material::ShadingModel shadingModel = Material::ShadingModel::Lit; // todo: remove this
-	MaterialInstanceID materialInstanceID = ~0;
+	uint32_t shadingModel = ~0; // todo (hbedard): put back the enum, i just didn't want to include materialsystem
+	uint32_t materialInstanceID = ~0;
 };
 
 using ModelID = uint32_t;

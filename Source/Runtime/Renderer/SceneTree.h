@@ -1,9 +1,11 @@
 #pragma once
 
 #include <BoundingBox.h>
+#include <Renderer/Bindless.h>
 #include <RHI/Buffers.h>
-#include <glm_includes.h>
 
+#include <glm_includes.h>
+#include <gsl/pointers>
 #include <cstdint>
 #include <limits>
 #include <memory>
@@ -22,13 +24,18 @@ EnumType id_cast(NumberType number)
 class SceneTree
 {
 public:
+	SceneTree(BindlessDescriptors& bindlessDescriptors)
+		: m_bindlessDescriptors(&bindlessDescriptors)
+	{
+	}
+
 	SceneNodeID CreateNode(glm::mat4 transform, BoundingBox boundingBox, SceneNodeID parent = SceneNodeID::Invalid);
 
 	size_t GetNodeCount() const { return m_transforms.size(); }
 
 	void UploadToGPU(CommandBufferPool& commandBufferPool);
 
-	const UniqueBuffer& GetTransformsBuffer() const { return *m_transformsBuffer; }
+	BufferHandle GetTransformsBufferHandle() const { return m_transformsBufferHandle; }
 
 	// --- Bounding Box --- //
 
@@ -62,4 +69,6 @@ private:
 
 	// GPU resources
 	std::unique_ptr<UniqueBuffer> m_transformsBuffer{ nullptr }; // buffer of transforms
+	BufferHandle m_transformsBufferHandle = BufferHandle::Invalid;
+	gsl::not_null<BindlessDescriptors*> m_bindlessDescriptors;
 };
