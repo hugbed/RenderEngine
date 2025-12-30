@@ -15,7 +15,7 @@
 #include <memory>
 #include <cstdint>
 
-class CommandBufferPool;
+class CommandRingBuffer;
 
 struct CombinedImageSampler
 {
@@ -36,12 +36,12 @@ struct TextureKey
 	uint32_t index;
 };
 
-class TextureSystem
+// todo (hbedard): rename TextureCache
+class TextureCache
 {
 public:
-	TextureSystem(std::string basePath, BindlessDescriptors& bindlessDescriptors)
-		: m_basePath(std::move(basePath))
-		, m_bindlessDescriptors(&bindlessDescriptors)
+	TextureCache(BindlessDescriptors& bindlessDescriptors)
+		: m_bindlessDescriptors(&bindlessDescriptors)
 	{}
 
 	// todo: support loading as sRGB vs linear for different texture types
@@ -54,7 +54,7 @@ public:
 
 	vk::Sampler CreateSampler(uint32_t nbMipLevels);
 
-	void UploadTextures(CommandBufferPool& commandBufferPool);
+	void UploadTextures(CommandRingBuffer& commandRingBuffer);
 
 	SmallVector<vk::DescriptorImageInfo> GetDescriptorImageInfos(ImageViewType imageViewType) const;
 
@@ -67,12 +67,9 @@ public:
 private:
 	TextureHandle CreateAndUploadTextureImage(const AssetPath& assetPath);
 
-	// todo (hbedard): do I really need to store them separately?
-
 	// Internal ID for samplers
 	using SamplerID = uint32_t;
 
-	std::string m_basePath;
 	std::map<uint64_t, TextureHandle> m_fileHashToTextureHandle;
 	std::map<uint32_t, SamplerID> m_mipLevelToSamplerID;
 	std::vector<TextureKey> m_texturesToUpload;
@@ -81,7 +78,7 @@ private:
 	using ImageViewTypeArray = std::array<T, (size_t)ImageViewType::eCount>;
 
 	// ImageViewType, TextureHandle -> Array Index
-	std::unordered_map<TextureHandle, TextureKey> m_textureHandleToKey; // todo (hbedard): is this even used?
+	std::unordered_map<TextureHandle, TextureKey> m_textureHandleToKey;
 	ImageViewTypeArray<std::vector<std::unique_ptr<Texture>>> m_textures; // todo: this can be std::vector<Texture> if we return a TextureID, also we only need the image view here
 	ImageViewTypeArray<std::vector<uint32_t>> m_mipLevels;
 	ImageViewTypeArray<std::vector<std::string>> m_names; // debugging only

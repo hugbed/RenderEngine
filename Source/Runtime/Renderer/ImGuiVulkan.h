@@ -1,6 +1,6 @@
 #pragma once
 
-#include <RHI/CommandBufferPool.h>
+#include <RHI/CommandRingBuffer.h>
 
 #include <imgui.h>
 #include <backends/imgui_impl_glfw.h>

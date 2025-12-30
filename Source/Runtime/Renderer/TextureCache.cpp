@@ -1,7 +1,7 @@
-#include <Renderer/TextureSystem.h>
+#include <Renderer/TextureCache.h>
 
 #include <RHI/Texture.h>
-#include <RHI/CommandBufferPool.h>
+#include <RHI/CommandRingBuffer.h>
 #include <hash.h>
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
@@ -9,12 +9,12 @@
 #include <algorithm>
 #include <iostream>
 
-TextureHandle TextureSystem::LoadTexture(const AssetPath& assetPath)
+TextureHandle TextureCache::LoadTexture(const AssetPath& assetPath)
 {
 	return CreateAndUploadTextureImage(assetPath);
 }
 
-TextureHandle TextureSystem::CreateAndUploadTextureImage(const AssetPath& assetPath)
+TextureHandle TextureCache::CreateAndUploadTextureImage(const AssetPath& assetPath)
 {
 	// Check if we already loaded this texture
 	std::string filePathStr = assetPath.PathOnDisk().string();
@@ -67,7 +67,7 @@ TextureHandle TextureSystem::CreateAndUploadTextureImage(const AssetPath& assetP
 	return textureHandle;
 }
 
-vk::Sampler TextureSystem::CreateSampler(uint32_t nbMipLevels)
+vk::Sampler TextureCache::CreateSampler(uint32_t nbMipLevels)
 {
 	// Check if we already have a sampler
 	auto it = m_mipLevelToSamplerID.find(nbMipLevels);
@@ -99,7 +99,7 @@ vk::Sampler TextureSystem::CreateSampler(uint32_t nbMipLevels)
 	return m_samplers[samplerID].get();
 }
 
-TextureHandle TextureSystem::LoadCubeMapFaces(gsl::span<AssetPath> filePaths)
+TextureHandle TextureCache::LoadCubeMapFaces(gsl::span<AssetPath> filePaths)
 {
 	if (filePaths.size() != 6)
 		return {};
@@ -193,21 +193,21 @@ TextureHandle TextureSystem::LoadCubeMapFaces(gsl::span<AssetPath> filePaths)
 	return textureHandle;
 }
 
-void TextureSystem::UploadTextures(CommandBufferPool& commandBufferPool)
+void TextureCache::UploadTextures(CommandRingBuffer& commandRingBuffer)
 {
-	vk::CommandBuffer& commandBuffer = commandBufferPool.GetCommandBuffer();
+	vk::CommandBuffer commandBuffer = commandRingBuffer.GetCommandBuffer();
 
 	for (const TextureKey& key : m_texturesToUpload)
 	{
 		const auto& texture = m_textures[static_cast<size_t>(key.type)][key.index];
 		texture->UploadStagingToGPU(commandBuffer, vk::ImageLayout::eShaderReadOnlyOptimal);
 		UniqueBuffer* stagingBuffer = texture->ReleaseStagingBuffer();
-		commandBufferPool.DestroyAfterSubmit(stagingBuffer);
+		commandRingBuffer.DestroyAfterSubmit(stagingBuffer);
 	}
 	m_texturesToUpload.clear();
 }
 
-SmallVector<vk::DescriptorImageInfo> TextureSystem::GetDescriptorImageInfos(ImageViewType samplerType) const
+SmallVector<vk::DescriptorImageInfo> TextureCache::GetDescriptorImageInfos(ImageViewType samplerType) const
 {
 	const size_t samplerTypeIndex = (size_t)samplerType;
 
@@ -225,7 +225,7 @@ SmallVector<vk::DescriptorImageInfo> TextureSystem::GetDescriptorImageInfos(Imag
 	return imageInfos;
 }
 
-vk::DescriptorImageInfo TextureSystem::GetDescriptorImageInfo(ImageViewType imageViewType, TextureHandle textureHandle) const
+vk::DescriptorImageInfo TextureCache::GetDescriptorImageInfo(ImageViewType imageViewType, TextureHandle textureHandle) const
 {
 	auto it = m_textureHandleToKey.find(textureHandle);
 	if (it == m_textureHandleToKey.end())

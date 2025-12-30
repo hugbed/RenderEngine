@@ -32,9 +32,9 @@ public:
 	MaterialHandle(MaterialShadingDomain domain, MaterialShadingModel model, uint32_t index)
 		: m_shadingDomain(static_cast<uint32_t>(domain))
 		, m_shadingModel(static_cast<uint32_t>(model))
-		, m_id(index)
+		, m_index(index)
 	{
-		assert(index < (1 << 30));
+		assert(index < (1 << 28));
 	}
 
 	static constexpr MaterialHandle Invalid()
@@ -52,19 +52,19 @@ public:
 		return static_cast<MaterialShadingModel>(m_shadingModel);
 	}
 
-	void SetID(uint32_t id)
+	void SetIndex(uint32_t index)
 	{
-		m_id = id;
+		m_index = index;
 	}
 
-	uint32_t GetID() const
+	uint32_t GetIndex() const
 	{
-		return m_id;
+		return m_index;
 	}
 
-	void IncrementID()
+	void IncrementIndex()
 	{
-		++m_id;
+		++m_index;
 	}
 
 	auto operator<=>(const MaterialHandle& other) const
@@ -79,7 +79,7 @@ public:
 
 	bool operator!=(const MaterialHandle& other) const
 	{
-		return m_raw == other.m_raw;
+		return m_raw != other.m_raw;
 	}
 
 private:
@@ -88,7 +88,7 @@ private:
 		{
 			uint32_t m_shadingDomain : 2;
 			uint32_t m_shadingModel : 2;
-			uint32_t m_id : 30;
+			uint32_t m_index : 28;
 		};
 		uint32_t m_raw;
 	};

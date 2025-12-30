@@ -20,7 +20,7 @@ public:
 
 	vk::Extent2D GetFramebufferSize() const;
 
-	GLFWwindow* GetGLFWWindow() { return m_window; }
+	GLFWwindow* GetGLFWWindow() const { return m_window; }
 
 	bool ShouldClose() const;
 	void PollEvents() const;

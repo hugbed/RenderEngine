@@ -1,6 +1,6 @@
 #pragma once
 
-#include <RHI/ShaderSystem.h>
+#include <RHI/ShaderCache.h>
 #include <RHI/Buffers.h>
 #include "SmallVector.h"
 #include <gsl/pointers>
@@ -51,12 +51,12 @@ struct GraphicsPipelineInfo
 using GraphicsPipelineID = uint32_t;
 
 // Handles all graphics pipeline that share the same layout
-class GraphicsPipelineSystem
+class GraphicsPipelineCache
 {
 public:
-	GraphicsPipelineSystem(ShaderSystem& shaderSystem);
+	GraphicsPipelineCache(ShaderCache& shaderCache);
 
-	ShaderSystem& GetShaderSystem() const { return *m_shaderSystem; }
+	ShaderCache& GetShaderCache() const { return *m_shaderCache; }
 
 	void SetCommonLayout(
 		SetVector<SmallVector<vk::DescriptorSetLayoutBinding>> descriptorSetLayoutBindingOverrides,
@@ -81,7 +81,7 @@ public:
 	vk::PipelineLayout GetPipelineLayout(GraphicsPipelineID id);
 
 private:
-	gsl::not_null<ShaderSystem*> m_shaderSystem;
+	gsl::not_null<ShaderCache*> m_shaderCache;
 
 	struct GraphicsPipelineShaders
 	{

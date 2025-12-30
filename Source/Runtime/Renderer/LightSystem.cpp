@@ -1,18 +1,19 @@
 #include <Renderer/LightSystem.h>
 
+#include <Renderer/Bindless.h>
 #include <RHI/Buffers.h>
-#include <RHI/CommandBufferPool.h>
+#include <RHI/CommandRingBuffer.h>
 
 LightSystem::LightSystem(BindlessDescriptors& bindlessDescriptors)
 	: m_bindlessDescriptors(&bindlessDescriptors)
 {
 }
 
-void LightSystem::UploadToGPU(CommandBufferPool& commandBufferPool)
+void LightSystem::UploadToGPU(CommandRingBuffer& commandRingBuffer)
 {
 	if (m_lights.empty() == false)
 	{
-		vk::CommandBuffer& commandBuffer = commandBufferPool.GetCommandBuffer();
+		vk::CommandBuffer commandBuffer = commandRingBuffer.GetCommandBuffer();
 
 		const vk::BufferUsageFlagBits bufferUsage = vk::BufferUsageFlagBits::eStorageBuffer;
 		vk::DeviceSize bufferSize = m_lights.size() * sizeof(PhongLight);
@@ -21,7 +22,7 @@ void LightSystem::UploadToGPU(CommandBufferPool& commandBufferPool)
 		m_lightsBuffer->CopyStagingToGPU(commandBuffer);
 
 		// We won't need the staging buffer after the initial upload
-		commandBufferPool.DestroyAfterSubmit(m_lightsBuffer->ReleaseStagingBuffer());
+		commandRingBuffer.DestroyAfterSubmit(m_lightsBuffer->ReleaseStagingBuffer());
 
 		m_lightsBufferHandle = m_bindlessDescriptors->StoreBuffer(m_lightsBuffer->Get(), bufferUsage);
 	}

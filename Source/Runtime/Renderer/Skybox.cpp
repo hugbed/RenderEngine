@@ -3,7 +3,7 @@
 #include <Renderer/Bindless.h>
 #include <Renderer/RenderState.h>
 #include <RHI/Device.h>
-#include <RHI/CommandBufferPool.h>
+#include <RHI/CommandRingBuffer.h>
 #include <RHI/RenderPass.h>
 #include <AssetPath.h>
 
@@ -55,15 +55,15 @@ const std::vector<float> vertices = {
 };
 
 Skybox::Skybox(
-	const RenderPass& renderPass,
+	vk::RenderPass renderPass,
 	vk::Extent2D swapchainExtent,
-	TextureSystem& textureSystem,
-	GraphicsPipelineSystem& graphicsPipelineSystem,
+	GraphicsPipelineCache& graphicsPipelineCache,
 	BindlessDescriptors& bindlessDescriptors,
-	BindlessDrawParams& bindlessDrawParams
+	BindlessDrawParams& bindlessDrawParams,
+	TextureCache& textureCache
 )
-	: m_textureSystem(&textureSystem)
-	, m_graphicsPipelineSystem(&graphicsPipelineSystem)
+	: m_textureCache(&textureCache)
+	, m_graphicsPipelineCache(&graphicsPipelineCache)
 	, m_bindlessDescriptors(&bindlessDescriptors)
 	, m_bindlessDrawParams(&bindlessDrawParams)
 {
@@ -76,42 +76,44 @@ Skybox::Skybox(
 		AssetPath("/Engine/Textures/skybox/front.jpg"),
 		AssetPath("/Engine/Textures/skybox/back.jpg")
 	};
-	m_drawParams.skyboxTexture = m_textureSystem->LoadCubeMapFaces(cubeFacesFiles);
+	m_drawParams.skyboxTexture = m_textureCache->LoadCubeMapFaces(cubeFacesFiles);
 
 	// Create graphics pipeline
-	ShaderSystem& shaderSystem = m_graphicsPipelineSystem->GetShaderSystem();
-	ShaderID vertexShaderID = shaderSystem.CreateShader(AssetPath("/Engine/Generated/Shaders/skybox_vert.spv").PathOnDisk(), "main");
-	ShaderID fragmentShaderID = shaderSystem.CreateShader(AssetPath("/Engine/Generated/Shaders/skybox_frag.spv").PathOnDisk(), "main");
-	m_vertexShader = shaderSystem.CreateShaderInstance(vertexShaderID);
-	m_fragmentShader = shaderSystem.CreateShaderInstance(fragmentShaderID);
-	GraphicsPipelineInfo info(renderPass.Get(), swapchainExtent);
-	m_graphicsPipelineID = m_graphicsPipelineSystem->CreateGraphicsPipeline(
+	ShaderCache& shaderCache = m_graphicsPipelineCache->GetShaderCache();
+	ShaderID vertexShaderID = shaderCache.CreateShader(AssetPath("/Engine/Generated/Shaders/skybox_vert.spv").PathOnDisk(), "main");
+	ShaderID fragmentShaderID = shaderCache.CreateShader(AssetPath("/Engine/Generated/Shaders/skybox_frag.spv").PathOnDisk(), "main");
+	m_vertexShader = shaderCache.CreateShaderInstance(vertexShaderID);
+	m_fragmentShader = shaderCache.CreateShaderInstance(fragmentShaderID);
+	GraphicsPipelineInfo info(renderPass, swapchainExtent);
+	m_graphicsPipelineID = m_graphicsPipelineCache->CreateGraphicsPipeline(
 		m_vertexShader, m_fragmentShader, info
 	);
 	m_drawParamsHandle = m_bindlessDrawParams->DeclareParams<SkyboxDrawParams>();
 }
 
-void Skybox::Reset(const RenderPass& renderPass, vk::Extent2D swapchainExtent)
+void Skybox::Reset(vk::RenderPass renderPass, vk::Extent2D swapchainExtent)
 {
-	GraphicsPipelineInfo info(renderPass.Get(), swapchainExtent);
-	m_graphicsPipelineSystem->ResetGraphicsPipeline(m_graphicsPipelineID, info);
+	GraphicsPipelineInfo info(renderPass, swapchainExtent);
+	m_graphicsPipelineCache->ResetGraphicsPipeline(m_graphicsPipelineID, info);
 }
 
-void Skybox::SetViewBufferHandles(gsl::span<BufferHandle> viewBufferHandles)
+void Skybox::SetViewBufferHandles(gsl::span<const BufferHandle> viewBufferHandles)
 {
+	m_viewBufferHandles.clear();
 	m_viewBufferHandles.reserve(viewBufferHandles.size());
 	std::copy(viewBufferHandles.begin(), viewBufferHandles.end(), std::back_inserter(m_viewBufferHandles));
 }
 
 // todo (hbedard): no need to pass the command buffer here no?
-void Skybox::UploadToGPU(vk::CommandBuffer& commandBuffer, CommandBufferPool& commandBufferPool)
+void Skybox::UploadToGPU(CommandRingBuffer& commandRingBuffer)
 {
 	// Create and upload vertex buffer
+	vk::CommandBuffer commandBuffer = commandRingBuffer.GetCommandBuffer();
 	vk::DeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
 	m_vertexBuffer = std::make_unique<UniqueBufferWithStaging>(bufferSize, vk::BufferUsageFlagBits::eVertexBuffer);
 	memcpy(m_vertexBuffer->GetStagingMappedData(), reinterpret_cast<const void*>(vertices.data()), bufferSize);
 	m_vertexBuffer->CopyStagingToGPU(commandBuffer);
-	commandBufferPool.DestroyAfterSubmit(m_vertexBuffer->ReleaseStagingBuffer());
+	commandRingBuffer.DestroyAfterSubmit(m_vertexBuffer->ReleaseStagingBuffer());
 
 	assert(!m_viewBufferHandles.empty());
 	SkyboxDrawParams drawParams = m_drawParams;

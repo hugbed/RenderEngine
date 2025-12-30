@@ -1,4 +1,4 @@
-#include <RHI/GraphicsPipelineSystem.h>
+#include <RHI/GraphicsPipelineCache.h>
 
 #include <RHI/Image.h>
 #include <RHI/Device.h>
@@ -218,11 +218,11 @@ GraphicsPipelineInfo::GraphicsPipelineInfo(vk::RenderPass renderPass, vk::Extent
 {
 }
 
-GraphicsPipelineSystem::GraphicsPipelineSystem(ShaderSystem& shaderSystem)
-	: m_shaderSystem(&shaderSystem)
+GraphicsPipelineCache::GraphicsPipelineCache(ShaderCache& shaderCache)
+	: m_shaderCache(&shaderCache)
 {}
 
-void GraphicsPipelineSystem::SetCommonLayout(
+void GraphicsPipelineCache::SetCommonLayout(
 	SetVector<SmallVector<vk::DescriptorSetLayoutBinding>> descriptorSetLayoutBindingOverrides,
 	SetVector<vk::DescriptorSetLayout> descriptorSetLayoutOverrides,
 	SetVector<vk::PipelineLayout> pipelineLayoutOverrides)
@@ -232,7 +232,7 @@ void GraphicsPipelineSystem::SetCommonLayout(
 	m_pipelineLayouts = std::move(pipelineLayoutOverrides);
 }
 
-GraphicsPipelineID GraphicsPipelineSystem::CreateGraphicsPipeline(
+GraphicsPipelineID GraphicsPipelineCache::CreateGraphicsPipeline(
 	ShaderInstanceID vertexShaderID,
 	ShaderInstanceID fragmentShaderID,
 	const GraphicsPipelineInfo& info)
@@ -244,7 +244,7 @@ GraphicsPipelineID GraphicsPipelineSystem::CreateGraphicsPipeline(
 	return id;
 }
 
-void GraphicsPipelineSystem::ResetGraphicsPipeline(
+void GraphicsPipelineCache::ResetGraphicsPipeline(
 	GraphicsPipelineID id, const GraphicsPipelineInfo& info)
 {
 	const ShaderInstanceID vertexShaderID = m_shaders[id].vertexShader;
@@ -252,7 +252,7 @@ void GraphicsPipelineSystem::ResetGraphicsPipeline(
 
 	SmallVector<vk::VertexInputAttributeDescription> attributeDescriptions;
 	vk::VertexInputBindingDescription bindingDescription;
-	vk::PipelineVertexInputStateCreateInfo vertexInputInfo = m_shaderSystem->GetVertexInputStateInfo(
+	vk::PipelineVertexInputStateCreateInfo vertexInputInfo = m_shaderCache->GetVertexInputStateInfo(
 		vertexShaderID,
 		attributeDescriptions,
 		bindingDescription
@@ -260,8 +260,8 @@ void GraphicsPipelineSystem::ResetGraphicsPipeline(
 
 	vk::SpecializationInfo specializationInfo[2] = {};
 	vk::PipelineShaderStageCreateInfo shaderStages[] = {
-		m_shaderSystem->GetShaderStageInfo(vertexShaderID, specializationInfo[0]),
-		m_shaderSystem->GetShaderStageInfo(fragmentShaderID, specializationInfo[1])
+		m_shaderCache->GetShaderStageInfo(vertexShaderID, specializationInfo[0]),
+		m_shaderCache->GetShaderStageInfo(fragmentShaderID, specializationInfo[1])
 	};
 
 	vk::PipelineInputAssemblyStateCreateInfo inputAssembly({}, info.primitiveTopology);
@@ -349,7 +349,7 @@ void GraphicsPipelineSystem::ResetGraphicsPipeline(
 	m_pipelines[id] = g_device->Get().createGraphicsPipelineUnique({}, graphicsPipelineCreateInfo).value; // todo (hbedard): only if it succeeds
 }
 
-vk::PipelineLayout GraphicsPipelineSystem::GetPipelineLayout(GraphicsPipelineID id)
+vk::PipelineLayout GraphicsPipelineCache::GetPipelineLayout(GraphicsPipelineID id)
 {
 	return m_pipelineLayouts.back(); // last one contains all sets
 }

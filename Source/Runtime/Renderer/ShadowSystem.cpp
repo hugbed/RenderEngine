@@ -1,6 +1,7 @@
 #include <Renderer/ShadowSystem.h>
 
 #include <AssimpScene.h>
+#include <Renderer/ViewProperties.h>
 
 #include <utility>
 
@@ -180,7 +181,7 @@ namespace
 		return view;
 	}
 
-	[[nodiscard]] LitViewProperties ComputeShadowTransform(
+	[[nodiscard]] ViewProperties ComputeShadowTransform(
 		const PhongLight& light,
 		const Camera& camera,
 		BoundingBox sceneBox,
@@ -241,7 +242,7 @@ namespace
 			0.0f, 0.0f, 0.5f, 1.0f
 		);
 
-		return LitViewProperties{
+		return ViewProperties{
 			shadowView, clip * proj, glm::vec3()
 		};
 	}
@@ -252,15 +253,15 @@ const AssetPath ShadowSystem::kFragmentShaderFile("/Engine/Generated/Shaders/sha
 
 ShadowSystem::ShadowSystem(
 	vk::Extent2D extent,
-	GraphicsPipelineSystem& graphicsPipelineSystem,
+	GraphicsPipelineCache& graphicsPipelineCache,
+	BindlessDescriptors& bindlessDescriptors,
+	BindlessDrawParams& bindlessDrawParams,
 	MeshAllocator& meshAllocator,
 	SceneTree& sceneTree,
-	LightSystem& lightSystem,
-	BindlessDescriptors& bindlessDescriptors,
-	BindlessDrawParams& bindlessDrawParams
+	LightSystem& lightSystem
 )
 	: m_extent(extent)
-	, m_graphicsPipelineSystem(&graphicsPipelineSystem)
+	, m_graphicsPipelineCache(&graphicsPipelineCache)
 	, m_meshAllocator(&meshAllocator)
 	, m_sceneTree(&sceneTree)
 	, m_lightSystem(&lightSystem)
@@ -276,7 +277,7 @@ void ShadowSystem::Reset(vk::Extent2D extent)
 {
 	m_extent = extent;
 
-	m_graphicsPipelineSystem->ResetGraphicsPipeline(
+	m_graphicsPipelineCache->ResetGraphicsPipeline(
 		m_graphicsPipelineID, ::GetGraphicsPipelineInfo(*m_renderPass, m_extent)
 	);
 	
@@ -299,7 +300,7 @@ ShadowID ShadowSystem::CreateShadowMap(LightID lightID)
 	return id;
 }
 
-void ShadowSystem::UploadToGPU()
+void ShadowSystem::UploadToGPU(CommandRingBuffer& commandRingBuffer)
 {
 	if (GetShadowCount() == 0)
 	{
@@ -319,12 +320,12 @@ void ShadowSystem::UploadToGPU()
 
 void ShadowSystem::CreateGraphicsPipeline()
 {
-	ShaderSystem& shaderSystem = m_graphicsPipelineSystem->GetShaderSystem();
-	ShaderID vertexShaderID = shaderSystem.CreateShader(kVertexShaderFile.PathOnDisk());
-	ShaderID fragmentShaderID = shaderSystem.CreateShader(kFragmentShaderFile.PathOnDisk());
-	ShaderInstanceID vertexShaderInstanceID = shaderSystem.CreateShaderInstance(vertexShaderID);
-	ShaderInstanceID fragmentShaderInstanceID = shaderSystem.CreateShaderInstance(fragmentShaderID);
-	m_graphicsPipelineID = m_graphicsPipelineSystem->CreateGraphicsPipeline(
+	ShaderCache& shaderCache = m_graphicsPipelineCache->GetShaderCache();
+	ShaderID vertexShaderID = shaderCache.CreateShader(kVertexShaderFile.PathOnDisk());
+	ShaderID fragmentShaderID = shaderCache.CreateShader(kFragmentShaderFile.PathOnDisk());
+	ShaderInstanceID vertexShaderInstanceID = shaderCache.CreateShaderInstance(vertexShaderID);
+	ShaderInstanceID fragmentShaderInstanceID = shaderCache.CreateShaderInstance(fragmentShaderID);
+	m_graphicsPipelineID = m_graphicsPipelineCache->CreateGraphicsPipeline(
 		vertexShaderInstanceID,
 		fragmentShaderInstanceID,
 		::GetGraphicsPipelineInfo(*m_renderPass, m_extent)
@@ -386,7 +387,7 @@ void ShadowSystem::Render(RenderState& renderState, const std::vector<MeshDrawIn
 			renderState.BindPipeline(m_graphicsPipelineID);
 
 			// Shadow transforms
-			vk::PipelineLayout pipelineLayout = m_graphicsPipelineSystem->GetPipelineLayout(m_graphicsPipelineID);
+			vk::PipelineLayout pipelineLayout = m_graphicsPipelineCache->GetPipelineLayout(m_graphicsPipelineID);
 			uint32_t shadowIndex = (uint32_t)id;
 			commandBuffer.pushConstants(
 				pipelineLayout,

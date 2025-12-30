@@ -1,31 +1,33 @@
 #include <Renderer/Grid.h>
 
 #include <Renderer/RenderState.h>
+#include <RHI/CommandRingBuffer.h>
 
-Grid::Grid(const RenderPass& renderPass,
+Grid::Grid(vk::RenderPass renderPass,
 	vk::Extent2D swapchainExtent,
-	GraphicsPipelineSystem& graphicsPipelineSystem,
+	GraphicsPipelineCache& graphicsPipelineCache,
 	BindlessDrawParams& bindlessDrawParams)
-	: m_graphicsPipelineSystem(&graphicsPipelineSystem)
+	: m_graphicsPipelineCache(&graphicsPipelineCache)
 	, m_bindlessDrawParams(&bindlessDrawParams)
 {
-	ShaderSystem& shaderSystem = m_graphicsPipelineSystem->GetShaderSystem();
-	ShaderID vertexShaderID = shaderSystem.CreateShader(AssetPath("/Engine/Generated/Shaders/grid_vert.spv").PathOnDisk(), "main");
-	ShaderID fragmentShaderID = shaderSystem.CreateShader(AssetPath("/Engine/Generated/Shaders/grid_frag.spv").PathOnDisk(), "main");
-	vertexShader = shaderSystem.CreateShaderInstance(vertexShaderID);
-	fragmentShader = shaderSystem.CreateShaderInstance(fragmentShaderID);
+	ShaderCache& shaderCache = m_graphicsPipelineCache->GetShaderCache();
+	ShaderID vertexShaderID = shaderCache.CreateShader(AssetPath("/Engine/Generated/Shaders/grid_vert.spv").PathOnDisk(), "main");
+	ShaderID fragmentShaderID = shaderCache.CreateShader(AssetPath("/Engine/Generated/Shaders/grid_frag.spv").PathOnDisk(), "main");
+	vertexShader = shaderCache.CreateShaderInstance(vertexShaderID);
+	fragmentShader = shaderCache.CreateShaderInstance(fragmentShaderID);
 	Reset(renderPass, swapchainExtent);
 
 	m_drawParamsHandle = m_bindlessDrawParams->DeclareParams<GridDrawParams>();
 }
 
-void Grid::SetViewBufferHandles(gsl::span<BufferHandle> viewBufferHandles)
+void Grid::SetViewBufferHandles(gsl::span<const BufferHandle> viewBufferHandles)
 {
+	m_viewBufferHandles.clear();
 	m_viewBufferHandles.reserve(viewBufferHandles.size());
 	std::copy(viewBufferHandles.begin(), viewBufferHandles.end(), std::back_inserter(m_viewBufferHandles));
 }
 
-void Grid::UploadToGPU(vk::CommandBuffer& commandBuffer)
+void Grid::UploadToGPU(CommandRingBuffer& commandRingBuffer)
 {
 	assert(!m_viewBufferHandles.empty());
 	for (uint32_t i = 0; i < m_viewBufferHandles.size(); ++i)
@@ -40,16 +42,16 @@ void Grid::Draw(RenderState& renderState)
 {
 	vk::CommandBuffer commandBuffer = renderState.GetCommandBuffer();
 	renderState.BindDrawParams(m_drawParamsHandle);
-	commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, m_graphicsPipelineSystem->GetPipeline(pipelineID));
+	commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, m_graphicsPipelineCache->GetPipeline(pipelineID));
 	commandBuffer.draw(6, 1, 0, 0);
 }
 
-void Grid::Reset(const RenderPass& renderPass, vk::Extent2D swapchainExtent)
+void Grid::Reset(vk::RenderPass renderPass, vk::Extent2D swapchainExtent)
 {
-	GraphicsPipelineInfo info(renderPass.Get(), swapchainExtent);
+	GraphicsPipelineInfo info(renderPass, swapchainExtent);
 	info.blendEnable = true;
 	info.depthWriteEnable = true;
-	pipelineID = m_graphicsPipelineSystem->CreateGraphicsPipeline(
+	pipelineID = m_graphicsPipelineCache->CreateGraphicsPipeline(
 		vertexShader, fragmentShader, info
 	);
 }

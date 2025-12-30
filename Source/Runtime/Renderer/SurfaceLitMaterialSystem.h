@@ -1,10 +1,10 @@
 #pragma once
 
 #include <Renderer/LightSystem.h>
-#include <Renderer/TextureSystem.h>
+#include <Renderer/TextureCache.h>
 #include <Renderer/MeshAllocator.h>
 #include <Renderer/MaterialDefines.h>
-#include <RHI/GraphicsPipelineSystem.h>
+#include <RHI/GraphicsPipelineCache.h>
 #include <RHI/RenderPass.h>
 #include <AssetPath.h>
 #include <hash.h>
@@ -26,14 +26,6 @@ class ShadowSystem;
 class RenderState;
 
 // todo: find better naming for those structures
-
-// todo: this could be shared across different material types
-struct LitViewProperties
-{
-	glm::aligned_mat4 view;
-	glm::aligned_mat4 proj;
-	glm::aligned_vec3 pos;
-};
 
 enum class PhongLightType
 {
@@ -93,12 +85,11 @@ public:
 	static const AssetPath kVertexShader;
 	static const AssetPath kFragmentShader;
 
+	// todo (hbedard): actually just pass the renderer
 	SurfaceLitMaterialSystem(
 		vk::RenderPass renderPass,
 		vk::Extent2D swapchainExtent,
-		GraphicsPipelineSystem& graphicsPipelineSystem,
-		TextureSystem& textureSystem,
-		MeshAllocator& meshAllocator,
+		GraphicsPipelineCache& graphicsPipelineCache,
 		BindlessDescriptors& bindlessDescriptors,
 		BindlessDrawParams& bindlessDrawParams,
 		SceneTree& sceneTree,
@@ -112,7 +103,7 @@ public:
 	
 	void Draw(RenderState& renderState, gsl::span<const MeshDrawInfo> drawCalls) const;
 
-	void SetViewBufferHandles(gsl::span<BufferHandle> viewBufferHandles);
+	void SetViewBufferHandles(gsl::span<const BufferHandle> viewBufferHandles);
 
 	// Reserve a material ID for a given set of material properties
 	// The graphics pipeline and GPU resources will not be created until UploadToGPU is called
@@ -120,19 +111,19 @@ public:
 
 	// This can be called once the total number of resources is known (constants)
 	// So that actual GPU resources are created and uploaded
-	void UploadToGPU(CommandBufferPool& commandBufferPool);
+	void UploadToGPU(CommandRingBuffer& commandRingBuffer);
 
 	// -- Getters -- //
 
 	size_t GetMaterialInstanceCount() const { return m_properties.size(); }
 
-	const GraphicsPipelineSystem& GetGraphicsPipelineSystem() const { return *m_graphicsPipelineSystem; }
+	const GraphicsPipelineCache& GetGraphicsPipelineSystem() const { return *m_graphicsPipelineCache; }
 
 	const std::vector<GraphicsPipelineID>& GetGraphicsPipelinesIDs() const { return m_graphicsPipelineIDs; }
 	
-	GraphicsPipelineID GetGraphicsPipelineID(MaterialHandle materialHandle) const { return m_graphicsPipelineIDs[materialHandle.GetID()]; }
+	GraphicsPipelineID GetGraphicsPipelineID(MaterialHandle materialHandle) const { return m_graphicsPipelineIDs[materialHandle.GetIndex()]; }
 
-	bool IsTransparent(MaterialHandle materialHandle) const { return m_pipelineProperties[materialHandle.GetID()].isTransparent; }
+	bool IsTransparent(MaterialHandle materialHandle) const { return m_pipelineProperties[materialHandle.GetIndex()].isTransparent; }
 
 	BufferHandle GetUniformBufferHandle() const { return m_uniformBufferHandle; }
 
@@ -146,10 +137,7 @@ private:
 		BufferHandle lights;
 		uint32_t lightCount;
 		BufferHandle materials;
-		BufferHandle shadowTransforms; // todo (hbedard): light transforms? what's this?
-		// todo (hbedard): also handle textures through this!
-		//TextureHandle textures2D; // material textures & shadow maps
-		//TextureHandle texturesCube;
+		BufferHandle shadowTransforms;
 		uint32_t padding[2];
 	};
 	SurfaceLitDrawParams m_drawParams;
@@ -159,14 +147,12 @@ private:
 	GraphicsPipelineID LoadGraphicsPipeline(const LitMaterialInstanceInfo& materialInfo);
 
 	void CreatePendingInstances();
-	void CreateAndUploadUniformBuffer(CommandBufferPool& commandBufferPool);
+	void CreateAndUploadUniformBuffer(CommandRingBuffer& commandRingBuffer);
 
 	vk::RenderPass m_renderPass; // light/color pass, there could be others
 	vk::Extent2D m_imageExtent;
 
-	gsl::not_null<TextureSystem*> m_textureSystem;
-	gsl::not_null<GraphicsPipelineSystem*> m_graphicsPipelineSystem;
-	gsl::not_null<MeshAllocator*> m_meshAllocator;
+	gsl::not_null<GraphicsPipelineCache*> m_graphicsPipelineCache;
 	gsl::not_null<SceneTree*> m_sceneTree;
 	gsl::not_null<LightSystem*> m_lightSystem;
 	gsl::not_null<ShadowSystem*> m_shadowSystem;

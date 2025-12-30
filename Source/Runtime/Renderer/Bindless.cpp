@@ -1,6 +1,6 @@
 #include <Renderer/Bindless.h>
 
-#include <RHI/GraphicsPipelineSystem.h>
+#include <RHI/GraphicsPipelineCache.h>
 #include <RHI/Device.h>
 
 #include <numeric>
@@ -364,7 +364,7 @@ void BindlessDescriptors::CreatePipelineLayout()
 BindlessFactory::BindlessFactory(
 	const BindlessDescriptors& bindlessDescriptors,
 	const BindlessDrawParams& bindlessDrawParams,
-	GraphicsPipelineSystem& graphicsPipelineSystem)
+	GraphicsPipelineCache& graphicsPipelineCache)
 {
 	SetVector<SmallVector<vk::DescriptorSetLayoutBinding>> bindings = {
 		bindlessDescriptors.GetDescriptorSetLayoutBindings(),
@@ -378,5 +378,5 @@ BindlessFactory::BindlessFactory(
 		bindlessDescriptors.GetPipelineLayout(),
 		bindlessDrawParams.GetPipelineLayout()
 	};
-	graphicsPipelineSystem.SetCommonLayout(std::move(bindings), std::move(descriptorSetLayouts), std::move(pipelineLayouts));
+	graphicsPipelineCache.SetCommonLayout(std::move(bindings), std::move(descriptorSetLayouts), std::move(pipelineLayouts));
 }

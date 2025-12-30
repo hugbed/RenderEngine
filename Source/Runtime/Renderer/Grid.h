@@ -2,8 +2,8 @@
 
 #include <Renderer/Bindless.h>
 #include <RHI/Texture.h>
-#include <RHI/ShaderSystem.h>
-#include <RHI/GraphicsPipelineSystem.h>
+#include <RHI/ShaderCache.h>
+#include <RHI/GraphicsPipelineCache.h>
 #include <RHI/RenderPass.h>
 #include <AssetPath.h>
 
@@ -11,23 +11,24 @@
 #include <memory>
 #include <vector>
 
+class CommandRingBuffer;
 class RenderState;
 
 class Grid
 {
 public:
-	Grid(const RenderPass& renderPass,
+	Grid(vk::RenderPass renderPass,
 		vk::Extent2D swapchainExtent,
-		GraphicsPipelineSystem& graphicsPipelineSystem,
+		GraphicsPipelineCache& graphicsPipelineCache,
 		BindlessDrawParams& bindlessDrawParams);
 
-	void SetViewBufferHandles(gsl::span<BufferHandle> viewBufferHandles);
+	void SetViewBufferHandles(gsl::span<const BufferHandle> viewBufferHandles);
 
-	void UploadToGPU(vk::CommandBuffer& commandBuffer);
+	void UploadToGPU(CommandRingBuffer& commandRingBuffer);
 
 	void Draw(RenderState& renderState);
 
-	void Reset(const RenderPass& renderPass, vk::Extent2D swapchainExtent);
+	void Reset(vk::RenderPass renderPass, vk::Extent2D swapchainExtent);
 
 private:
 	struct GridDrawParams
@@ -39,7 +40,7 @@ private:
 	std::vector<BufferHandle> m_viewBufferHandles;
 	gsl::not_null<BindlessDrawParams*> m_bindlessDrawParams;
 
-	gsl::not_null<GraphicsPipelineSystem*> m_graphicsPipelineSystem;
+	gsl::not_null<GraphicsPipelineCache*> m_graphicsPipelineCache;
 	GraphicsPipelineID pipelineID;
 	ShaderInstanceID vertexShader;
 	ShaderInstanceID fragmentShader;

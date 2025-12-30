@@ -1,12 +1,11 @@
 #pragma once
 
-#include "Camera.h"
-#include "InputSystem.h"
-
-#include "glm_includes.h"
-
+#include <Renderer/Camera.h>
+#include <InputSystem.h>
+#include <glm_includes.h>
 #include <vulkan/vulkan.hpp>
 #include <gsl/gsl>
+
 #include <chrono>
 
 // todo (hbedard): split that into 2 different classes

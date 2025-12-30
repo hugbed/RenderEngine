@@ -1,13 +1,13 @@
 #pragma once
 
-#include <Camera.h>
 #include <BoundingBox.h>
+#include <Renderer/Camera.h>
 #include <Renderer/LightSystem.h>
 #include <Renderer/MeshAllocator.h>
 #include <RHI/RenderPass.h>
 #include <RHI/Swapchain.h>
-#include <RHI/GraphicsPipelineSystem.h>
-#include <RHI/ShaderSystem.h>
+#include <RHI/GraphicsPipelineCache.h>
+#include <RHI/ShaderCache.h>
 #include <RHI/Framebuffer.h>
 #include <RHI/Texture.h>
 #include <RHI/Image.h>
@@ -20,8 +20,9 @@
 #include <gsl/pointers>
 
 class Scene;
-struct LitViewProperties;
+struct ViewProperties;
 struct CombinedImageSampler;
+class CommandRingBuffer;
 class RenderState;
 
 struct ShadowData
@@ -36,12 +37,12 @@ class ShadowSystem
 public:
 	ShadowSystem(
 		vk::Extent2D extent,
-		GraphicsPipelineSystem& graphicsPipelineSystem,
+		GraphicsPipelineCache& graphicsPipelineCache,
+		BindlessDescriptors& bindlessDescriptors,
+		BindlessDrawParams& bindlessDrawParams,
 		MeshAllocator& meshAllocator,
 		SceneTree& sceneTree,
-		LightSystem& lightSystem,
-		BindlessDescriptors& bindlessDescriptors,
-		BindlessDrawParams& bindlessDrawParams
+		LightSystem& lightSystem
 	);
 
 	IMPLEMENT_MOVABLE_ONLY(ShadowSystem)
@@ -50,7 +51,7 @@ public:
 
 	ShadowID CreateShadowMap(LightID lightID);
 
-	void UploadToGPU();
+	void UploadToGPU(CommandRingBuffer& commandRingBuffer);
 	
 	void Update(const Camera& camera, BoundingBox sceneBoundingBox);
 
@@ -93,7 +94,7 @@ private:
 	vk::Extent2D m_extent;
 	vk::UniqueRenderPass m_renderPass;
 
-	gsl::not_null<GraphicsPipelineSystem*> m_graphicsPipelineSystem;
+	gsl::not_null<GraphicsPipelineCache*> m_graphicsPipelineCache;
 	gsl::not_null<MeshAllocator*> m_meshAllocator;
 	gsl::not_null<SceneTree*> m_sceneTree;
 	gsl::not_null<LightSystem*> m_lightSystem;
@@ -102,7 +103,7 @@ private:
 
 	// ShadowID -> Array index
 	std::vector<LightID> m_lights; // casting shadows
-	std::vector<LitViewProperties> m_shadowViews;
+	std::vector<ViewProperties> m_shadowViews;
 	std::vector<MaterialShadow> m_materialShadows;
 	std::vector<std::unique_ptr<Image>> m_depthImages; // todo: replace with Image (remove nullptr)
 	std::vector<vk::UniqueFramebuffer> m_framebuffers;

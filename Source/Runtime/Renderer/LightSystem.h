@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Renderer/Bindless.h> // todo (hbedard): sad to include this just for handle defines
+#include <Renderer/BindlessDefines.h>
 #include <RHI/Buffers.h>
 
 #include <glm_includes.h>
@@ -8,7 +8,8 @@
 #include <gsl/pointers>
 #include <utility>
 
-class CommandBufferPool;
+class CommandRingBuffer;
+class BindlessDescriptors;
 
 struct PhongLight
 {
@@ -37,7 +38,7 @@ public:
 	
 	LightID AddLight(PhongLight light)
 	{
-		LightID id = (LightID)m_lights.size();
+		LightID id = static_cast<LightID>(m_lights.size());
 		m_lights.push_back(std::move(light));
 		return id;
 	}
@@ -48,7 +49,7 @@ public:
 
 	uint32_t GetLightCount() const { return static_cast<uint32_t>(m_lights.size()); }
 
-	void UploadToGPU(CommandBufferPool& commandBufferPool);
+	void UploadToGPU(CommandRingBuffer& commandRingBuffer);
 
 	BufferHandle GetLightsBufferHandle() const { return m_lightsBufferHandle; }
 

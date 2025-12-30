@@ -5,10 +5,10 @@
 
 #include <vector>
 
-class CommandBufferPool // todo: rename this
+class CommandRingBuffer
 {
 public:
-	CommandBufferPool(size_t count, size_t nbConcurrentSubmit, uint32_t queueFamily, vk::CommandPoolCreateFlags flags = {});
+	CommandRingBuffer(size_t count, size_t nbConcurrentSubmit, uint32_t queueFamily, vk::CommandPoolCreateFlags flags = {});
 
 	void Reset(size_t count);
 
@@ -19,9 +19,9 @@ public:
 		g_device->GetGraphicsQueue().submit(submitInfo, submitFence);
 	}
 
-	size_t GetCount()
+	size_t GetCount() const
 	{
-		return m_commandBufferPools.size();
+		return m_commandRingBuffers.size();
 	}
 
 	size_t GetNbConcurrentSubmits() const
@@ -29,15 +29,15 @@ public:
 		return m_fences.size();
 	}
 
-	vk::CommandBuffer& GetCommandBuffer()
+	vk::CommandBuffer GetCommandBuffer() const
 	{
 		return m_commandBuffers[m_commandBufferIndex].get();
 	}
 
-	vk::CommandBuffer& ResetAndGetCommandBuffer()
+	vk::CommandBuffer ResetAndGetCommandBuffer()
 	{
 		// Clear command buffer using resetCommandPool
-		g_device->Get().resetCommandPool(m_commandBufferPools[m_commandBufferIndex].get(), {});
+		g_device->Get().resetCommandPool(m_commandRingBuffers[m_commandBufferIndex].get(), {});
 		return m_commandBuffers[m_commandBufferIndex].get();
 	}
 
@@ -74,7 +74,7 @@ private:
 	uint32_t m_nbConcurrentSubmit = 2;
 
 	uint32_t m_commandBufferIndex = 0;
-	std::vector<vk::UniqueCommandPool> m_commandBufferPools;
+	std::vector<vk::UniqueCommandPool> m_commandRingBuffers;
 	std::vector<vk::UniqueCommandBuffer> m_commandBuffers;
 	std::vector<vk::UniqueFence> m_fences; // to know when commands have completed
 	std::vector<std::vector<DeferredDestructible*>> m_resourcesToDestroy; // once submission has completed

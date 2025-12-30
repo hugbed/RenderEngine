@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Renderer/BindlessDefines.h>
 #include <RHI/Image.h>
 #include <RHI/Buffers.h>
 #include <RHI/constants.h>
@@ -9,22 +10,12 @@
 #include <limits>
 #include <unordered_map>
 
-enum class TextureHandle : uint32_t { Invalid = (std::numeric_limits<uint32_t>::max)() };
-enum class BufferHandle : uint32_t { Invalid = (std::numeric_limits<uint32_t>::max)() };
-enum class BindlessDrawParamsHandle : uint32_t { Invalid = (std::numeric_limits<uint32_t>::max)() };
-
-enum class BindlessDescriptorSet
-{
-	eBindlessDescriptors = 0,
-	eDrawParams = 1,
-};
-
 namespace vk
 {
 	class CommandBuffer;
 }
 
-class GraphicsPipelineSystem;
+class GraphicsPipelineCache;
 
 class BindlessDrawParams
 {
@@ -122,5 +113,5 @@ public:
 	BindlessFactory(
 		const BindlessDescriptors& bindlessDescriptors,
 		const BindlessDrawParams& bindlessDrawParams,
-		GraphicsPipelineSystem& graphicsPipelineSystem);
+		GraphicsPipelineCache& graphicsPipelineCache);
 };

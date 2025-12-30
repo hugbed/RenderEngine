@@ -1,20 +1,20 @@
-#include <RHI/CommandBufferPool.h>
+#include <RHI/CommandRingBuffer.h>
 
-CommandBufferPool::CommandBufferPool(size_t count, size_t nbConcurrentSubmit, uint32_t queueFamily, vk::CommandPoolCreateFlags flags)
+CommandRingBuffer::CommandRingBuffer(size_t count, size_t nbConcurrentSubmit, uint32_t queueFamily, vk::CommandPoolCreateFlags flags)
 	: m_queueFamily(queueFamily)
 	, m_nbConcurrentSubmit(static_cast<uint32_t>(nbConcurrentSubmit))
 {
 	// Pools (1 pool per concurrent submit)
-	m_commandBufferPools.reserve(count);
+	m_commandRingBuffers.reserve(count);
 	for (size_t i = 0; i < count; ++i)
 	{
-		m_commandBufferPools.push_back(g_device->Get().createCommandPoolUnique(vk::CommandPoolCreateInfo(
+		m_commandRingBuffers.push_back(g_device->Get().createCommandPoolUnique(vk::CommandPoolCreateInfo(
 			vk::CommandPoolCreateFlagBits::eResetCommandBuffer, m_queueFamily
 		)));
 
 		// Command Buffers (1 per pool)
 		auto commandBuffers = g_device->Get().allocateCommandBuffersUnique(vk::CommandBufferAllocateInfo(
-			m_commandBufferPools[i].get(), vk::CommandBufferLevel::ePrimary, 1
+			m_commandRingBuffers[i].get(), vk::CommandBufferLevel::ePrimary, 1
 		));
 		m_commandBuffers.push_back(std::move(commandBuffers[0]));
 	}
@@ -30,21 +30,21 @@ CommandBufferPool::CommandBufferPool(size_t count, size_t nbConcurrentSubmit, ui
 	}
 }
 
-void CommandBufferPool::Reset(size_t count)
+void CommandRingBuffer::Reset(size_t count)
 {
 	m_commandBuffers.clear();
-	m_commandBufferPools.clear();
+	m_commandRingBuffers.clear();
 
-	m_commandBufferPools.reserve(count);
+	m_commandRingBuffers.reserve(count);
 	m_commandBuffers.reserve(count);
 	for (size_t i = 0; i < count; ++i)
 	{
-		m_commandBufferPools.push_back(g_device->Get().createCommandPoolUnique(vk::CommandPoolCreateInfo(
+		m_commandRingBuffers.push_back(g_device->Get().createCommandPoolUnique(vk::CommandPoolCreateInfo(
 			vk::CommandPoolCreateFlagBits::eResetCommandBuffer, m_queueFamily
 		)));
 
 		auto commandBuffers = g_device->Get().allocateCommandBuffersUnique(vk::CommandBufferAllocateInfo(
-			m_commandBufferPools[i].get(), vk::CommandBufferLevel::ePrimary, static_cast<uint32_t>(count)
+			m_commandRingBuffers[i].get(), vk::CommandBufferLevel::ePrimary, static_cast<uint32_t>(count)
 		));
 		m_commandBuffers.push_back(std::move(commandBuffers[0]));
 	}

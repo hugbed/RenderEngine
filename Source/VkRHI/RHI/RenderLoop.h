@@ -1,7 +1,7 @@
 #pragma once
 
 #include <RHI/Window.h>
-#include <RHI/CommandBufferPool.h>
+#include <RHI/CommandRingBuffer.h>
 #include <RHI/constants.h>
 #include <vulkan/vulkan.hpp>
 
@@ -26,6 +26,8 @@ public:
 
 	RenderLoop(vk::SurfaceKHR surface, vk::Extent2D extent, Window& window);
 
+	CommandRingBuffer& GetCommandRingBuffer();
+
 	void Init();
 	void Run();
 
@@ -33,7 +35,7 @@ protected:
 	virtual void Init(vk::CommandBuffer& commandBuffer) = 0;
 	virtual void OnSwapchainRecreated() = 0;
 	virtual void Update() = 0;
-	virtual void RenderFrame(uint32_t imageIndex, vk::CommandBuffer commandBuffer) = 0;
+	virtual void Render(uint32_t imageIndex, vk::CommandBuffer commandBuffer) = 0;
 
 	static void OnResize(void* data, int w, int h);
 
@@ -53,7 +55,7 @@ protected:
 	bool m_frameBufferResized{ false };
 	vk::SurfaceKHR m_surface;
 	std::unique_ptr<Swapchain> m_swapchain;
-	CommandBufferPool m_commandBufferPool;
+	CommandRingBuffer m_commandRingBuffer;
 
 	vk::UniqueSemaphore m_imageAvailableSemaphores[RHIConstants::kMaxFramesInFlight];
 	std::vector<vk::UniqueSemaphore> m_renderFinishedSemaphores; // num of swapchain images

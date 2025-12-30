@@ -1,8 +1,8 @@
 #pragma once
 
-#include <Renderer/MaterialSystem.h>
+#include <Renderer/SurfaceLitMaterialSystem.h>
 #include <Renderer/MeshAllocator.h>
-#include <RHI/GraphicsPipelineSystem.h>
+#include <RHI/GraphicsPipelineCache.h>
 #include <Renderer/Bindless.h>
 
 #include <vulkan/vulkan.hpp>
@@ -11,16 +11,15 @@
 // todo (hbedard): that's only specific to the surface lit material
 // technically this could be a single draw call
 // that's a bad name, maybe call it drawInterface?
-class RenderState
+class RenderState // todo (hbedard): rename render context
 {
 public:
 	RenderState(
-		GraphicsPipelineSystem& graphicsPipelineSystem,
+		GraphicsPipelineCache& graphicsPipelineCache,
 		SurfaceLitMaterialSystem& materialSystem,
 		const BindlessDrawParams& bindlessDrawParams
 	)
-		: m_graphicsPipelineSystem(&graphicsPipelineSystem)
-		, m_materialSystem(&materialSystem)
+		: m_graphicsPipelineCache(&graphicsPipelineCache)
 		, m_bindlessDrawParams(&bindlessDrawParams)
 	{}
 
@@ -81,17 +80,17 @@ public:
 		{
 			m_commandBuffer->bindPipeline(
 				vk::PipelineBindPoint::eGraphics,
-				m_graphicsPipelineSystem->GetPipeline(newPipelineID)
+				m_graphicsPipelineCache->GetPipeline(newPipelineID)
 			);
 			m_pipelineID = newPipelineID;
 		}
 	}
 
-	void BindSceneNode(SceneNodeID newSceneNodeID)
+	void BindSceneNode(SceneNodeHandle newSceneNodeID)
 	{
 		if (newSceneNodeID != m_sceneNodeID)
 		{
-			vk::PipelineLayout pipelineLayout = m_graphicsPipelineSystem->GetPipelineLayout(m_pipelineID, 0);
+			vk::PipelineLayout pipelineLayout = m_graphicsPipelineCache->GetPipelineLayout(m_pipelineID, 0);
 
 			uint32_t sceneNodeIndex = static_cast<uint32_t>(newSceneNodeID);
 
@@ -110,9 +109,9 @@ public:
 	{
 		if (newMaterial != m_material)
 		{
-			vk::PipelineLayout pipelineLayout = m_graphicsPipelineSystem->GetPipelineLayout(m_pipelineID, 0); // todo (hbedard): is that right?
+			vk::PipelineLayout pipelineLayout = m_graphicsPipelineCache->GetPipelineLayout(m_pipelineID, 0); // todo (hbedard): is that right?
 
-			uint32_t materialIndex = newMaterial.GetID();
+			uint32_t materialIndex = newMaterial.GetIndex();
 
 			// Set material index push constant
 			m_commandBuffer->pushConstants(
@@ -126,13 +125,12 @@ public:
 	}
 
 private:
-	gsl::not_null<GraphicsPipelineSystem*> m_graphicsPipelineSystem;
-	gsl::not_null<SurfaceLitMaterialSystem*> m_materialSystem;
+	gsl::not_null<GraphicsPipelineCache*> m_graphicsPipelineCache;
 	gsl::not_null<const BindlessDrawParams*> m_bindlessDrawParams;
 
 	uint32_t m_frameIndex = 0;
 	vk::CommandBuffer* m_commandBuffer = nullptr;
-	SceneNodeID m_sceneNodeID = SceneNodeID::Invalid;
+	SceneNodeHandle m_sceneNodeID = SceneNodeHandle::Invalid;
 	GraphicsPipelineID m_pipelineID = ~0U;
 	MaterialHandle m_material = MaterialHandle::Invalid();
 };

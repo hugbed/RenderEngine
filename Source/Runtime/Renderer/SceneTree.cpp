@@ -1,19 +1,22 @@
 #include <Renderer/SceneTree.h>
 
 #include <Renderer/Bindless.h>
-#include <RHI/CommandBufferPool.h>
+#include <RHI/CommandRingBuffer.h>
 
-SceneNodeID SceneTree::CreateNode(glm::mat4 transform, BoundingBox boundingBox, SceneNodeID parent)
+SceneNodeHandle SceneTree::CreateNode(glm::mat4 transform, BoundingBox boundingBox, SceneNodeHandle parent)
 {
-	SceneNodeID id = id_cast<SceneNodeID>(m_transforms.size());
+	SceneNodeHandle id = id_cast<SceneNodeHandle>(m_transforms.size());
 	m_transforms.push_back(std::move(transform));
 	m_boundingBoxes.push_back(std::move(boundingBox));
 	m_parents.push_back(parent);
     return id;
 }
 
-void SceneTree::UploadToGPU(CommandBufferPool& commandBufferPool)
+void SceneTree::UploadToGPU(CommandRingBuffer& commandRingBuffer)
 {
+	// todo (hbedard): not necessarily related to GPU, there could be a prepare function or something
+	m_sceneBoundingBox = ComputeWorldBoundingBox();
+
 	const void* data = reinterpret_cast<const void*>(m_transforms.data());
 	size_t size = m_transforms.size() * sizeof(m_transforms[0]);
 	vk::BufferCreateInfo bufferInfo({}, size, vk::BufferUsageFlagBits::eStorageBuffer);

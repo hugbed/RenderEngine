@@ -58,7 +58,7 @@ struct ShaderReflection
 	SmallVector<vk::SpecializationMapEntry> specializationMapEntries;
 };
 
-class ShaderSystem
+class ShaderCache
 {
 public:
 	// --- Shader Creation --- //
