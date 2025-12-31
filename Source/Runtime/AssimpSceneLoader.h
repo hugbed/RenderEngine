@@ -27,10 +27,10 @@ class SceneTree;
 class Grid;
 
 // todo (hbedard): create an importer for assimp files, and add a Scene class in Renderer
-class AssimpScene
+class AssimpSceneLoader
 {
 public:
-	AssimpScene(
+	AssimpSceneLoader(
 		std::string basePath,
 		std::string sceneFilename,
 		Renderer& renderer

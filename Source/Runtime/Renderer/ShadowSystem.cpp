@@ -1,7 +1,8 @@
 #include <Renderer/ShadowSystem.h>
 
-#include <AssimpScene.h>
 #include <Renderer/ViewProperties.h>
+#include <Renderer/RenderCommandEncoder.h>
+#include <Renderer/TextureCache.h>
 
 #include <utility>
 

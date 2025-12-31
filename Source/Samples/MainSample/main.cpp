@@ -3,51 +3,21 @@
 #define _USE_MATH_DEFINES
 #endif
 
-#include <AssimpScene.h>
+#include <AssimpSceneLoader.h>
 #include <InputSystem.h>
 #include <CameraController.h>
 #include <Renderer/Camera.h>
 #include <Renderer/CameraViewSystem.h>
-#include <Renderer/TextureCache.h>
-#include <Renderer/LightSystem.h>
-#include <Renderer/SurfaceLitMaterialSystem.h>
-#include <Renderer/MeshAllocator.h>
-#include <Renderer/ShadowSystem.h>
-#include <Renderer/RenderCommandEncoder.h>
-#include <Renderer/TexturedQuad.h>
-#include <Renderer/SceneTree.h>
-#include <Renderer/Grid.h>
-#include <Renderer/Skybox.h>
-#include <Renderer/ImGuiVulkan.h>
 #include <Renderer/Renderer.h>
 #include <Renderer/RenderScene.h>
-#include <RHI/RenderLoop.h>
 #include <RHI/Window.h>
-#include <RHI/Instance.h>
-#include <RHI/Device.h>
-#include <RHI/PhysicalDevice.h>
-#include <RHI/CommandRingBuffer.h>
-#include <RHI/Swapchain.h>
-#include <RHI/RenderPass.h>
-#include <RHI/Framebuffer.h>
-#include <RHI/GraphicsPipelineCache.h>
-#include <RHI/ShaderCache.h>
-#include <RHI/Image.h>
-#include <RHI/Texture.h>
 #include <RHI/vk_utils.h>
 #include <ArgumentParser.h>
-#include <file_utils.h>
 #include <GLFW/glfw3.h>
 #include <imgui.h>
-#include <backends/imgui_impl_glfw.h>
-#include <backends/imgui_impl_vulkan.h>
-#include <glm_includes.h> // for Uniform Buffer
 
-#include <algorithm>
 #include <chrono>
-#include <unordered_map>
 #include <iostream>
-#include <cmath>
 
 class App : public Renderer
 {
@@ -60,7 +30,7 @@ public:
 
 	App(VkInstance instance, vk::SurfaceKHR surface, vk::Extent2D extent, Window& window, std::string basePath, std::string sceneFile)
 		: Renderer(instance, surface, extent, window)
-		, m_scene(std::make_unique<AssimpScene>(std::move(basePath), std::move(sceneFile), *this))
+		, m_scene(std::make_unique<AssimpSceneLoader>(std::move(basePath), std::move(sceneFile), *this))
 	{
 		window.SetMouseButtonCallback(reinterpret_cast<void*>(&m_inputSystem), InputSystem::OnMouseButton);
 		window.SetMouseScrollCallback(reinterpret_cast<void*>(&m_inputSystem), InputSystem::OnMouseScroll);
@@ -154,7 +124,7 @@ protected:
 
 private:
 	InputSystem m_inputSystem;
-	std::unique_ptr<AssimpScene> m_scene;
+	std::unique_ptr<AssimpSceneLoader> m_scene;
 	std::unique_ptr<CameraController> m_cameraController;
 };
 

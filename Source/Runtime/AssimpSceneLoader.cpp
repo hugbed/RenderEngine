@@ -1,4 +1,4 @@
-#include <AssimpScene.h>
+#include <AssimpSceneLoader.h>
 
 #include <Renderer/Renderer.h>
 #include <Renderer/RenderScene.h>
@@ -43,7 +43,7 @@ namespace
 }
 
 // todo (hbedard): makes no sense to create stuff outside and pass all this here :)
-AssimpScene::AssimpScene(
+AssimpSceneLoader::AssimpSceneLoader(
 	std::string basePath,
 	std::string sceneFilename,
 	Renderer& renderer)
@@ -54,19 +54,19 @@ AssimpScene::AssimpScene(
 {
 }
 
-RenderScene& AssimpScene::GetRenderScene() { return *m_renderer->GetRenderScene(); }
+RenderScene& AssimpSceneLoader::GetRenderScene() { return *m_renderer->GetRenderScene(); }
 
-void AssimpScene::Load(vk::CommandBuffer commandBuffer)
+void AssimpSceneLoader::Load(vk::CommandBuffer commandBuffer)
 {
 	LoadScene(commandBuffer);
 }
 
-void AssimpScene::ResetCamera()
+void AssimpSceneLoader::ResetCamera()
 {
 	LoadCamera();
 }
 
-void AssimpScene::LoadScene(vk::CommandBuffer commandBuffer)
+void AssimpSceneLoader::LoadScene(vk::CommandBuffer commandBuffer)
 {
 	int flags = aiProcess_Triangulate
 		| aiProcess_GenNormals
@@ -89,7 +89,7 @@ void AssimpScene::LoadScene(vk::CommandBuffer commandBuffer)
 	LoadCamera();
 }
 
-void AssimpScene::LoadLights(vk::CommandBuffer buffer)
+void AssimpSceneLoader::LoadLights(vk::CommandBuffer buffer)
 {
 	GetRenderScene().GetLightSystem()->ReserveLights(m_assimp.scene->mNumLights);
 
@@ -139,7 +139,7 @@ void AssimpScene::LoadLights(vk::CommandBuffer buffer)
 	// todo: support no shadow casting lights
 }
 
-void AssimpScene::LoadCamera()
+void AssimpSceneLoader::LoadCamera()
 {
 	Camera& sceneCamera = GetRenderScene().GetCameraViewSystem()->GetCamera();
 
@@ -163,13 +163,13 @@ void AssimpScene::LoadCamera()
 	}
 }
 
-void AssimpScene::LoadSceneNodes(vk::CommandBuffer commandBuffer)
+void AssimpSceneLoader::LoadSceneNodes(vk::CommandBuffer commandBuffer)
 {
 	m_maxVertexDist = 0.0f;
 	LoadNodeAndChildren(m_assimp.scene->mRootNode, glm::mat4(1.0f));
 }
 
-void AssimpScene::LoadNodeAndChildren(aiNode* node, glm::mat4 transform)
+void AssimpSceneLoader::LoadNodeAndChildren(aiNode* node, glm::mat4 transform)
 {
 	// Convert from row-major (aiMatrix4x4) to column-major (glm::mat4)
 	// Note: don't know if all formats supported by assimp are row-major but Collada is.
@@ -184,7 +184,7 @@ void AssimpScene::LoadNodeAndChildren(aiNode* node, glm::mat4 transform)
 		LoadNodeAndChildren(node->mChildren[i], newTransform);
 }
 
-SceneNodeHandle AssimpScene::LoadSceneNode(const aiNode& fileNode, glm::mat4 transform)
+SceneNodeHandle AssimpSceneLoader::LoadSceneNode(const aiNode& fileNode, glm::mat4 transform)
 {
 	constexpr float maxFloat = std::numeric_limits<float>::max();
 
@@ -249,7 +249,7 @@ SceneNodeHandle AssimpScene::LoadSceneNode(const aiNode& fileNode, glm::mat4 tra
 	return sceneNodeID;
 }
 
-void AssimpScene::LoadMaterials(vk::CommandBuffer commandBuffer)
+void AssimpSceneLoader::LoadMaterials(vk::CommandBuffer commandBuffer)
 {
 	// Check if we already have all materials set-up
 	if (m_materials.size() == m_assimp.scene->mNumMaterials)
