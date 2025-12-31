@@ -186,6 +186,7 @@ void RenderScene::RenderMeshes(RenderState& renderState, const std::vector<MeshD
 
 void RenderScene::RenderShadowMaps(RenderState& renderState, uint32_t concurrentFrameIndex)
 {
+	// todo (hbedard): I have a feeling this is supposed to be in another pass?
 	if (m_shadowSystem->GetShadowCount() == 0 || (m_opaqueDrawCalls.empty() && m_translucentDrawCalls.empty()))
 	{
 		return;

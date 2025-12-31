@@ -34,6 +34,25 @@ void Renderer::Init(vk::CommandBuffer& commandBuffer)
 	m_renderScene->Init(commandBuffer);
 	m_textureCache->UploadTextures(m_commandRingBuffer);
 	m_bindlessDrawParams->Build(commandBuffer);
+	CreateSecondaryCommandBuffers();
+}
+
+void Renderer::OnSwapchainRecreated()
+{
+	CreateSecondaryCommandBuffers();
+}
+
+void Renderer::CreateSecondaryCommandBuffers()
+{
+	m_renderCommandBuffers.clear();
+	m_secondaryCommandPool.reset();
+
+	m_secondaryCommandPool = g_device->Get().createCommandPoolUnique(vk::CommandPoolCreateInfo(
+		vk::CommandPoolCreateFlagBits::eResetCommandBuffer, g_physicalDevice->GetQueueFamilies().graphicsFamily.value()
+	));
+	m_renderCommandBuffers = g_device->Get().allocateCommandBuffersUnique(vk::CommandBufferAllocateInfo(
+		m_secondaryCommandPool.get(), vk::CommandBufferLevel::eSecondary, m_framebuffers.size()
+	));
 }
 
 void Renderer::Reset(vk::CommandBuffer commandBuffer)
@@ -46,13 +65,20 @@ void Renderer::Update(uint32_t concurrentFrameIndex)
 	m_renderScene->Update(concurrentFrameIndex);
 }
 
-void Renderer::Render(vk::CommandBuffer commandBuffer, uint32_t concurrentFrameIndex)
+void Renderer::Render(uint32_t imageIndex)
 {
-	RenderState renderState(*m_graphicsPipelineCache, *m_renderScene->GetMaterialSystem(), *m_bindlessDrawParams);
-	renderState.BeginRender(commandBuffer, concurrentFrameIndex);
-	renderState.BindBindlessDescriptorSet(m_bindlessDescriptors->GetPipelineLayout(), m_bindlessDescriptors->GetDescriptorSet());
-	m_renderScene->Render(renderState, concurrentFrameIndex);
-	renderState.EndRender();
+	vk::UniqueCommandBuffer& renderPassCommandBuffer = m_renderCommandBuffers[imageIndex];
+	vk::CommandBufferInheritanceInfo info(m_renderPass->Get(), 0, m_framebuffers[imageIndex].Get());
+	renderPassCommandBuffer->begin({ vk::CommandBufferUsageFlagBits::eRenderPassContinue, &info });
+	{
+		uint32_t concurrentFrameIndex = imageIndex % m_commandRingBuffer.GetNbConcurrentSubmits();
+		RenderState renderState(*m_graphicsPipelineCache, *m_renderScene->GetMaterialSystem(), *m_bindlessDrawParams);
+		renderState.BeginRender(renderPassCommandBuffer.get(), concurrentFrameIndex);
+		renderState.BindBindlessDescriptorSet(m_bindlessDescriptors->GetPipelineLayout(), m_bindlessDescriptors->GetDescriptorSet());
+		m_renderScene->Render(renderState, concurrentFrameIndex);
+		renderState.EndRender();
+	}
+	renderPassCommandBuffer->end();
 }
 
 vk::RenderPass Renderer::GetRenderPass() const
@@ -81,6 +107,12 @@ const Swapchain& Renderer::GetSwapchain() const
 	return *m_swapchain;
 }
 
+vk::CommandBuffer Renderer::GetRenderCommandBuffer(uint32_t imageIndex) const
+{
+	assert(imageIndex < m_renderCommandBuffers.size());
+	return m_renderCommandBuffers[imageIndex].get();
+}
+
 gsl::not_null<GraphicsPipelineCache*> Renderer::GetGraphicsPipelineCache() const
 {
 	return m_graphicsPipelineCache.get();
@@ -105,3 +137,4 @@ gsl::not_null<RenderScene*> Renderer::GetRenderScene() const
 {
 	return m_renderScene.get();
 }
+

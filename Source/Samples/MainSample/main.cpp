@@ -84,16 +84,12 @@ protected:
 	void Init(vk::CommandBuffer& commandBuffer) override
 	{
 		m_scene->Load(commandBuffer);
-		InitShadowMaps();
 		Renderer::Init(commandBuffer);
-		m_cameraController = std::make_unique<CameraController>(m_renderScene->GetCameraViewSystem()->GetCamera(), GetSwapchain().GetImageDescription().extent);
+		m_cameraController = std::make_unique<CameraController>(m_renderScene->GetCameraViewSystem()->GetCamera(), m_swapchain->GetImageDescription().extent);
 
 		// Init ImGui
 		ImGuiVulkan::Resources resources = PopulateImGuiResources();
 		m_imgui = std::make_unique<ImGuiVulkan>(resources, commandBuffer);
-
-		CreateSecondaryCommandBuffers();
-		RecordRenderPassCommands();
 	}
 
 	void ShowMenuFile()
@@ -172,34 +168,8 @@ protected:
 		m_commandRingBuffer.Submit(submitInfo);
 		m_commandRingBuffer.WaitUntilSubmitComplete();
 
-		CreateSecondaryCommandBuffers();
-		m_frameDirty = kAllFramesDirty;
+		Renderer::OnSwapchainRecreated();
 	}
-
-	void RecordRenderPassCommands()
-	{
-		for (size_t i = 0; i < m_framebuffers.size(); ++i)
-		{
-			RecordFrameRenderPassCommands(i);
-		}
-	}
-
-	void RecordFrameRenderPassCommands(uint32_t imageIndex)
-	{
-		auto& commandBuffer = m_renderPassCommandBuffers[imageIndex];
-		vk::CommandBufferInheritanceInfo info(
-			m_renderPass->Get(), 0, m_framebuffers[imageIndex].Get()
-		);
-		commandBuffer->begin({ vk::CommandBufferUsageFlagBits::eRenderPassContinue, &info });
-		{
-			uint32_t concurrentFrameIndex = imageIndex % m_commandRingBuffer.GetNbConcurrentSubmits();
-			Renderer::Render(commandBuffer.get(), concurrentFrameIndex);
-		}
-		commandBuffer->end();
-	}
-
-	static constexpr uint8_t kAllFramesDirty = std::numeric_limits<uint8_t>::max();
-	uint8_t m_frameDirty = kAllFramesDirty;
 
 	void Render(uint32_t imageIndex, vk::CommandBuffer commandBuffer) override
 	{
@@ -208,12 +178,7 @@ protected:
 		// Record ImGui every frame
 		m_imgui->RecordCommands(imageIndex, framebuffer.Get());
 
-		// Record commands again if something changed
-		if ((m_frameDirty & (1 << (uint8_t)imageIndex)) > 0)
-		{
-			RecordFrameRenderPassCommands(imageIndex);
-			m_frameDirty &= ~(1 << (uint8_t)imageIndex);
-		}
+		Renderer::Render(imageIndex);
 
 		std::array<vk::ClearValue, 2> clearValues = {
 			vk::ClearColorValue(std::array<float, 4>{ 0.0f, 0.0f, 0.0f, 1.0f }),
@@ -226,63 +191,11 @@ protected:
 		);
 		commandBuffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eSecondaryCommandBuffers);
 		{
-			commandBuffer.executeCommands(m_renderPassCommandBuffers[imageIndex].get());
+			vk::CommandBuffer renderCommandBuffer = GetRenderCommandBuffer(imageIndex);
+			commandBuffer.executeCommands(renderCommandBuffer);
 			commandBuffer.executeCommands(m_imgui->GetCommandBuffer(imageIndex));
 		}
 		commandBuffer.endRenderPass();
-	}
-
-	void CreateSecondaryCommandBuffers()
-	{
-		m_renderPassCommandBuffers.clear();
-		m_secondaryCommandPool.reset();
-
-		// We don't need to repopulate draw commands every frame
-		// so keep them in a secondary command buffer
-		m_secondaryCommandPool = g_device->Get().createCommandPoolUnique(vk::CommandPoolCreateInfo(
-			vk::CommandPoolCreateFlagBits::eResetCommandBuffer, g_physicalDevice->GetQueueFamilies().graphicsFamily.value()
-		));
-
-		// Command Buffers
-		m_renderPassCommandBuffers = g_device->Get().allocateCommandBuffersUnique(vk::CommandBufferAllocateInfo(
-			m_secondaryCommandPool.get(), vk::CommandBufferLevel::eSecondary, m_framebuffers.size()
-		));
-	}
-
-	void InitShadowMaps()
-	{
-		if (GetRenderScene()->GetShadowSystem()->GetShadowCount() > 0)
-		{
-			GetRenderScene()->GetShadowSystem()->UploadToGPU(m_commandRingBuffer);
-		}
-
-		if (m_options.showShadowMapPreview)
-		{
-			// Optional view on the depth map
-			if (GetRenderScene()->GetShadowSystem()->GetShadowCount() > 0)
-			{
-				if (m_shadowMapPreviewQuad == nullptr)
-				{
-					m_shadowMapPreviewQuad = std::make_unique<TexturedQuad>(
-						GetRenderScene()->GetShadowSystem()->GetCombinedImageSampler(0),
-						*m_renderPass,
-						m_swapchain->GetImageDescription().extent,
-						*m_graphicsPipelineCache,
-						*m_bindlessDescriptors,
-						*m_bindlessDrawParams,
-						vk::ImageLayout::eDepthStencilReadOnlyOptimal
-					);
-				}
-				else
-				{
-					m_shadowMapPreviewQuad->Reset(
-						GetRenderScene()->GetShadowSystem()->GetCombinedImageSampler(0),
-						*m_renderPass,
-						m_swapchain->GetImageDescription().extent
-					);
-				}
-			}
-		}
 	}
 
 	bool HandleOptionsKeys(const Inputs& inputs)
@@ -291,7 +204,6 @@ protected:
 		if (it != inputs.keyState.end() && it->second == KeyAction::ePressed)
 		{
 			m_options.showGrid = !m_options.showGrid;
-			m_frameDirty = kAllFramesDirty;
 			return true;
 		}
 		return false;
@@ -321,16 +233,9 @@ protected:
 
 private:
 	std::unique_ptr<ImGuiVulkan> m_imgui;
-
 	InputSystem m_inputSystem;
-
-	// Secondary command buffers
-	vk::UniqueCommandPool m_secondaryCommandPool;
-	std::vector<vk::UniqueCommandBuffer> m_renderPassCommandBuffers;
-
 	std::unique_ptr<AssimpScene> m_scene;
 	std::unique_ptr<CameraController> m_cameraController;
-	std::unique_ptr<TexturedQuad> m_shadowMapPreviewQuad;
 };
 
 int main(int argc, char* argv[])

@@ -31,19 +31,20 @@ public:
 
 	// todo (hbedard): currently implemented by App
 	virtual void Init(vk::CommandBuffer& commandBuffer) override;
-	//virtual void OnSwapchainRecreated() {}
 	
 	//virtual void Render(uint32_t imageIndex, vk::CommandBuffer commandBuffer) {}
 
+	void OnSwapchainRecreated() override;
 	void Reset(vk::CommandBuffer commandBuffer);
 	void Update(uint32_t concurrentFrameIndex);
-	void Render(vk::CommandBuffer commandBuffer, uint32_t concurrentFrameIndex);
+	void Render(uint32_t imageIndex);
 
 	vk::RenderPass GetRenderPass() const;
 	vk::Extent2D GetImageExtent() const;
 	vk::Instance GetInstance() const;
 	const Window& GetWindow() const;
 	const Swapchain& GetSwapchain() const;
+	vk::CommandBuffer GetRenderCommandBuffer(uint32_t imageIndex) const;
 
 	gsl::not_null<GraphicsPipelineCache*> GetGraphicsPipelineCache() const;
 	gsl::not_null<BindlessDescriptors*> GetBindlessDescriptors() const;
@@ -55,6 +56,8 @@ protected:
 	vk::Instance m_instance;
 	std::unique_ptr<RenderPass> m_renderPass;
 	std::vector<Framebuffer> m_framebuffers;
+	vk::UniqueCommandPool m_secondaryCommandPool;
+	std::vector<vk::UniqueCommandBuffer> m_renderCommandBuffers; // contains render commands
 	std::unique_ptr<ShaderCache> m_shaderCache;
 	std::unique_ptr<GraphicsPipelineCache> m_graphicsPipelineCache;
 	std::unique_ptr<BindlessDescriptors> m_bindlessDescriptors;
@@ -62,4 +65,6 @@ protected:
 	std::unique_ptr<BindlessFactory> m_bindlessFactory; // todo (hbedard): remove that
 	std::unique_ptr<TextureCache> m_textureCache;
 	std::unique_ptr<RenderScene> m_renderScene;
+
+	void CreateSecondaryCommandBuffers();
 };
