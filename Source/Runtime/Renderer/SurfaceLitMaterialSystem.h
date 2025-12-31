@@ -23,7 +23,7 @@ class MeshAllocator;
 class BindlessDescriptors;
 class SceneTree;
 class ShadowSystem;
-class RenderState;
+class RenderCommandEncoder;
 
 // todo: find better naming for those structures
 
@@ -101,7 +101,7 @@ public:
 
 	void Reset(vk::RenderPass renderPass, vk::Extent2D extent);
 	
-	void Draw(RenderState& renderState, gsl::span<const MeshDrawInfo> drawCalls) const;
+	void Draw(RenderCommandEncoder& renderCommandEncoder, gsl::span<const MeshDrawInfo> drawCalls) const;
 
 	void SetViewBufferHandles(gsl::span<const BufferHandle> viewBufferHandles);
 

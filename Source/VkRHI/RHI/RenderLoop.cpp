@@ -39,7 +39,7 @@ void RenderLoop::Init()
 	auto commandBuffer = m_commandRingBuffer.ResetAndGetCommandBuffer();
 	commandBuffer.begin({ vk::CommandBufferUsageFlagBits::eOneTimeSubmit });
 	{
-		Init(commandBuffer);
+		OnInit();
 	}
 	commandBuffer.end();
 
@@ -101,7 +101,7 @@ void RenderLoop::Render()
 	auto commandBuffer = m_commandRingBuffer.ResetAndGetCommandBuffer();
 	commandBuffer.begin({ vk::CommandBufferUsageFlagBits::eOneTimeSubmit });
 	{
-		Render(imageIndex, commandBuffer);
+		Render(commandBuffer, imageIndex);
 	}
 	commandBuffer.end();
 

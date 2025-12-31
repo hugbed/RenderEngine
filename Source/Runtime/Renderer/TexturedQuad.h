@@ -12,7 +12,7 @@
 
 #include <memory>
 
-class RenderState;
+class RenderCommandEncoder;
 
 // Utility to draw a texture on a small viewport on the screen
 class TexturedQuad
@@ -43,7 +43,7 @@ public:
 
 	void SetProperties(Properties properties) { m_properties = properties; }
 
-	void Draw(RenderState& renderState);
+	void Draw(RenderCommandEncoder& renderCommandEncoder);
 
 private:
 	struct TexturedQuadDrawParams

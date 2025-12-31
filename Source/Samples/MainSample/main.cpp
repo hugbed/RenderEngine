@@ -13,7 +13,7 @@
 #include <Renderer/SurfaceLitMaterialSystem.h>
 #include <Renderer/MeshAllocator.h>
 #include <Renderer/ShadowSystem.h>
-#include <Renderer/RenderState.h>
+#include <Renderer/RenderCommandEncoder.h>
 #include <Renderer/TexturedQuad.h>
 #include <Renderer/SceneTree.h>
 #include <Renderer/Grid.h>
@@ -68,8 +68,6 @@ public:
 		window.SetKeyCallback(reinterpret_cast<void*>(&m_inputSystem), InputSystem::OnKey);
 	}
 
-	using RenderLoop::Init;
-
 protected:
 	Inputs m_inputs;
 
@@ -81,15 +79,36 @@ protected:
 	// For shadow map shaders
 	const vk::Extent2D kShadowMapExtent = vk::Extent2D(2 * 2048, 2 * 2048);
 
-	void Init(vk::CommandBuffer& commandBuffer) override
+	void OnInit() override
 	{
-		m_scene->Load(commandBuffer);
-		Renderer::Init(commandBuffer);
-		m_cameraController = std::make_unique<CameraController>(m_renderScene->GetCameraViewSystem()->GetCamera(), m_swapchain->GetImageDescription().extent);
+		vk::CommandBuffer commandBuffer = m_commandRingBuffer.GetCommandBuffer();
 
-		// Init ImGui
-		ImGuiVulkan::Resources resources = PopulateImGuiResources();
-		m_imgui = std::make_unique<ImGuiVulkan>(resources, commandBuffer);
+		// Load asimp scene
+		m_scene->Load(commandBuffer);
+
+		// Initialize renderer
+		Renderer::OnInit();
+
+		// and finaly the camera controller
+		m_cameraController = std::make_unique<CameraController>(m_renderScene->GetCameraViewSystem()->GetCamera(), m_swapchain->GetImageDescription().extent);
+	}
+
+	void OnSwapchainRecreated() override
+	{
+		Renderer::OnSwapchainRecreated();
+
+		m_cameraController->Reset(m_renderScene->GetCameraViewSystem()->GetCamera(), GetImageExtent());
+	}
+
+	void Update() override
+	{
+		std::chrono::duration<float> dt_s = GetDeltaTime();
+		const Inputs& inputs = m_inputSystem.GetFrameInputs();
+		HandleOptionsKeys(inputs);
+		m_cameraController->Update(dt_s, inputs);
+		m_inputSystem.EndFrame();
+
+		Renderer::Update();
 	}
 
 	void ShowMenuFile()
@@ -104,23 +123,10 @@ protected:
 		}
 	}
 
-	ImGuiVulkan::Resources PopulateImGuiResources()
-	{
-		ImGuiVulkan::Resources resources = {};
-		resources.window = GetWindow().GetGLFWWindow();
-		resources.instance = GetInstance();
-		resources.physicalDevice = g_physicalDevice->Get();
-		resources.device = g_device->Get();
-		resources.queueFamily = g_physicalDevice->GetQueueFamilies().graphicsFamily.value();
-		resources.queue = g_device->GetGraphicsQueue();
-		resources.imageCount = GetSwapchain().GetImageCount();
-		resources.MSAASamples = (VkSampleCountFlagBits)g_physicalDevice->GetMsaaSamples();
-		resources.renderPass = GetRenderPass();
-		return resources;
-	}
-
 	void UpdateImGui()
 	{
+		m_inputSystem.CaptureMouseInputs(ImGui::GetIO().WantCaptureMouse);
+
 		// Add ImGui widgets here
 		/*ImGui::ShowDemoWindow();*/
 
@@ -135,69 +141,6 @@ protected:
 		}
 	}
 
-	// Render pass commands are recorded once and executed every frame
-	void OnSwapchainRecreated() override
-	{
-		// Reset resources that depend on the swapchain images
-		m_framebuffers.clear();
-
-		m_renderPass.reset();
-		m_renderPass = std::make_unique<RenderPass>(m_swapchain->GetImageDescription().format);
-		m_framebuffers = Framebuffer::FromSwapchain(*m_swapchain, m_renderPass->Get());
-
-		// --- Recreate everything that depends on the swapchain images --- //
-
-		// Use any command buffer for init
-		auto commandBuffer = m_commandRingBuffer.ResetAndGetCommandBuffer();
-		commandBuffer.begin({ vk::CommandBufferUsageFlagBits::eOneTimeSubmit });
-		{
-			Renderer::Reset(commandBuffer);
-
-			vk::Extent2D imageExtent = m_swapchain->GetImageDescription().extent;
-			m_cameraController->Reset(m_renderScene->GetCameraViewSystem()->GetCamera(), imageExtent);
-
-			// Reset ImGUI
-			ImGuiVulkan::Resources resources = PopulateImGuiResources();
-			m_imgui->Reset(resources, commandBuffer);
-		}
-		commandBuffer.end();
-
-		vk::SubmitInfo submitInfo;
-		submitInfo.commandBufferCount = 1;
-		submitInfo.pCommandBuffers = &commandBuffer;
-		m_commandRingBuffer.Submit(submitInfo);
-		m_commandRingBuffer.WaitUntilSubmitComplete();
-
-		Renderer::OnSwapchainRecreated();
-	}
-
-	void Render(uint32_t imageIndex, vk::CommandBuffer commandBuffer) override
-	{
-		auto& framebuffer = m_framebuffers[imageIndex];
-
-		// Record ImGui every frame
-		m_imgui->RecordCommands(imageIndex, framebuffer.Get());
-
-		Renderer::Render(imageIndex);
-
-		std::array<vk::ClearValue, 2> clearValues = {
-			vk::ClearColorValue(std::array<float, 4>{ 0.0f, 0.0f, 0.0f, 1.0f }),
-			vk::ClearDepthStencilValue(1.0f, 0.0f)
-		};
-		auto renderPassInfo = vk::RenderPassBeginInfo(
-			m_renderPass->Get(), framebuffer.Get(),
-			vk::Rect2D(vk::Offset2D(0, 0), framebuffer.GetExtent()),
-			static_cast<uint32_t>(clearValues.size()), clearValues.data()
-		);
-		commandBuffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eSecondaryCommandBuffers);
-		{
-			vk::CommandBuffer renderCommandBuffer = GetRenderCommandBuffer(imageIndex);
-			commandBuffer.executeCommands(renderCommandBuffer);
-			commandBuffer.executeCommands(m_imgui->GetCommandBuffer(imageIndex));
-		}
-		commandBuffer.endRenderPass();
-	}
-
 	bool HandleOptionsKeys(const Inputs& inputs)
 	{
 		auto it = inputs.keyState.find(GLFW_KEY_G);
@@ -209,30 +152,7 @@ protected:
 		return false;
 	}
 
-	void Update() override 
-	{
-		Renderer::Update(m_frameIndex);
-
-		m_imgui->BeginFrame();
-		{
-			m_inputSystem.CaptureMouseInputs(ImGui::GetIO().WantCaptureMouse);
-			UpdateImGui();
-		}
-		m_imgui->EndFrame();
-
-		std::chrono::duration<float> dt_s = GetDeltaTime();
-
-		const Inputs& inputs = m_inputSystem.GetFrameInputs();
-
-		HandleOptionsKeys(inputs);
-
-		m_cameraController->Update(dt_s, inputs);
-
-		m_inputSystem.EndFrame();
-	}
-
 private:
-	std::unique_ptr<ImGuiVulkan> m_imgui;
 	InputSystem m_inputSystem;
 	std::unique_ptr<AssimpScene> m_scene;
 	std::unique_ptr<CameraController> m_cameraController;

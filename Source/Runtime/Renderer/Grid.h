@@ -12,7 +12,7 @@
 #include <vector>
 
 class CommandRingBuffer;
-class RenderState;
+class RenderCommandEncoder;
 
 class Grid
 {
@@ -26,7 +26,7 @@ public:
 
 	void UploadToGPU(CommandRingBuffer& commandRingBuffer);
 
-	void Draw(RenderState& renderState);
+	void Draw(RenderCommandEncoder& renderCommandEncoder);
 
 	void Reset(vk::RenderPass renderPass, vk::Extent2D swapchainExtent);
 

@@ -54,18 +54,6 @@ AssimpScene::AssimpScene(
 {
 }
 
-void AssimpScene::Reset(vk::CommandBuffer& commandBuffer, const RenderPass& renderPass, vk::Extent2D imageExtent)
-{
-	vk::Extent2D newImageExtent = m_renderer->GetImageExtent();
-
-	m_renderer->Reset(commandBuffer);
-
-	//m_camera.SetImageExtent(newImageExtent.width, newImageExtent.height);
-	//m_materialSystem->Reset(m_renderer->GetRenderPass(), newImageExtent);
-	//m_skybox->Reset(m_renderer->GetRenderPass(), newImageExtent);
-	//m_grid->Reset(m_renderer->GetRenderPass(), newImageExtent);
-}
-
 RenderScene& AssimpScene::GetRenderScene() { return *m_renderer->GetRenderScene(); }
 
 void AssimpScene::Load(vk::CommandBuffer commandBuffer)

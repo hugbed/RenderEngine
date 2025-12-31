@@ -8,13 +8,10 @@
 #include <vulkan/vulkan.hpp>
 #include <gsl/pointers>
 
-// todo (hbedard): that's only specific to the surface lit material
-// technically this could be a single draw call
-// that's a bad name, maybe call it drawInterface?
-class RenderState // todo (hbedard): rename render context
+class RenderCommandEncoder
 {
 public:
-	RenderState(
+	RenderCommandEncoder(
 		GraphicsPipelineCache& graphicsPipelineCache,
 		SurfaceLitMaterialSystem& materialSystem,
 		const BindlessDrawParams& bindlessDrawParams

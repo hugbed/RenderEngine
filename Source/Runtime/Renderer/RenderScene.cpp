@@ -10,7 +10,7 @@
 #include <Renderer/SceneTree.h>
 #include <Renderer/Skybox.h>
 #include <Renderer/ShadowSystem.h>
-#include <Renderer/RenderState.h>
+#include <Renderer/RenderCommandEncoder.h>
 #include <RHI/GraphicsPipelineCache.h>
 #include <vulkan/vulkan.hpp>
 #include <glm_includes.h>
@@ -56,7 +56,7 @@ RenderScene::RenderScene(Renderer& renderer)
 
 RenderScene::~RenderScene() = default;
 
-void RenderScene::Init(vk::CommandBuffer commandBuffer)
+void RenderScene::Init()
 {
 	m_cameraViewSystem->Init(*m_renderer);
 
@@ -69,7 +69,7 @@ void RenderScene::Init(vk::CommandBuffer commandBuffer)
 	UploadToGPU();
 }
 
-void RenderScene::Reset(vk::CommandBuffer commandBuffer)
+void RenderScene::Reset()
 {
 	vk::Extent2D newExtent = m_renderer->GetImageExtent();
 	vk::RenderPass newRenderPass = m_renderer->GetRenderPass();
@@ -158,33 +158,33 @@ void RenderScene::SortTranslucentMeshes()
 		});
 }
 
-void RenderScene::Update(uint32_t concurrentFrameIndex)
+void RenderScene::Update()
 {
-	m_cameraViewSystem->Update(concurrentFrameIndex);
+	m_cameraViewSystem->Update(m_renderer->GetFrameIndex());
 	GetShadowSystem()->Update(m_cameraViewSystem->GetCamera(), m_sceneTree->GetSceneBoundingBox());
 	SortTranslucentMeshes();
 }
 
-void RenderScene::Render(RenderState& renderState, uint32_t concurrentFrameIndex)
+void RenderScene::Render(RenderCommandEncoder& renderCommandEncoder)
 {
-	RenderMeshes(renderState, m_opaqueDrawCalls);
-	RenderMeshes(renderState, m_translucentDrawCalls);
-	m_skybox->Draw(renderState);
+	RenderMeshes(renderCommandEncoder, m_opaqueDrawCalls);
+	RenderMeshes(renderCommandEncoder, m_translucentDrawCalls);
+	m_skybox->Draw(renderCommandEncoder);
 }
 
-void RenderScene::RenderMeshes(RenderState& renderState, const std::vector<MeshDrawInfo>& drawCalls) const
+void RenderScene::RenderMeshes(RenderCommandEncoder& renderCommandEncoder, const std::vector<MeshDrawInfo>& drawCalls) const
 {
 	if (drawCalls.empty())
 	{
 		return;
 	}
 
-	vk::CommandBuffer commandBuffer = renderState.GetCommandBuffer();
+	vk::CommandBuffer commandBuffer = renderCommandEncoder.GetCommandBuffer();
 	m_meshAllocator->BindGeometry(commandBuffer);
-	m_materialSystem->Draw(renderState, gsl::span(drawCalls.data(), drawCalls.size()));
+	m_materialSystem->Draw(renderCommandEncoder, gsl::span(drawCalls.data(), drawCalls.size()));
 }
 
-void RenderScene::RenderShadowMaps(RenderState& renderState, uint32_t concurrentFrameIndex)
+void RenderScene::RenderShadowMaps(RenderCommandEncoder& renderCommandEncoder, uint32_t concurrentFrameIndex)
 {
 	// todo (hbedard): I have a feeling this is supposed to be in another pass?
 	if (m_shadowSystem->GetShadowCount() == 0 || (m_opaqueDrawCalls.empty() && m_translucentDrawCalls.empty()))
@@ -192,10 +192,10 @@ void RenderScene::RenderShadowMaps(RenderState& renderState, uint32_t concurrent
 		return;
 	}
 
-	vk::CommandBuffer commandBuffer = renderState.GetCommandBuffer();
+	vk::CommandBuffer commandBuffer = renderCommandEncoder.GetCommandBuffer();
 	std::vector<MeshDrawInfo> drawCalls;
 	drawCalls.resize(m_opaqueDrawCalls.size() + m_translucentDrawCalls.size());
 	std::copy(m_opaqueDrawCalls.begin(), m_opaqueDrawCalls.end(), drawCalls.begin());
 	std::copy(m_translucentDrawCalls.begin(), m_translucentDrawCalls.end(), drawCalls.begin() + m_opaqueDrawCalls.size());
-	GetShadowSystem()->Render(renderState, drawCalls);
+	GetShadowSystem()->Render(renderCommandEncoder, drawCalls);
 }

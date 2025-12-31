@@ -12,7 +12,7 @@
 class TextureCache;
 class CommandRingBuffer;
 class RenderPass;
-class RenderState;
+class RenderCommandEncoder;
 
 class Skybox
 {
@@ -32,7 +32,7 @@ public:
 
 	void Reset(vk::RenderPass renderPass, vk::Extent2D swapchainExtent);
 
-	void Draw(RenderState& renderState);
+	void Draw(RenderCommandEncoder& renderCommandEncoder);
 
 	GraphicsPipelineID GetGraphicsPipelineID() const { return m_graphicsPipelineID; }
 

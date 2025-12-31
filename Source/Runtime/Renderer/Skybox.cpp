@@ -1,7 +1,7 @@
 #include <Renderer/Skybox.h>
 
 #include <Renderer/Bindless.h>
-#include <Renderer/RenderState.h>
+#include <Renderer/RenderCommandEncoder.h>
 #include <RHI/Device.h>
 #include <RHI/CommandRingBuffer.h>
 #include <RHI/RenderPass.h>
@@ -124,14 +124,14 @@ void Skybox::UploadToGPU(CommandRingBuffer& commandRingBuffer)
 	}
 }
 
-void Skybox::Draw(RenderState& renderState)
+void Skybox::Draw(RenderCommandEncoder& renderCommandEncoder)
 {
 	// Expects the unlit view descriptors to be bound
 	// Assumes owner already bound the graphics pipeline
 
-	vk::CommandBuffer commandBuffer = renderState.GetCommandBuffer();
-	renderState.BindDrawParams(m_drawParamsHandle);
-	renderState.BindPipeline(GetGraphicsPipelineID());
+	vk::CommandBuffer commandBuffer = renderCommandEncoder.GetCommandBuffer();
+	renderCommandEncoder.BindDrawParams(m_drawParamsHandle);
+	renderCommandEncoder.BindPipeline(GetGraphicsPipelineID());
 
 	// Bind vertex buffer
 	vk::DeviceSize offsets[] = { 0 };

@@ -1,6 +1,6 @@
 #include <Renderer/Grid.h>
 
-#include <Renderer/RenderState.h>
+#include <Renderer/RenderCommandEncoder.h>
 #include <RHI/CommandRingBuffer.h>
 
 Grid::Grid(vk::RenderPass renderPass,
@@ -38,10 +38,10 @@ void Grid::UploadToGPU(CommandRingBuffer& commandRingBuffer)
 	}
 }
 
-void Grid::Draw(RenderState& renderState)
+void Grid::Draw(RenderCommandEncoder& renderCommandEncoder)
 {
-	vk::CommandBuffer commandBuffer = renderState.GetCommandBuffer();
-	renderState.BindDrawParams(m_drawParamsHandle);
+	vk::CommandBuffer commandBuffer = renderCommandEncoder.GetCommandBuffer();
+	renderCommandEncoder.BindDrawParams(m_drawParamsHandle);
 	commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, m_graphicsPipelineCache->GetPipeline(pipelineID));
 	commandBuffer.draw(6, 1, 0, 0);
 }

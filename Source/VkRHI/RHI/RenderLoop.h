@@ -31,11 +31,13 @@ public:
 	void Init();
 	void Run();
 
+	uint32_t GetFrameIndex() const { return m_frameIndex; }
+
 protected:
-	virtual void Init(vk::CommandBuffer& commandBuffer) = 0;
+	virtual void OnInit() = 0;
 	virtual void OnSwapchainRecreated() = 0;
 	virtual void Update() = 0;
-	virtual void Render(uint32_t imageIndex, vk::CommandBuffer commandBuffer) = 0;
+	virtual void Render(vk::CommandBuffer commandBuffer, uint32_t imageIndex) = 0;
 
 	static void OnResize(void* data, int w, int h);
 

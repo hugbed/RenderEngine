@@ -4,7 +4,7 @@
 #include <Renderer/SurfaceLitMaterialSystem.h>
 #include <Renderer/LightSystem.h>
 #include <Renderer/ShadowSystem.h>
-#include <Renderer/RenderState.h>
+#include <Renderer/RenderCommandEncoder.h>
 #include <Renderer/Skybox.h>
 #include <Renderer/Bindless.h>
 #include <Renderer/Grid.h>
@@ -37,8 +37,6 @@ public:
 	);
 
 	void Load(vk::CommandBuffer commandBuffer);
-
-	void Reset(vk::CommandBuffer& commandBuffer, const RenderPass& renderPass, vk::Extent2D imageExtent);
 
 	// todo: take the world bounding box from the scene tree
 	BoundingBox GetBoundingBox() const { return m_boundingBox; }

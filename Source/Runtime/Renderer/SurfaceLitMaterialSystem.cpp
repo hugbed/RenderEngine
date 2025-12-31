@@ -1,7 +1,7 @@
 #include <Renderer/SurfaceLitMaterialSystem.h>
 
 #include <Renderer/Bindless.h>
-#include <Renderer/RenderState.h>
+#include <Renderer/RenderCommandEncoder.h>
 #include <Renderer/SceneTree.h>
 #include <Renderer/ShadowSystem.h>
 #include <RHI/ShaderCache.h>
@@ -89,17 +89,17 @@ void SurfaceLitMaterialSystem::UploadToGPU(CommandRingBuffer& commandRingBuffer)
 	}
 }
 
-void SurfaceLitMaterialSystem::Draw(RenderState& renderState, gsl::span<const MeshDrawInfo> drawCalls) const
+void SurfaceLitMaterialSystem::Draw(RenderCommandEncoder& renderCommandEncoder, gsl::span<const MeshDrawInfo> drawCalls) const
 {
-	vk::CommandBuffer commandBuffer = renderState.GetCommandBuffer();
+	vk::CommandBuffer commandBuffer = renderCommandEncoder.GetCommandBuffer();
 
-	renderState.BindDrawParams(m_drawParamsHandle);
+	renderCommandEncoder.BindDrawParams(m_drawParamsHandle);
 
 	for (const auto& drawItem : drawCalls)
 	{
-		renderState.BindPipeline(GetGraphicsPipelineID(drawItem.mesh.materialHandle));
-		renderState.BindSceneNode(drawItem.sceneNodeID);
-		renderState.BindMaterial(drawItem.mesh.materialHandle);
+		renderCommandEncoder.BindPipeline(GetGraphicsPipelineID(drawItem.mesh.materialHandle));
+		renderCommandEncoder.BindSceneNode(drawItem.sceneNodeID);
+		renderCommandEncoder.BindMaterial(drawItem.mesh.materialHandle);
 		commandBuffer.drawIndexed(drawItem.mesh.nbIndices, 1, drawItem.mesh.indexOffset, 0, 0);
 	}
 }

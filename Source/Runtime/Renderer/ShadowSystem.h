@@ -23,7 +23,7 @@ class Scene;
 struct ViewProperties;
 struct CombinedImageSampler;
 class CommandRingBuffer;
-class RenderState;
+class RenderCommandEncoder;
 
 struct ShadowData
 {
@@ -55,7 +55,7 @@ public:
 	
 	void Update(const Camera& camera, BoundingBox sceneBoundingBox);
 
-	void Render(RenderState& renderState, const std::vector<MeshDrawInfo> drawCommands) const;
+	void Render(RenderCommandEncoder& renderCommandEncoder, const std::vector<MeshDrawInfo> drawCommands) const;
 
 	size_t GetShadowCount() const { return m_lights.size(); }
 

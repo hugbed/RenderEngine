@@ -10,7 +10,7 @@ class LightSystem;
 class MeshAllocator;
 struct MeshDrawInfo;
 class Renderer;
-class RenderState;
+class RenderCommandEncoder;
 class SceneTree;
 class Skybox;
 class ShadowSystem;
@@ -27,12 +27,11 @@ public:
 	RenderScene(Renderer& renderer);
 	~RenderScene();
 
-	void Init(vk::CommandBuffer commandBuffer);
-	void Reset(vk::CommandBuffer commandBuffer);
+	void Init();
+	void Reset();
 	void UploadToGPU();
-	// todo (hbedard): reconsider passing this and abstract this away
-	void Update(uint32_t concurrentFrameIndex);
-	void Render(RenderState& renderState, uint32_t concurrentFrameIndex);
+	void Update();
+	void Render(RenderCommandEncoder& renderCommandEncoder);
 
 	gsl::not_null<MeshAllocator*> GetMeshAllocator() const { return m_meshAllocator.get(); }
 	gsl::not_null<SceneTree*> GetSceneTree() const { return m_sceneTree.get(); }
@@ -54,8 +53,7 @@ private:
 	std::unique_ptr<Grid> m_grid;
 	std::unique_ptr<Skybox> m_skybox;
 
-	// todo (hbedard): rename drawCalls
-	// todo (hbedard): handle this somewhere else
+	// todo (hbedard): consider handling this somewhere else
 	std::vector<MeshDrawInfo> m_opaqueDrawCalls;
 	std::vector<MeshDrawInfo> m_translucentDrawCalls;
 
@@ -63,6 +61,6 @@ private:
 	void SortOpaqueMeshes();
 	void SortTranslucentMeshes();
 
-	void RenderMeshes(RenderState& renderState, const std::vector<MeshDrawInfo>& drawCalls) const;
-	void RenderShadowMaps(RenderState& renderState, uint32_t concurrentFrameIndex);
+	void RenderMeshes(RenderCommandEncoder& renderCommandEncoder, const std::vector<MeshDrawInfo>& drawCalls) const;
+	void RenderShadowMaps(RenderCommandEncoder& renderCommandEncoder, uint32_t concurrentFrameIndex);
 };

@@ -9,6 +9,7 @@
 
 class BindlessDescriptors;
 class BindlessDrawParams;
+class ImGuiVulkan;
 class Framebuffer;
 class GraphicsPipelineCache;
 class RenderPass;
@@ -29,15 +30,11 @@ public:
 		Window& window);
 	~Renderer();
 
-	// todo (hbedard): currently implemented by App
-	virtual void Init(vk::CommandBuffer& commandBuffer) override;
-	
-	//virtual void Render(uint32_t imageIndex, vk::CommandBuffer commandBuffer) {}
-
+	void OnInit() override;
 	void OnSwapchainRecreated() override;
-	void Reset(vk::CommandBuffer commandBuffer);
-	void Update(uint32_t concurrentFrameIndex);
-	void Render(uint32_t imageIndex);
+	void Update() override;
+	void Render(vk::CommandBuffer commandBuffer, uint32_t imageIndex) override;
+	virtual void UpdateImGui() {}
 
 	vk::RenderPass GetRenderPass() const;
 	vk::Extent2D GetImageExtent() const;
@@ -65,6 +62,7 @@ protected:
 	std::unique_ptr<BindlessFactory> m_bindlessFactory; // todo (hbedard): remove that
 	std::unique_ptr<TextureCache> m_textureCache;
 	std::unique_ptr<RenderScene> m_renderScene;
+	std::unique_ptr<ImGuiVulkan> m_imGui;
 
 	void CreateSecondaryCommandBuffers();
 };

@@ -1,7 +1,8 @@
 #include <Renderer/Renderer.h>
 
+#include <Renderer/ImGuiVulkan.h>
 #include <Renderer/RenderScene.h>
-#include <Renderer/RenderState.h>
+#include <Renderer/RenderCommandEncoder.h>
 #include <Renderer/TextureCache.h>
 #include <Renderer/SurfaceLitMaterialSystem.h>
 #include <RHI/Framebuffer.h>
@@ -11,6 +12,24 @@
 #include <RHI/ShaderCache.h>
 #include <RHI/Swapchain.h>
 #include <RHI/Window.h>
+
+namespace Renderer_Private
+{
+	ImGuiVulkan::Resources PopulateImGuiResources(const Window& window, vk::Instance instance, uint32_t imageCount, vk::RenderPass renderPass)
+	{
+		ImGuiVulkan::Resources resources = {};
+		resources.window = window.GetGLFWWindow();
+		resources.instance = instance;
+		resources.physicalDevice = g_physicalDevice->Get();
+		resources.device = g_device->Get();
+		resources.queueFamily = g_physicalDevice->GetQueueFamilies().graphicsFamily.value();
+		resources.queue = g_device->GetGraphicsQueue();
+		resources.imageCount = imageCount;
+		resources.MSAASamples = (VkSampleCountFlagBits)g_physicalDevice->GetMsaaSamples();
+		resources.renderPass = renderPass;
+		return resources;
+	}
+}
 
 Renderer::Renderer(vk::Instance instance, vk::SurfaceKHR surface, vk::Extent2D extent, Window& window)
 	: RenderLoop(surface, extent, window)
@@ -29,16 +48,54 @@ Renderer::Renderer(vk::Instance instance, vk::SurfaceKHR surface, vk::Extent2D e
 
 Renderer::~Renderer() = default;
 
-void Renderer::Init(vk::CommandBuffer& commandBuffer)
+void Renderer::OnInit()
 {
-	m_renderScene->Init(commandBuffer);
+	using namespace Renderer_Private;
+
+	vk::CommandBuffer commandBuffer = m_commandRingBuffer.GetCommandBuffer();
+	m_renderScene->Init();
 	m_textureCache->UploadTextures(m_commandRingBuffer);
 	m_bindlessDrawParams->Build(commandBuffer);
+
+	ImGuiVulkan::Resources resources = PopulateImGuiResources(m_window, m_instance, m_swapchain->GetImageCount(), m_renderPass->Get());
+	m_imGui = std::make_unique<ImGuiVulkan>(resources, commandBuffer);
+
 	CreateSecondaryCommandBuffers();
 }
 
 void Renderer::OnSwapchainRecreated()
 {
+	using namespace Renderer_Private;
+
+	// Reset resources that depend on the swapchain images
+	m_framebuffers.clear();
+	m_renderPass.reset();
+	m_renderPass = std::make_unique<RenderPass>(m_swapchain->GetImageDescription().format);
+	m_framebuffers = Framebuffer::FromSwapchain(*m_swapchain, m_renderPass->Get());
+
+	// --- Recreate everything that depends on the swapchain images --- //
+
+	// Use any command buffer for init
+	auto commandBuffer = m_commandRingBuffer.ResetAndGetCommandBuffer();
+	commandBuffer.begin({ vk::CommandBufferUsageFlagBits::eOneTimeSubmit });
+	{
+		m_renderScene->Reset();
+
+		ImGuiVulkan::Resources resources = PopulateImGuiResources(
+			m_window,
+			m_instance,
+			m_swapchain->GetImageCount(),
+			m_renderPass->Get());
+		m_imGui->Reset(resources, commandBuffer);
+	}
+	commandBuffer.end();
+
+	vk::SubmitInfo submitInfo;
+	submitInfo.commandBufferCount = 1;
+	submitInfo.pCommandBuffers = &commandBuffer;
+	m_commandRingBuffer.Submit(submitInfo);
+	m_commandRingBuffer.WaitUntilSubmitComplete();
+
 	CreateSecondaryCommandBuffers();
 }
 
@@ -46,7 +103,6 @@ void Renderer::CreateSecondaryCommandBuffers()
 {
 	m_renderCommandBuffers.clear();
 	m_secondaryCommandPool.reset();
-
 	m_secondaryCommandPool = g_device->Get().createCommandPoolUnique(vk::CommandPoolCreateInfo(
 		vk::CommandPoolCreateFlagBits::eResetCommandBuffer, g_physicalDevice->GetQueueFamilies().graphicsFamily.value()
 	));
@@ -55,30 +111,51 @@ void Renderer::CreateSecondaryCommandBuffers()
 	));
 }
 
-void Renderer::Reset(vk::CommandBuffer commandBuffer)
+void Renderer::Update()
 {
-	m_renderScene->Reset(commandBuffer);
+	m_renderScene->Update();
+
+	m_imGui->BeginFrame();
+	UpdateImGui();
+	m_imGui->EndFrame();
 }
 
-void Renderer::Update(uint32_t concurrentFrameIndex)
+void Renderer::Render(vk::CommandBuffer commandBuffer, uint32_t imageIndex)
 {
-	m_renderScene->Update(concurrentFrameIndex);
-}
+	auto& framebuffer = m_framebuffers[imageIndex];
 
-void Renderer::Render(uint32_t imageIndex)
-{
+	// Render scene to a secondary command buffer
 	vk::UniqueCommandBuffer& renderPassCommandBuffer = m_renderCommandBuffers[imageIndex];
 	vk::CommandBufferInheritanceInfo info(m_renderPass->Get(), 0, m_framebuffers[imageIndex].Get());
 	renderPassCommandBuffer->begin({ vk::CommandBufferUsageFlagBits::eRenderPassContinue, &info });
 	{
-		uint32_t concurrentFrameIndex = imageIndex % m_commandRingBuffer.GetNbConcurrentSubmits();
-		RenderState renderState(*m_graphicsPipelineCache, *m_renderScene->GetMaterialSystem(), *m_bindlessDrawParams);
-		renderState.BeginRender(renderPassCommandBuffer.get(), concurrentFrameIndex);
-		renderState.BindBindlessDescriptorSet(m_bindlessDescriptors->GetPipelineLayout(), m_bindlessDescriptors->GetDescriptorSet());
-		m_renderScene->Render(renderState, concurrentFrameIndex);
-		renderState.EndRender();
+		RenderCommandEncoder renderCommandEncoder(*m_graphicsPipelineCache, *m_renderScene->GetMaterialSystem(), *m_bindlessDrawParams);
+		renderCommandEncoder.BeginRender(renderPassCommandBuffer.get(), GetFrameIndex());
+		renderCommandEncoder.BindBindlessDescriptorSet(m_bindlessDescriptors->GetPipelineLayout(), m_bindlessDescriptors->GetDescriptorSet());
+		m_renderScene->Render(renderCommandEncoder);
+		renderCommandEncoder.EndRender();
 	}
 	renderPassCommandBuffer->end();
+
+	// Render ImGui to another secondary command buffer
+	m_imGui->RecordCommands(imageIndex, framebuffer.Get());
+
+	// Execute both secondary command buffers from the main command buffer
+	std::array<vk::ClearValue, 2> clearValues = {
+		vk::ClearColorValue(std::array<float, 4>{ 0.0f, 0.0f, 0.0f, 1.0f }),
+		vk::ClearDepthStencilValue(1.0f, 0.0f)
+	};
+	auto renderPassInfo = vk::RenderPassBeginInfo(
+		m_renderPass->Get(), framebuffer.Get(),
+		vk::Rect2D(vk::Offset2D(0, 0), framebuffer.GetExtent()),
+		static_cast<uint32_t>(clearValues.size()), clearValues.data()
+	);
+	commandBuffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eSecondaryCommandBuffers);
+	{
+		commandBuffer.executeCommands(GetRenderCommandBuffer(imageIndex));
+		commandBuffer.executeCommands(m_imGui->GetCommandBuffer(imageIndex));
+	}
+	commandBuffer.endRenderPass();
 }
 
 vk::RenderPass Renderer::GetRenderPass() const

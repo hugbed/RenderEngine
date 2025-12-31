@@ -1,7 +1,7 @@
 #include <Renderer/TexturedQuad.h>
 
 #include <AssetPath.h>
-#include <Renderer/RenderState.h>
+#include <Renderer/RenderCommandEncoder.h>
 
 TexturedQuad::TexturedQuad(
 	CombinedImageSampler combinedImageSampler,
@@ -61,10 +61,10 @@ void TexturedQuad::Reset(CombinedImageSampler combinedImageSampler, const Render
 	);
 }
 
-void TexturedQuad::Draw(RenderState& renderState)
+void TexturedQuad::Draw(RenderCommandEncoder& renderCommandEncoder)
 {
-	vk::CommandBuffer commandBuffer = renderState.GetCommandBuffer();
-	renderState.BindDrawParams(m_drawParamsHandle);
+	vk::CommandBuffer commandBuffer = renderCommandEncoder.GetCommandBuffer();
+	renderCommandEncoder.BindDrawParams(m_drawParamsHandle);
 	commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, m_graphicsPipelineCache->GetPipeline(m_graphicsPipelineID));
 	commandBuffer.draw(4, 1, 0, 0);
 }

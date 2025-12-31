@@ -364,11 +364,11 @@ void ShadowSystem::Update(const Camera& camera, BoundingBox sceneBoundingBox)
 	}
 }
 
-void ShadowSystem::Render(RenderState& renderState, const std::vector<MeshDrawInfo> drawCommands) const
+void ShadowSystem::Render(RenderCommandEncoder& renderCommandEncoder, const std::vector<MeshDrawInfo> drawCommands) const
 {
-	renderState.BindDrawParams(m_drawParamsHandle);
+	renderCommandEncoder.BindDrawParams(m_drawParamsHandle);
 
-	vk::CommandBuffer commandBuffer = renderState.GetCommandBuffer();
+	vk::CommandBuffer commandBuffer = renderCommandEncoder.GetCommandBuffer();
 
 	// Bind the one big vertex + index buffers
 	m_meshAllocator->BindGeometry(commandBuffer);
@@ -384,7 +384,7 @@ void ShadowSystem::Render(RenderState& renderState, const std::vector<MeshDrawIn
 		);
 		commandBuffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
 		{
-			renderState.BindPipeline(m_graphicsPipelineID);
+			renderCommandEncoder.BindPipeline(m_graphicsPipelineID);
 
 			// Shadow transforms
 			vk::PipelineLayout pipelineLayout = m_graphicsPipelineCache->GetPipelineLayout(m_graphicsPipelineID);
