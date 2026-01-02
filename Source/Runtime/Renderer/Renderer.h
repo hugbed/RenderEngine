@@ -40,7 +40,9 @@ public:
 	vk::Instance GetInstance() const;
 	const Window& GetWindow() const;
 	const Swapchain& GetSwapchain() const;
-	vk::CommandBuffer GetRenderCommandBuffer(uint32_t imageIndex) const;
+	const Framebuffer& GetFramebuffer() const;
+	uint32_t GetImageIndex() const;
+	uint32_t GetImageCount() const;
 
 	gsl::not_null<GraphicsPipelineCache*> GetGraphicsPipelineCache() const;
 	gsl::not_null<BindlessDescriptors*> GetBindlessDescriptors() const;
@@ -52,8 +54,6 @@ protected:
 	vk::Instance m_instance;
 	std::unique_ptr<RenderPass> m_renderPass;
 	std::vector<Framebuffer> m_framebuffers;
-	vk::UniqueCommandPool m_secondaryCommandPool;
-	std::vector<vk::UniqueCommandBuffer> m_renderCommandBuffers; // contains render commands
 	std::unique_ptr<ShaderCache> m_shaderCache;
 	std::unique_ptr<GraphicsPipelineCache> m_graphicsPipelineCache;
 	std::unique_ptr<BindlessDescriptors> m_bindlessDescriptors;
@@ -62,6 +62,4 @@ protected:
 	std::unique_ptr<TextureCache> m_textureCache;
 	std::unique_ptr<RenderScene> m_renderScene;
 	std::unique_ptr<ImGuiVulkan> m_imGui;
-
-	void CreateSecondaryCommandBuffers();
 };

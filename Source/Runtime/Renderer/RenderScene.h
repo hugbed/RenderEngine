@@ -1,5 +1,6 @@
 #pragma once
 
+#include <vulkan/vulkan.hpp>
 #include <gsl/pointers>
 
 #include <memory>
@@ -16,11 +17,6 @@ class Skybox;
 class ShadowSystem;
 class MaterialSystem;
 
-namespace vk
-{
-	class CommandBuffer;
-}
-
 class RenderScene
 {
 public:
@@ -31,11 +27,8 @@ public:
 	void Reset();
 	void UploadToGPU();
 	void Update();
-	void Render(RenderCommandEncoder& renderCommandEncoder);
+	void Render();
 	
-	// todo (hbedard): the render pass should be initialized in the scene so that we can call this in render!
-	void RenderShadowMaps(RenderCommandEncoder& renderCommandEncoder, uint32_t concurrentFrameIndex);
-
 	gsl::not_null<MeshAllocator*> GetMeshAllocator() const { return m_meshAllocator.get(); }
 	gsl::not_null<SceneTree*> GetSceneTree() const { return m_sceneTree.get(); }
 	gsl::not_null<LightSystem*> GetLightSystem() const { return m_lightSystem.get(); }
@@ -45,8 +38,11 @@ public:
 	gsl::not_null<Grid*> GetGrid() const { return m_grid.get(); }
 	gsl::not_null<Skybox*> GetSkybox() const { return m_skybox.get(); }
 
+	vk::CommandBuffer GetBasePassCommandBuffer() const;
+
 private:
 	gsl::not_null<Renderer*> m_renderer;
+
 	std::unique_ptr<MeshAllocator> m_meshAllocator;
 	std::unique_ptr<SceneTree> m_sceneTree;
 	std::unique_ptr<LightSystem> m_lightSystem;
@@ -56,12 +52,21 @@ private:
 	std::unique_ptr<Grid> m_grid;
 	std::unique_ptr<Skybox> m_skybox;
 
-	std::vector<MeshDrawInfo> m_opaqueDrawCalls;
-	std::vector<MeshDrawInfo> m_translucentDrawCalls;
+	// This secondary command buffer is not really necessary but is a good example so let's keep it for now
+	vk::UniqueCommandPool m_commandPool;
+	std::vector<vk::UniqueCommandBuffer> m_basePassCommandBuffers; // contains render commands
+
+	std::vector<MeshDrawInfo> m_opaqueMeshes;
+	std::vector<MeshDrawInfo> m_translucentMeshes;
+	bool m_areShadowsDirty = true; // render shadows once on start
+
+	void CreateBasePassCommandBuffers();
 
 	void PopulateMeshDrawCalls();
 	void SortOpaqueMeshes();
 	void SortTranslucentMeshes();
 
-	void RenderMeshes(RenderCommandEncoder& renderCommandEncoder, const std::vector<MeshDrawInfo>& drawCalls) const;
+	void RenderShadowDepthPass() const;
+	void RenderBasePass() const;
+	void RenderBasePassMeshes(RenderCommandEncoder& renderCommandEncoder, const std::vector<MeshDrawInfo>& drawCalls) const;
 };

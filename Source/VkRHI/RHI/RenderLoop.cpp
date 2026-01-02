@@ -84,14 +84,14 @@ void RenderLoop::Render()
 	m_commandRingBuffer.WaitUntilSubmitComplete();
 
 	// Use C API because eErrorOutOfDateKHR throws
-	uint32_t imageIndex = 0;
+	m_imageIndex = 0;
 	auto result = vkAcquireNextImageKHR(
 		static_cast<VkDevice>(g_device->Get()),
 		static_cast<VkSwapchainKHR>(m_swapchain->Get()),
 		UINT64_MAX,
 		static_cast<VkSemaphore>(m_imageAvailableSemaphores[m_frameIndex] .get()),
 		VK_NULL_HANDLE, // fence
-		&imageIndex);
+		&m_imageIndex);
 	if (result == (VkResult)vk::Result::eErrorOutOfDateKHR) 
 	{
 		RecreateSwapchain();
@@ -101,7 +101,7 @@ void RenderLoop::Render()
 	auto commandBuffer = m_commandRingBuffer.ResetAndGetCommandBuffer();
 	commandBuffer.begin({ vk::CommandBufferUsageFlagBits::eOneTimeSubmit });
 	{
-		Render(commandBuffer, imageIndex);
+		Render(commandBuffer, m_imageIndex);
 	}
 	commandBuffer.end();
 
@@ -111,7 +111,7 @@ void RenderLoop::Render()
 		1, &m_imageAvailableSemaphores[m_frameIndex].get(),
 		waitStages,
 		1, &commandBuffer,
-		1, &m_renderFinishedSemaphores[imageIndex].get()
+		1, &m_renderFinishedSemaphores[m_imageIndex].get()
 	);
 	m_commandRingBuffer.Submit(std::move(submitInfo));
 	m_commandRingBuffer.MoveToNext();
@@ -119,11 +119,11 @@ void RenderLoop::Render()
 	// Presentation
 	vk::PresentInfoKHR presentInfo = {};
 	presentInfo.waitSemaphoreCount = 1;
-	presentInfo.pWaitSemaphores = &m_renderFinishedSemaphores[imageIndex].get();
+	presentInfo.pWaitSemaphores = &m_renderFinishedSemaphores[m_imageIndex].get();
 
 	presentInfo.swapchainCount = 1;
 	presentInfo.pSwapchains = &m_swapchain->Get();
-	presentInfo.pImageIndices = &imageIndex;
+	presentInfo.pImageIndices = &m_imageIndex;
 
 	result = vkQueuePresentKHR(static_cast<VkQueue>(g_device->GetPresentQueue()), &static_cast<const VkPresentInfoKHR&>(presentInfo));
 

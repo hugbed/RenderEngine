@@ -58,8 +58,16 @@ RenderScene::RenderScene(Renderer& renderer)
 
 RenderScene::~RenderScene() = default;
 
+
+vk::CommandBuffer RenderScene::GetBasePassCommandBuffer() const
+{
+	return m_basePassCommandBuffers[m_renderer->GetImageIndex()].get();
+}
+
 void RenderScene::Init()
 {
+	CreateBasePassCommandBuffers();
+
 	m_cameraViewSystem->Init(*m_renderer);
 
 	m_materialSystem->SetViewBufferHandles(m_cameraViewSystem->GetViewBufferHandles());
@@ -80,6 +88,8 @@ void RenderScene::Reset()
 	m_materialSystem->Reset(newRenderPass, newExtent);
 	m_grid->Reset(newRenderPass, newExtent);
 	m_skybox->Reset(newRenderPass, newExtent);
+
+	CreateBasePassCommandBuffers();
 }
 
 void RenderScene::UploadToGPU()
@@ -94,14 +104,26 @@ void RenderScene::UploadToGPU()
 	m_skybox->UploadToGPU(m_renderer->GetCommandRingBuffer());
 }
 
+void RenderScene::CreateBasePassCommandBuffers()
+{
+	m_basePassCommandBuffers.clear();
+	m_commandPool.reset();
+	m_commandPool = g_device->Get().createCommandPoolUnique(vk::CommandPoolCreateInfo(
+		vk::CommandPoolCreateFlagBits::eResetCommandBuffer, g_physicalDevice->GetQueueFamilies().graphicsFamily.value()
+	));
+	m_basePassCommandBuffers = g_device->Get().allocateCommandBuffersUnique(vk::CommandBufferAllocateInfo(
+		m_commandPool.get(), vk::CommandBufferLevel::eSecondary, m_renderer->GetImageCount()
+	));
+}
+
 void RenderScene::PopulateMeshDrawCalls()
 {
 	m_meshAllocator->ForEachMesh([this](SceneNodeHandle sceneNodeID, Mesh mesh) {
 		MeshDrawInfo info = { sceneNodeID, std::move(mesh) };
 		if (m_materialSystem->IsTransparent(mesh.materialHandle) == false)
-			m_opaqueDrawCalls.push_back(std::move(info));
+			m_opaqueMeshes.push_back(std::move(info));
 		else
-			m_translucentDrawCalls.push_back(std::move(info));
+			m_translucentMeshes.push_back(std::move(info));
 		});
 }
 
@@ -116,7 +138,7 @@ void RenderScene::SortOpaqueMeshes()
 	//
 	// | m0, i0, o0 | m0, i0, o1 | m0, i1, o2 | m1, i2, o3 |
 	//
-	std::sort(m_opaqueDrawCalls.begin(), m_opaqueDrawCalls.end(),
+	std::sort(m_opaqueMeshes.begin(), m_opaqueMeshes.end(),
 		[](const MeshDrawInfo& a, const MeshDrawInfo& b) {
 			// Then material instance
 			if (a.mesh.materialHandle != b.mesh.materialHandle)
@@ -129,7 +151,7 @@ void RenderScene::SortOpaqueMeshes()
 
 void RenderScene::SortTranslucentMeshes()
 {
-	if (m_translucentDrawCalls.empty())
+	if (m_translucentMeshes.empty())
 	{
 		return;
 	}
@@ -142,7 +164,7 @@ void RenderScene::SortTranslucentMeshes()
 
 	// todo: assign 64 bit number to each MeshDrawInfo for sorting and
 	// use this here also instead of copy pasting the sorting logic here.
-	std::sort(m_translucentDrawCalls.begin(), m_translucentDrawCalls.end(),
+	std::sort(m_translucentMeshes.begin(), m_translucentMeshes.end(),
 		[&cameraPosition, &front, this](const MeshDrawInfo& a, const MeshDrawInfo& b) {
 			glm::vec3 dx_a = cameraPosition - glm::vec3(m_sceneTree->GetTransform(a.sceneNodeID)[3]);
 			glm::vec3 dx_b = cameraPosition - glm::vec3(m_sceneTree->GetTransform(b.sceneNodeID)[3]);
@@ -168,37 +190,80 @@ void RenderScene::Update()
 	SortTranslucentMeshes();
 }
 
-void RenderScene::Render(RenderCommandEncoder& renderCommandEncoder)
+void RenderScene::Render()
 {
-	RenderMeshes(renderCommandEncoder, m_opaqueDrawCalls);
-	RenderMeshes(renderCommandEncoder, m_translucentDrawCalls);
-	m_skybox->Draw(renderCommandEncoder);
-}
-
-void RenderScene::RenderMeshes(RenderCommandEncoder& renderCommandEncoder, const std::vector<MeshDrawInfo>& drawCalls) const
-{
-	if (drawCalls.empty())
+	// Only render shadow depth maps once at the start since everything is static at the moment
+	if (m_areShadowsDirty)
 	{
-		return;
+		RenderShadowDepthPass();
+		m_areShadowsDirty = false;
 	}
 
-	vk::CommandBuffer commandBuffer = renderCommandEncoder.GetCommandBuffer();
-	m_meshAllocator->BindGeometry(commandBuffer);
-	m_materialSystem->Draw(renderCommandEncoder, gsl::span(drawCalls.data(), drawCalls.size()));
+	RenderBasePass();
 }
 
-void RenderScene::RenderShadowMaps(RenderCommandEncoder& renderCommandEncoder, uint32_t concurrentFrameIndex)
+void RenderScene::RenderShadowDepthPass() const
 {
 	// todo (hbedard): I have a feeling this is supposed to be in another pass?
-	if (m_shadowSystem->GetShadowCount() == 0 || (m_opaqueDrawCalls.empty() && m_translucentDrawCalls.empty()))
+	if (m_shadowSystem->GetShadowCount() == 0 || (m_opaqueMeshes.empty() && m_translucentMeshes.empty()))
 	{
 		return;
 	}
 
-	vk::CommandBuffer commandBuffer = renderCommandEncoder.GetCommandBuffer();
+	// Prepare draw commands
+	vk::CommandBuffer commandBuffer = m_renderer->GetCommandRingBuffer().GetCommandBuffer();
 	std::vector<MeshDrawInfo> drawCalls;
-	drawCalls.resize(m_opaqueDrawCalls.size() + m_translucentDrawCalls.size());
-	std::copy(m_opaqueDrawCalls.begin(), m_opaqueDrawCalls.end(), drawCalls.begin());
-	std::copy(m_translucentDrawCalls.begin(), m_translucentDrawCalls.end(), drawCalls.begin() + m_opaqueDrawCalls.size());
+	drawCalls.resize(m_opaqueMeshes.size() + m_translucentMeshes.size());
+	std::copy(m_opaqueMeshes.begin(), m_opaqueMeshes.end(), drawCalls.begin());
+	std::copy(m_translucentMeshes.begin(), m_translucentMeshes.end(), drawCalls.begin() + m_opaqueMeshes.size());
+
+	gsl::not_null<GraphicsPipelineCache*> graphicsPipelineCache = m_renderer->GetGraphicsPipelineCache();
+	gsl::not_null<BindlessDescriptors*> bindlessDescriptors = m_renderer->GetBindlessDescriptors();
+	gsl::not_null<BindlessDrawParams*> bindlessDrawParams = m_renderer->GetBindlessDrawParams();
+	vk::RenderPass renderPass = m_renderer->GetRenderPass();
+	uint32_t imageIndex = m_renderer->GetImageIndex();
+	uint32_t frameIndex = m_renderer->GetFrameIndex();
+
+	// Render into shadow depth maps
+	RenderCommandEncoder renderCommandEncoder(*graphicsPipelineCache, *m_materialSystem, *bindlessDrawParams);
+	renderCommandEncoder.BeginRender(commandBuffer, m_renderer->GetFrameIndex());
+	renderCommandEncoder.BindBindlessDescriptorSet(bindlessDescriptors->GetPipelineLayout(), bindlessDescriptors->GetDescriptorSet());
 	GetShadowSystem()->Render(renderCommandEncoder, drawCalls);
+	renderCommandEncoder.EndRender();
+}
+
+void RenderScene::RenderBasePass() const
+{
+	gsl::not_null<GraphicsPipelineCache*> graphicsPipelineCache = m_renderer->GetGraphicsPipelineCache();
+	gsl::not_null<BindlessDescriptors*> bindlessDescriptors = m_renderer->GetBindlessDescriptors();
+	gsl::not_null<BindlessDrawParams*> bindlessDrawParams = m_renderer->GetBindlessDrawParams();
+	vk::CommandBuffer mainCommandBuffer = m_renderer->GetCommandRingBuffer().GetCommandBuffer();
+	vk::RenderPass renderPass = m_renderer->GetRenderPass();
+	uint32_t imageIndex = m_renderer->GetImageIndex();
+	uint32_t frameIndex = m_renderer->GetFrameIndex();
+
+	// Base pass (into a secondary command buffer // todo (hbedard): why?
+	vk::CommandBuffer basePassCommandBuffer = m_basePassCommandBuffers[imageIndex].get();
+	vk::CommandBufferInheritanceInfo info(renderPass, 0, m_renderer->GetFramebuffer().Get());
+	basePassCommandBuffer.begin({ vk::CommandBufferUsageFlagBits::eRenderPassContinue, &info });
+	{
+		RenderCommandEncoder renderCommandEncoder(*graphicsPipelineCache, *m_materialSystem, *bindlessDrawParams);
+		renderCommandEncoder.BeginRender(basePassCommandBuffer, m_renderer->GetFrameIndex());
+		renderCommandEncoder.BindBindlessDescriptorSet(bindlessDescriptors->GetPipelineLayout(), bindlessDescriptors->GetDescriptorSet());
+		RenderBasePassMeshes(renderCommandEncoder, m_opaqueMeshes);
+		RenderBasePassMeshes(renderCommandEncoder, m_translucentMeshes);
+		m_skybox->Draw(renderCommandEncoder);
+		renderCommandEncoder.EndRender();
+	}
+	basePassCommandBuffer.end();
+}
+
+void RenderScene::RenderBasePassMeshes(RenderCommandEncoder& renderCommandEncoder, const std::vector<MeshDrawInfo>& drawCalls) const
+{
+	if (!drawCalls.empty())
+	{
+		vk::CommandBuffer commandBuffer = renderCommandEncoder.GetCommandBuffer();
+		m_meshAllocator->BindGeometry(commandBuffer);
+		m_materialSystem->Draw(renderCommandEncoder, gsl::span(drawCalls.data(), drawCalls.size()));
+	}
 }

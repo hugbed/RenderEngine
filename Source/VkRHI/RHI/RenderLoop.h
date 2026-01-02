@@ -61,5 +61,6 @@ protected:
 
 	vk::UniqueSemaphore m_imageAvailableSemaphores[RHIConstants::kMaxFramesInFlight];
 	std::vector<vk::UniqueSemaphore> m_renderFinishedSemaphores; // num of swapchain images
-	uint8_t m_frameIndex = 0;
+	uint32_t m_imageIndex = 0; 
+	uint8_t m_frameIndex = 0; // m_imageIndex % RHIConstants::kMaxFramesInFlight
 };
