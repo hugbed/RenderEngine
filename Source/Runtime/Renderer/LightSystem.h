@@ -1,12 +1,15 @@
 #pragma once
 
+#include <Renderer/BindlessDefines.h>
 #include <RHI/Buffers.h>
 
 #include <glm_includes.h>
 #include <vulkan/vulkan.hpp>
+#include <gsl/pointers>
 #include <utility>
 
-class CommandBufferPool;
+class CommandRingBuffer;
+class BindlessDescriptors;
 
 struct PhongLight
 {
@@ -26,6 +29,8 @@ using LightID = uint32_t;
 class LightSystem
 {
 public:
+	explicit LightSystem(BindlessDescriptors& bindlessDescriptors);
+
 	void ReserveLights(size_t count)
 	{
 		m_lights.reserve(m_lights.size() + count);
@@ -33,7 +38,7 @@ public:
 	
 	LightID AddLight(PhongLight light)
 	{
-		LightID id = (LightID)m_lights.size();
+		LightID id = static_cast<LightID>(m_lights.size());
 		m_lights.push_back(std::move(light));
 		return id;
 	}
@@ -42,16 +47,15 @@ public:
 
 	const PhongLight& GetLight(LightID id) const { return m_lights[id]; }
 
-	size_t GetLightCount() const { return m_lights.size(); }
+	uint32_t GetLightCount() const { return static_cast<uint32_t>(m_lights.size()); }
 
-	void UploadToGPU(CommandBufferPool& commandBufferPool);
+	void UploadToGPU(CommandRingBuffer& commandRingBuffer);
 
-	std::pair<vk::Buffer, size_t> GetUniformBuffer() const
-	{
-		return std::make_pair(m_lightsUniformBuffer->Get(), m_lightsUniformBuffer->Size());
-	}
+	BufferHandle GetLightsBufferHandle() const { return m_lightsBufferHandle; }
 
 private:
 	std::vector<PhongLight> m_lights;
-	std::unique_ptr<UniqueBufferWithStaging> m_lightsUniformBuffer;
+	std::unique_ptr<UniqueBufferWithStaging> m_lightsBuffer;
+	gsl::not_null<BindlessDescriptors*> m_bindlessDescriptors;
+	BufferHandle m_lightsBufferHandle = BufferHandle::Invalid;
 };

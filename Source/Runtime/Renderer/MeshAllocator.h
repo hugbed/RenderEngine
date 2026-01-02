@@ -1,11 +1,11 @@
 #pragma once
 
-#include <BoundingBox.h>
-#include <Renderer/MaterialSystem.h>
-#include <Renderer/DescriptorSetLayouts.h>
 #include <Renderer/SceneTree.h> // todo (hbedard) only for the ID, that's a shame
+#include <Renderer/MaterialDefines.h>
 #include <RHI/Buffers.h>
 #include <RHI/Device.h>
+#include <RHI/ShaderCache.h> // todo (hbedard): for Entry, that seems odd
+#include <BoundingBox.h>
 
 #include <glm_includes.h>
 #include <vulkan/vulkan.hpp>
@@ -27,15 +27,14 @@ struct Mesh
 {
 	vk::DeviceSize indexOffset = 0;
 	vk::DeviceSize nbIndices = 0;
-	Material::ShadingModel shadingModel = Material::ShadingModel::Lit; // todo: remove this
-	MaterialInstanceID materialInstanceID = ~0;
+	MaterialHandle materialHandle = MaterialHandle::Invalid();
 };
 
 using ModelID = uint32_t;
 
 struct MeshDrawInfo
 {
-	SceneNodeID sceneNodeID = SceneNodeID::Invalid;
+	SceneNodeHandle sceneNodeID = SceneNodeHandle::Invalid;
 	Mesh mesh;
 };
 
@@ -43,13 +42,13 @@ class MeshAllocator
 {
 public:
 	// todo (hbedard): store meshes associated to a scene node in the scene instead of here
-	void GroupMeshes(SceneNodeID sceneNodeID, const std::vector<Mesh>& meshes);
+	void GroupMeshes(SceneNodeHandle sceneNodeID, const std::vector<Mesh>& meshes);
 
 	// todo (hbedard): implement a "RenderResource" interface
-	void UploadToGPU(CommandBufferPool& commandBufferPool);
+	void UploadToGPU(CommandRingBuffer& commandRingBuffer);
 
 	// Vertices, Indices
-	void BindGeometry(const vk::CommandBuffer& commandBuffer) const; 
+	void BindGeometry(const vk::CommandBuffer& commandBuffer) const;
 
 	// --- Vertices, meshes and indices --- //
 
@@ -74,7 +73,7 @@ public:
 	}
 
 private:
-	std::vector<std::pair<SceneNodeID, Entry>> m_meshEntries;
+	std::vector<std::pair<SceneNodeHandle, Entry>> m_meshEntries;
 
 	// Contains all geometry (vertices and indices)
 	std::vector<Vertex> m_vertices;

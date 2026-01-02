@@ -5,6 +5,7 @@ struct PhongProperties {
     float shininess;
 };
 
+// todo (hbdard): those should be TextureHandle to bindless textures
 struct PhongTextures {
     int diffuse;
     int specular;

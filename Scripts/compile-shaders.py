@@ -196,6 +196,8 @@ if __name__ == '__main__':
 		except Exception as e:
 			print(e)
 
+	# todo (hbedard): don't update hash if compilation failed!
+
 	# Save current hashes
 	with open(config_file, 'w+') as f:
 		json.dump({ shaders_path : current_file_hashes }, f)

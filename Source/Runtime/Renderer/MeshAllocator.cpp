@@ -1,16 +1,15 @@
 #include <Renderer/MeshAllocator.h>
 
-#include <RHI/CommandBufferPool.h>
+#include <RHI/CommandRingBuffer.h>
 
-// todo (hbedard): I don't think we're doing anything with this ID
-void MeshAllocator::GroupMeshes(SceneNodeID sceneNodeID, const std::vector<Mesh>& meshes)
+void MeshAllocator::GroupMeshes(SceneNodeHandle sceneNodeHandle, const std::vector<Mesh>& meshes)
 {
-	m_meshEntries.push_back(std::make_pair(sceneNodeID, Entry::AppendToOutput(meshes, m_meshes)));
+	m_meshEntries.push_back(std::make_pair(sceneNodeHandle, Entry::AppendToOutput(meshes, m_meshes)));
 }
 
-void MeshAllocator::UploadToGPU(CommandBufferPool& commandBufferPool)
+void MeshAllocator::UploadToGPU(CommandRingBuffer& commandRingBuffer)
 {
-	vk::CommandBuffer commandBuffer = commandBufferPool.GetCommandBuffer();
+	vk::CommandBuffer commandBuffer = commandRingBuffer.GetCommandBuffer();
 
 	// Upload Geometry
 	{
@@ -20,7 +19,7 @@ void MeshAllocator::UploadToGPU(CommandBufferPool& commandBufferPool)
 		m_vertexBuffer->CopyStagingToGPU(commandBuffer);
 
 		// We won't need the staging buffer after the initial upload
-		commandBufferPool.DestroyAfterSubmit(m_vertexBuffer->ReleaseStagingBuffer());
+		commandRingBuffer.DestroyAfterSubmit(m_vertexBuffer->ReleaseStagingBuffer());
 		m_vertices.clear();
 	}
 	{
@@ -30,7 +29,7 @@ void MeshAllocator::UploadToGPU(CommandBufferPool& commandBufferPool)
 		m_indexBuffer->CopyStagingToGPU(commandBuffer);
 
 		// We won't need the staging buffer after the initial upload
-		commandBufferPool.DestroyAfterSubmit(m_indexBuffer->ReleaseStagingBuffer());
+		commandRingBuffer.DestroyAfterSubmit(m_indexBuffer->ReleaseStagingBuffer());
 		m_indices.clear();
 	}
 }

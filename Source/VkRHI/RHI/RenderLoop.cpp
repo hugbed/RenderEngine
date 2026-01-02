@@ -12,7 +12,7 @@ RenderLoop::RenderLoop(vk::SurfaceKHR surface, vk::Extent2D extent, Window& wind
 	, m_window(window)
 	, m_surface(surface)
 	, m_swapchain(std::make_unique<Swapchain>(surface, extent))
-	, m_commandBufferPool(m_swapchain->GetImageCount(), kMaxFramesInFlight, g_physicalDevice->GetQueueFamilies().graphicsFamily.value())
+	, m_commandRingBuffer(m_swapchain->GetImageCount(), kMaxFramesInFlight, g_physicalDevice->GetQueueFamilies().graphicsFamily.value())
 {
 	window.SetWindowResizeCallback(reinterpret_cast<void*>(this), OnResize);
 	
@@ -28,20 +28,25 @@ RenderLoop::RenderLoop(vk::SurfaceKHR surface, vk::Extent2D extent, Window& wind
 	}
 }
 
+CommandRingBuffer& RenderLoop::GetCommandRingBuffer()
+{
+	return m_commandRingBuffer;
+}
+
 void RenderLoop::Init()
 {
 	// Use any command buffer for init
-	auto commandBuffer = m_commandBufferPool.ResetAndGetCommandBuffer();
+	auto commandBuffer = m_commandRingBuffer.ResetAndGetCommandBuffer();
 	commandBuffer.begin({ vk::CommandBufferUsageFlagBits::eOneTimeSubmit });
 	{
-		Init(commandBuffer);
+		OnInit();
 	}
 	commandBuffer.end();
 
 	vk::SubmitInfo submitInfo;
 	submitInfo.commandBufferCount = 1;
 	submitInfo.pCommandBuffers = &commandBuffer;
-	m_commandBufferPool.Submit(submitInfo);
+	m_commandRingBuffer.Submit(submitInfo);
 }
 
 void RenderLoop::Run()
@@ -76,7 +81,7 @@ void RenderLoop::OnResize(void* data, int w, int h)
 
 void RenderLoop::Render()
 {
-	m_commandBufferPool.WaitUntilSubmitComplete();
+	m_commandRingBuffer.WaitUntilSubmitComplete();
 
 	// Use C API because eErrorOutOfDateKHR throws
 	uint32_t imageIndex = 0;
@@ -93,10 +98,10 @@ void RenderLoop::Render()
 		return;
 	}
 
-	auto commandBuffer = m_commandBufferPool.ResetAndGetCommandBuffer();
+	auto commandBuffer = m_commandRingBuffer.ResetAndGetCommandBuffer();
 	commandBuffer.begin({ vk::CommandBufferUsageFlagBits::eOneTimeSubmit });
 	{
-		RenderFrame(imageIndex, commandBuffer);
+		Render(commandBuffer, imageIndex);
 	}
 	commandBuffer.end();
 
@@ -105,11 +110,11 @@ void RenderLoop::Render()
 	vk::SubmitInfo submitInfo(
 		1, &m_imageAvailableSemaphores[m_frameIndex].get(),
 		waitStages,
-		1, &m_commandBufferPool.GetCommandBuffer(),
+		1, &commandBuffer,
 		1, &m_renderFinishedSemaphores[imageIndex].get()
 	);
-	m_commandBufferPool.Submit(std::move(submitInfo));
-	m_commandBufferPool.MoveToNext();
+	m_commandRingBuffer.Submit(std::move(submitInfo));
+	m_commandRingBuffer.MoveToNext();
 
 	// Presentation
 	vk::PresentInfoKHR presentInfo = {};
@@ -156,7 +161,7 @@ void RenderLoop::RecreateSwapchain()
 
 	m_swapchain = std::make_unique<Swapchain>(m_surface, extent);
 
-	m_commandBufferPool.Reset(m_swapchain->GetImageCount());
+	m_commandRingBuffer.Reset(m_swapchain->GetImageCount());
 
 	OnSwapchainRecreated();
 }

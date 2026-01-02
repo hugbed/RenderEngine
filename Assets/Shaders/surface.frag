@@ -1,7 +1,9 @@
 #version 450
 #extension GL_ARB_separate_shader_objects : enable
 
-#include "material_common.glsl"
+#include "bindless.glsl"
+
+// --- Inputs / Outputs --- //
 
 layout(location = 0) in vec2 fragTexCoord;
 layout(location = 1) in vec3 fragNormal;
@@ -10,36 +12,28 @@ layout(location = 3) in vec3 viewPos;
 
 layout(location = 0) out vec4 outColor;
 
-//--- Set 0 (Scene Uniforms) --- //
-
 #include "phong.glsl"
 
-layout(constant_id = CONSTANT_NB_LIGHTS)
-    const uint NB_LIGHTS = 1;
-
-layout(constant_id = CONSTANT_NB_MATERIAL_SAMPLERS_2D)
-    const uint NB_MATERIAL_SAMPLERS_2D = 64;
-
-layout(constant_id = CONSTANT_NB_MATERIAL_SAMPLERS_CUBE)
-    const uint NB_MATERIAL_SAMPLERS_CUBE = 64;
+// --- Constants --- //
 
 layout(push_constant)
     uniform MaterialIndex {
+	    layout(offset = 0) uint unused0;
 	    layout(offset = 4) uint materialIndex; // index into material.properties
     } pc;
 
-layout(set = SET_VIEW, binding = BINDING_VIEW_LIGHTS)
-    uniform Lights {
-        Light light[NB_LIGHTS];
-    } lights;
+// --- Descriptors --- //
 
-// --- Set 2 (Material Uniforms) --- //
+// todo (hbdard): convert lights to a buffer
+RegisterBuffer(std430, readonly, Lights, {
+    Light light[];
+});
 
 struct EnvironmentProperties {
     float ior;
     float metallic; // reflection {0, 1}
     float transmission; // refraction [0..1]
-    int cubeMapTexture; // index into textures_cube
+    int cubeMapTexture; // TextureHandle
 };
 
 struct MaterialProperties {
@@ -48,16 +42,21 @@ struct MaterialProperties {
     PhongTextures phongTextures;
 };
 
-layout(set = SET_MATERIAL, binding = BINDING_MATERIAL_PROPERTIES)
-    readonly buffer MaterialPropertiesUBO {
-        MaterialProperties properties[];
-    } material;
+RegisterBuffer(std430, readonly, MaterialPropertiesUBO, {
+    MaterialProperties properties[];
+});
 
-layout(set = SET_MATERIAL, binding = BINDING_MATERIAL_SAMPLERS_2D)
-    uniform sampler2D textures_2d[NB_MATERIAL_SAMPLERS_2D];
+layout(set = 1, binding = 0) uniform DrawParameters {
+  uint view;
+  uint transforms;
+  uint lights;
+  uint lightCount;
+  uint materials;
+  uint shadows;
+  uint pad0; uint pad1;
+} uDrawParams;
 
-layout(set = SET_MATERIAL, binding = BINDING_MATERIAL_SAMPLERS_CUBE)
-    uniform samplerCube textures_cube[NB_MATERIAL_SAMPLERS_CUBE];
+#define GetLights() GetResource(Lights, uDrawParams.lights).light
 
 #include "shadow.glsl"
 
@@ -66,19 +65,19 @@ void main() {
 
     // --- Shading --- //
 
-    MaterialProperties props = material.properties[pc.materialIndex];
+    MaterialProperties props = GetResource(MaterialPropertiesUBO, uDrawParams.materials).properties[pc.materialIndex];
 
     // todo: have #define to choose either rgba or texture instead of using both
-    vec4 diffuse = props.phong.diffuse * texture(textures_2d[props.phongTextures.diffuse], fragTexCoord);
-    vec4 specular = props.phong.specular * texture(textures_2d[props.phongTextures.specular], fragTexCoord);
-    // vec4 shininess = props.phong.shininess * texture(textures_2d[props.phongTextures.shininess], fragTexCoord);
+    vec4 diffuse = props.phong.diffuse * texture(GetTexture2D(props.phongTextures.diffuse), fragTexCoord);
+    vec4 specular = props.phong.specular * texture(GetTexture2D(props.phongTextures.specular), fragTexCoord);
+    // vec4 shininess = props.phong.shininess * texture(GetTexture2D()[props.phongTextures.shininess], fragTexCoord);
     PhongProperties phongProperties = PhongProperties(diffuse, specular, props.phong.shininess);
     
     vec3 shadedColor = vec3(0.0, 0.0, 0.0);
-    for (int i = 0; i < NB_LIGHTS; ++i)
+    for (int i = 0; i < uDrawParams.lightCount; ++i)
     {
-        float shadow = ComputeShadow(lights.light[i], fragPos, normal);
-        shadedColor += PhongLighting(lights.light[i], phongProperties, normal, fragPos, viewPos, shadow).rgb;
+        float shadow = ComputeShadow(GetLights()[i], fragPos, normal);
+        shadedColor += PhongLighting(GetLights()[i], phongProperties, normal, fragPos, viewPos, shadow).rgb;
     }
 
     // --- Environment mapping --- //
@@ -91,7 +90,7 @@ void main() {
     {
         // float metallic = min(0.0, props.env.metallic);
         dir = -reflect(viewDir, normal);
-        shadedColor = mix(shadedColor, texture(textures_cube[props.env.cubeMapTexture], dir).rgb, vec3(props.env.metallic));
+        shadedColor = mix(shadedColor, texture(GetTextureCube(props.env.cubeMapTexture), dir).rgb, vec3(props.env.metallic));
     }
 
     // refraction
@@ -99,7 +98,7 @@ void main() {
     {
         // float transmission = min(0.0, props.env.transmission);
         dir = refract(viewDir, normal, 1.0 / props.env.ior);
-        shadedColor = mix(shadedColor, texture(textures_cube[props.env.cubeMapTexture], dir).rgb, vec3(props.env.transmission));
+        shadedColor = mix(shadedColor, texture(GetTextureCube(props.env.cubeMapTexture), dir).rgb, vec3(props.env.transmission));
     }
 
     // output + transparency

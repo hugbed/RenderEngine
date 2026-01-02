@@ -1,7 +1,8 @@
 #pragma once
 
 #include <RHI/Window.h>
-#include <RHI/CommandBufferPool.h>
+#include <RHI/CommandRingBuffer.h>
+#include <RHI/constants.h>
 #include <vulkan/vulkan.hpp>
 
 #include <chrono>
@@ -21,18 +22,22 @@ class GraphicsPipeline;
 class RenderLoop
 {
 public:
-	static constexpr size_t kMaxFramesInFlight = 2;
+	static constexpr size_t kMaxFramesInFlight = RHIConstants::kMaxFramesInFlight;
 
 	RenderLoop(vk::SurfaceKHR surface, vk::Extent2D extent, Window& window);
+
+	CommandRingBuffer& GetCommandRingBuffer();
 
 	void Init();
 	void Run();
 
+	uint32_t GetFrameIndex() const { return m_frameIndex; }
+
 protected:
-	virtual void Init(vk::CommandBuffer& commandBuffer) = 0;
+	virtual void OnInit() = 0;
 	virtual void OnSwapchainRecreated() = 0;
 	virtual void Update() = 0;
-	virtual void RenderFrame(uint32_t imageIndex, vk::CommandBuffer commandBuffer) = 0;
+	virtual void Render(vk::CommandBuffer commandBuffer, uint32_t imageIndex) = 0;
 
 	static void OnResize(void* data, int w, int h);
 
@@ -52,9 +57,9 @@ protected:
 	bool m_frameBufferResized{ false };
 	vk::SurfaceKHR m_surface;
 	std::unique_ptr<Swapchain> m_swapchain;
-	CommandBufferPool m_commandBufferPool;
+	CommandRingBuffer m_commandRingBuffer;
 
-	vk::UniqueSemaphore m_imageAvailableSemaphores[kMaxFramesInFlight];
+	vk::UniqueSemaphore m_imageAvailableSemaphores[RHIConstants::kMaxFramesInFlight];
 	std::vector<vk::UniqueSemaphore> m_renderFinishedSemaphores; // num of swapchain images
 	uint8_t m_frameIndex = 0;
 };

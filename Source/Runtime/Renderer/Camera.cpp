@@ -1,4 +1,4 @@
-#include <Camera.h>
+#include <Renderer/Camera.h>
 
 std::vector<glm::vec3> Camera::ComputeFrustrumCorners() const
 {

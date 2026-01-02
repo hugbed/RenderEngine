@@ -1,7 +1,9 @@
 #include <Renderer/Skybox.h>
 
+#include <Renderer/Bindless.h>
+#include <Renderer/RenderCommandEncoder.h>
 #include <RHI/Device.h>
-#include <RHI/CommandBufferPool.h>
+#include <RHI/CommandRingBuffer.h>
 #include <RHI/RenderPass.h>
 #include <AssetPath.h>
 
@@ -53,13 +55,17 @@ const std::vector<float> vertices = {
 };
 
 Skybox::Skybox(
-	const RenderPass& renderPass,
+	vk::RenderPass renderPass,
 	vk::Extent2D swapchainExtent,
-	TextureSystem& textureSystem,
-	GraphicsPipelineSystem& graphicsPipelineSystem
+	GraphicsPipelineCache& graphicsPipelineCache,
+	BindlessDescriptors& bindlessDescriptors,
+	BindlessDrawParams& bindlessDrawParams,
+	TextureCache& textureCache
 )
-	: m_textureSystem(&textureSystem)
-	, m_graphicsPipelineSystem(&graphicsPipelineSystem)
+	: m_textureCache(&textureCache)
+	, m_graphicsPipelineCache(&graphicsPipelineCache)
+	, m_bindlessDescriptors(&bindlessDescriptors)
+	, m_bindlessDrawParams(&bindlessDrawParams)
 {
 	// Load textures
 	std::vector<AssetPath> cubeFacesFiles = {
@@ -70,100 +76,66 @@ Skybox::Skybox(
 		AssetPath("/Engine/Textures/skybox/front.jpg"),
 		AssetPath("/Engine/Textures/skybox/back.jpg")
 	};
-	m_cubeMap = m_textureSystem->LoadCubeMapFaces(cubeFacesFiles);
+	m_drawParams.skyboxTexture = m_textureCache->LoadCubeMapFaces(cubeFacesFiles);
 
 	// Create graphics pipeline
-	ShaderSystem& shaderSystem = m_graphicsPipelineSystem->GetShaderSystem();
-	ShaderID vertexShaderID = shaderSystem.CreateShader(AssetPath("/Engine/Generated/Shaders/skybox_vert.spv").PathOnDisk(), "main");
-	ShaderID fragmentShaderID = shaderSystem.CreateShader(AssetPath("/Engine/Generated/Shaders/skybox_frag.spv").PathOnDisk(), "main");
-	m_vertexShader = shaderSystem.CreateShaderInstance(vertexShaderID);
-	m_fragmentShader = shaderSystem.CreateShaderInstance(fragmentShaderID);
-
-	GraphicsPipelineInfo info(renderPass.Get(), swapchainExtent);
-	m_graphicsPipelineID = m_graphicsPipelineSystem->CreateGraphicsPipeline(
+	ShaderCache& shaderCache = m_graphicsPipelineCache->GetShaderCache();
+	ShaderID vertexShaderID = shaderCache.CreateShader(AssetPath("/Engine/Generated/Shaders/skybox_vert.spv").PathOnDisk(), "main");
+	ShaderID fragmentShaderID = shaderCache.CreateShader(AssetPath("/Engine/Generated/Shaders/skybox_frag.spv").PathOnDisk(), "main");
+	m_vertexShader = shaderCache.CreateShaderInstance(vertexShaderID);
+	m_fragmentShader = shaderCache.CreateShaderInstance(fragmentShaderID);
+	GraphicsPipelineInfo info(renderPass, swapchainExtent);
+	m_graphicsPipelineID = m_graphicsPipelineCache->CreateGraphicsPipeline(
 		m_vertexShader, m_fragmentShader, info
 	);
-
-	CreateDescriptors();
+	m_drawParamsHandle = m_bindlessDrawParams->DeclareParams<SkyboxDrawParams>();
 }
 
-void Skybox::Reset(const RenderPass& renderPass, vk::Extent2D swapchainExtent)
+void Skybox::Reset(vk::RenderPass renderPass, vk::Extent2D swapchainExtent)
 {
-	GraphicsPipelineInfo info(renderPass.Get(), swapchainExtent);
-	m_graphicsPipelineSystem->ResetGraphicsPipeline(m_graphicsPipelineID, info);
-	CreateDescriptors();
-	UpdateDescriptors();
+	GraphicsPipelineInfo info(renderPass, swapchainExtent);
+	m_graphicsPipelineCache->ResetGraphicsPipeline(m_graphicsPipelineID, info);
 }
 
-void Skybox::CreateDescriptors()
+void Skybox::SetViewBufferHandles(gsl::span<const BufferHandle> viewBufferHandles)
 {
-	m_cubeDescriptorSets.clear();
-	m_descriptorPool.reset();
-
-	// Descriptor pool
-	uint32_t nbSamplers = 1;
-	std::vector<vk::DescriptorPoolSize> poolSizes;
-	poolSizes.push_back(vk::DescriptorPoolSize(
-		vk::DescriptorType::eCombinedImageSampler,
-		nbSamplers
-	));
-	m_descriptorPool = g_device->Get().createDescriptorPoolUnique(vk::DescriptorPoolCreateInfo(
-		vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-		nbSamplers,
-		static_cast<uint32_t>(poolSizes.size()), poolSizes.data()
-	));
-
-	// Descriptor and Pipeline Layouts
-	vk::DescriptorSetLayout cubeSetLayout(m_graphicsPipelineSystem->GetDescriptorSetLayout(m_graphicsPipelineID, 1));
-	m_cubeDescriptorSets = g_device->Get().allocateDescriptorSetsUnique(vk::DescriptorSetAllocateInfo(
-		m_descriptorPool.get(), 1, &cubeSetLayout
-	));
+	m_viewBufferHandles.clear();
+	m_viewBufferHandles.reserve(viewBufferHandles.size());
+	std::copy(viewBufferHandles.begin(), viewBufferHandles.end(), std::back_inserter(m_viewBufferHandles));
 }
 
-void Skybox::UpdateDescriptors()
-{
-	uint32_t binding = 0;
-	vk::DescriptorImageInfo imageInfo = m_textureSystem->GetDescriptorImageInfo(ImageViewType::eCube, m_cubeMap);
-	std::vector<vk::WriteDescriptorSet> writeDescriptorSets = {
-		vk::WriteDescriptorSet(
-			m_cubeDescriptorSets[0].get(), binding++, {},
-			1, vk::DescriptorType::eCombinedImageSampler, &imageInfo, nullptr
-		) // binding = 0
-	};
-	g_device->Get().updateDescriptorSets(static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
-}
-
-void Skybox::UploadToGPU(vk::CommandBuffer& commandBuffer, CommandBufferPool& commandBufferPool)
+// todo (hbedard): no need to pass the command buffer here no?
+void Skybox::UploadToGPU(CommandRingBuffer& commandRingBuffer)
 {
 	// Create and upload vertex buffer
+	vk::CommandBuffer commandBuffer = commandRingBuffer.GetCommandBuffer();
 	vk::DeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
 	m_vertexBuffer = std::make_unique<UniqueBufferWithStaging>(bufferSize, vk::BufferUsageFlagBits::eVertexBuffer);
 	memcpy(m_vertexBuffer->GetStagingMappedData(), reinterpret_cast<const void*>(vertices.data()), bufferSize);
 	m_vertexBuffer->CopyStagingToGPU(commandBuffer);
-	commandBufferPool.DestroyAfterSubmit(m_vertexBuffer->ReleaseStagingBuffer());
+	commandRingBuffer.DestroyAfterSubmit(m_vertexBuffer->ReleaseStagingBuffer());
 
-	m_textureSystem->UploadTextures(commandBufferPool);
-
-	UpdateDescriptors();
+	assert(!m_viewBufferHandles.empty());
+	SkyboxDrawParams drawParams = m_drawParams;
+	for (uint32_t i = 0; i < m_viewBufferHandles.size(); ++i)
+	{
+		drawParams.view = m_viewBufferHandles[i];
+		m_bindlessDrawParams->DefineParams(m_drawParamsHandle, drawParams, i);
+	}
 }
 
-void Skybox::Draw(vk::CommandBuffer& commandBuffer, uint32_t frameIndex)
+void Skybox::Draw(RenderCommandEncoder& renderCommandEncoder)
 {
 	// Expects the unlit view descriptors to be bound
 	// Assumes owner already bound the graphics pipeline
+
+	vk::CommandBuffer commandBuffer = renderCommandEncoder.GetCommandBuffer();
+	renderCommandEncoder.BindDrawParams(m_drawParamsHandle);
+	renderCommandEncoder.BindPipeline(GetGraphicsPipelineID());
 
 	// Bind vertex buffer
 	vk::DeviceSize offsets[] = { 0 };
 	vk::Buffer vertexBuffers[] = { m_vertexBuffer->Get() };
 	commandBuffer.bindVertexBuffers(0, 1, vertexBuffers, offsets);
-
-	// Bind cube sampler
-	uint32_t set = 1;
-	commandBuffer.bindDescriptorSets(
-		vk::PipelineBindPoint::eGraphics,
-		m_graphicsPipelineSystem->GetPipelineLayout(m_graphicsPipelineID, set), set,
-		1, &m_cubeDescriptorSets[0].get(), 0, nullptr
-	);
-
 	commandBuffer.draw(vertices.size() / 3, 1, 0, 0);
 }

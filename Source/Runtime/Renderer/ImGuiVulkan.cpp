@@ -139,9 +139,10 @@ void ImGuiVulkan::RecordCommands(uint32_t frameIndex, VkFramebuffer framebuffer)
 	);
 	commandBuffer->begin({ vk::CommandBufferUsageFlagBits::eRenderPassContinue, &info });
 	{
-		ImDrawData* drawData = ImGui::GetDrawData();
-		if (drawData != nullptr)
+		if (ImDrawData* drawData = ImGui::GetDrawData())
+		{
 			ImGui_ImplVulkan_RenderDrawData(drawData, *commandBuffer);
+		}
 	}
 	commandBuffer->end();
 }

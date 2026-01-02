@@ -1,8 +1,9 @@
 #pragma once
 
+#include <Renderer/Bindless.h>
 #include <RHI/Texture.h>
-#include <RHI/ShaderSystem.h>
-#include <RHI/GraphicsPipelineSystem.h>
+#include <RHI/ShaderCache.h>
+#include <RHI/GraphicsPipelineCache.h>
 #include <RHI/RenderPass.h>
 #include <AssetPath.h>
 
@@ -10,39 +11,36 @@
 #include <memory>
 #include <vector>
 
+class CommandRingBuffer;
+class RenderCommandEncoder;
+
 class Grid
 {
 public:
+	Grid(vk::RenderPass renderPass,
+		vk::Extent2D swapchainExtent,
+		GraphicsPipelineCache& graphicsPipelineCache,
+		BindlessDrawParams& bindlessDrawParams);
 
-	Grid(const RenderPass& renderPass, vk::Extent2D swapchainExtent, GraphicsPipelineSystem& graphicsPipelineSystem)
-		: m_graphicsPipelineSystem(&graphicsPipelineSystem)
-	{
-		ShaderSystem& shaderSystem = m_graphicsPipelineSystem->GetShaderSystem();
-		ShaderID vertexShaderID = shaderSystem.CreateShader(AssetPath("/Engine/Generated/Shaders/grid_vert.spv").PathOnDisk(), "main");
-		ShaderID fragmentShaderID = shaderSystem.CreateShader(AssetPath("/Engine/Generated/Shaders/grid_frag.spv").PathOnDisk(), "main");
-		vertexShader = shaderSystem.CreateShaderInstance(vertexShaderID);
-		fragmentShader = shaderSystem.CreateShaderInstance(fragmentShaderID);
-		Reset(renderPass, swapchainExtent);
-	}
+	void SetViewBufferHandles(gsl::span<const BufferHandle> viewBufferHandles);
 
-	void Draw(vk::CommandBuffer& commandBuffer)
-	{
-		commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, m_graphicsPipelineSystem->GetPipeline(pipelineID));
-		commandBuffer.draw(6, 1, 0, 0);
-	}
+	void UploadToGPU(CommandRingBuffer& commandRingBuffer);
 
-	void Reset(const RenderPass& renderPass, vk::Extent2D swapchainExtent) 
-	{
-		GraphicsPipelineInfo info(renderPass.Get(), swapchainExtent);
-		info.blendEnable = true;
-		info.depthWriteEnable = true;
-		pipelineID = m_graphicsPipelineSystem->CreateGraphicsPipeline(
-			vertexShader, fragmentShader, info
-		);
-	}
+	void Draw(RenderCommandEncoder& renderCommandEncoder);
+
+	void Reset(vk::RenderPass renderPass, vk::Extent2D swapchainExtent);
 
 private:
-	gsl::not_null<GraphicsPipelineSystem*> m_graphicsPipelineSystem;
+	struct GridDrawParams
+	{
+		BufferHandle view;
+		uint32_t padding[3];
+	};
+	BindlessDrawParamsHandle m_drawParamsHandle = BindlessDrawParamsHandle::Invalid;
+	std::vector<BufferHandle> m_viewBufferHandles;
+	gsl::not_null<BindlessDrawParams*> m_bindlessDrawParams;
+
+	gsl::not_null<GraphicsPipelineCache*> m_graphicsPipelineCache;
 	GraphicsPipelineID pipelineID;
 	ShaderInstanceID vertexShader;
 	ShaderInstanceID fragmentShader;

@@ -25,6 +25,7 @@ PhysicalDevice::PhysicalDevice(vk::Instance instance, vk::SurfaceKHR surface)
 	m_physicalDevice = PickPhysicalDevice();
 	m_indices = FindQueueFamilies(m_physicalDevice);
 	m_msaaSamples = GetMaxUsableSampleCount();
+	m_minUniformBufferOffsetAlignment = QueryMinUniformBufferOffsetAlignment();
 }
 
 vk::PhysicalDevice PhysicalDevice::PickPhysicalDevice()
@@ -180,4 +181,11 @@ vk::SampleCountFlagBits PhysicalDevice::GetMaxUsableSampleCount() const
 	if (counts & vk::SampleCountFlagBits::e2) { return vk::SampleCountFlagBits::e2; }
 
 	return vk::SampleCountFlagBits::e1;
+}
+
+uint32_t PhysicalDevice::QueryMinUniformBufferOffsetAlignment() const
+{
+	vk::PhysicalDeviceProperties physicalDeviceProperties;
+	vkGetPhysicalDeviceProperties(Get(), physicalDeviceProperties);
+	return physicalDeviceProperties.limits.minUniformBufferOffsetAlignment;
 }

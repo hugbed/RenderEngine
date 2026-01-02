@@ -1,4 +1,4 @@
-#include <RHI/ShaderSystem.h>
+#include <RHI/ShaderCache.h>
 
 #include <RHI/Device.h>
 #include <file_utils.h>
@@ -58,15 +58,13 @@ namespace
 				descriptorSetLayoutsBindings.resize(set + 1ULL);
 
 			auto& bindings = descriptorSetLayoutsBindings[set];
-
 			auto binding = comp.get_decoration(buffer.id, spv::Decoration::DecorationBinding);
-
 			const auto& type = comp.get_type(buffer.type_id);
-
+			const uint32_t descriptorCount = type.array.empty() ? 1U : type.array[0]; // descriptorCount
 			bindings.emplace_back(
 				binding, // binding
 				descriptorType, // uniform/storage buffer
-				type.array.empty() ? 1U : type.array[0], // descriptorCount
+				descriptorCount,
 				spirv_vk::execution_model_to_shader_stage(comp.get_execution_model())
 			);
 
@@ -92,13 +90,12 @@ namespace
 
 			// to check if it's an array, e.g.: uniform sampler2D uSampler[10];
 			const auto& type = comp.get_type(sampler.type_id);
-
+			const uint32_t descriptorCount = type.array.empty() ? 1U : type.array[0]; // descriptorCount
 			bindings.emplace_back(
 				binding, // binding
 				vk::DescriptorType::eCombinedImageSampler,
-				type.array.empty() ? 1UL : type.array[0],
-				spirv_vk::execution_model_to_shader_stage(comp.get_execution_model())
-			);
+				descriptorCount,
+				spirv_vk::execution_model_to_shader_stage(comp.get_execution_model()));
 
 			// We only support 1D arrays for now
 			ASSERT(type.array.empty() || type.array.size() == 1);
@@ -294,12 +291,12 @@ ShaderReflection::ShaderReflection(uint32_t* code, size_t codeSize) /* how many 
 }
 
 // todo (hbedard): take an AssetPath once available
-ShaderID ShaderSystem::CreateShader(const std::filesystem::path& filePath)
+ShaderID ShaderCache::CreateShader(const std::filesystem::path& filePath)
 {
 	return CreateShader(filePath, "main");
 }
 
-ShaderID ShaderSystem::CreateShader(const std::filesystem::path& filePath, std::string entryPoint)
+ShaderID ShaderCache::CreateShader(const std::filesystem::path& filePath, std::string entryPoint)
 {
 	std::string filePathStr = filePath.string();
 	uint64_t filenameID = fnv_hash(reinterpret_cast<const uint8_t*>(filePathStr.c_str()), filePathStr.size());
@@ -313,7 +310,7 @@ ShaderID ShaderSystem::CreateShader(const std::filesystem::path& filePath, std::
 	return shaderID;
 }
 
-ShaderID ShaderSystem::CreateShader(const char* data, size_t size, std::string entryPoint)
+ShaderID ShaderCache::CreateShader(const char* data, size_t size, std::string entryPoint)
 {
 	ShaderID id = (ShaderID)m_modules.size();
 	{
@@ -324,9 +321,9 @@ ShaderID ShaderSystem::CreateShader(const char* data, size_t size, std::string e
 	return id;
 }
 
-ShaderInstanceID ShaderSystem::CreateShaderInstance(
+ShaderInstanceID ShaderCache::CreateShaderInstance(
 	ShaderID shaderID,
-	const void* specializationData,
+	gsl::not_null<const void*> specializationData,
 	SmallVector<vk::SpecializationMapEntry> specializationEntries)
 {
 	if (specializationEntries.size() == 0)
@@ -334,14 +331,13 @@ ShaderInstanceID ShaderSystem::CreateShaderInstance(
 
 	ShaderInstanceID id = m_instanceIDToShaderID.size();
 	m_instanceIDToShaderID.push_back(shaderID);
-	m_specializationBlocks.resize(id + 1);
+	m_specializationBlocks.resize(static_cast<size_t>(id + 1));
 	CopySpecializationEntries(specializationData, specializationEntries, m_specializationBlocks[id]);
 	m_specializationEntries.push_back(std::move(specializationEntries));
-
 	return id;
 }
 
-ShaderInstanceID ShaderSystem::CreateShaderInstance(ShaderID shaderID)
+ShaderInstanceID ShaderCache::CreateShaderInstance(ShaderID shaderID)
 {
 	ShaderInstanceID id = m_instanceIDToShaderID.size();
 	m_instanceIDToShaderID.push_back(shaderID);
@@ -349,7 +345,7 @@ ShaderInstanceID ShaderSystem::CreateShaderInstance(ShaderID shaderID)
 	return id;
 }
 
-vk::PipelineShaderStageCreateInfo ShaderSystem::GetShaderStageInfo(ShaderInstanceID id, vk::SpecializationInfo& specializationInfo) const
+vk::PipelineShaderStageCreateInfo ShaderCache::GetShaderStageInfo(ShaderInstanceID id, vk::SpecializationInfo& specializationInfo) const
 {
 	ShaderID shaderID = m_instanceIDToShaderID[id];
 	const SmallVector<vk::SpecializationMapEntry>& specializationEntries = m_specializationEntries[id];
@@ -372,7 +368,7 @@ vk::PipelineShaderStageCreateInfo ShaderSystem::GetShaderStageInfo(ShaderInstanc
 	);
 }
 
-vk::PipelineVertexInputStateCreateInfo ShaderSystem::GetVertexInputStateInfo(
+vk::PipelineVertexInputStateCreateInfo ShaderCache::GetVertexInputStateInfo(
 	ShaderInstanceID id,
 	SmallVector<vk::VertexInputAttributeDescription>& attributeDescriptions,
 	vk::VertexInputBindingDescription& bindingDescription) const
@@ -407,7 +403,7 @@ vk::PipelineVertexInputStateCreateInfo ShaderSystem::GetVertexInputStateInfo(
 	}
 }
 
-SmallVector<vk::PushConstantRange> ShaderSystem::GetPushConstantRanges(ShaderInstanceID id) const
+SmallVector<vk::PushConstantRange> ShaderCache::GetPushConstantRanges(ShaderInstanceID id) const
 {
 	ShaderID shaderID = m_instanceIDToShaderID[id];
 	const ShaderReflection& reflection = *m_reflections[shaderID];
@@ -423,11 +419,12 @@ SmallVector<vk::PushConstantRange> ShaderSystem::GetPushConstantRanges(ShaderIns
 	return pushConstantRanges;
 }
 
-SetVector<SmallVector<vk::DescriptorSetLayoutBinding>> ShaderSystem::GetDescriptorSetLayoutBindings(ShaderInstanceID id) const
+SetVector<SmallVector<vk::DescriptorSetLayoutBinding>> ShaderCache::GetDescriptorSetLayoutBindings(ShaderInstanceID id) const
 {
 	ShaderID shaderID = m_instanceIDToShaderID[id];
 	const ShaderReflection& reflection = *m_reflections[shaderID];
 	const SmallVector<vk::SpecializationMapEntry>& specializationEntries = m_specializationEntries[id];
+	vk::ShaderStageFlagBits shaderStageFlags = spirv_vk::execution_model_to_shader_stage(reflection.comp.get_execution_model());
 
 	SetVector<SmallVector<vk::DescriptorSetLayoutBinding>> descriptorSetLayoutBindings;
 
@@ -454,6 +451,11 @@ SetVector<SmallVector<vk::DescriptorSetLayoutBinding>> ShaderSystem::GetDescript
 	// Sort each layout by binding
 	for (auto& descriptorSetLayout : descriptorSetLayoutBindings)
 	{
+		for (vk::DescriptorSetLayoutBinding& binding : descriptorSetLayout)
+		{
+			binding.stageFlags |= shaderStageFlags;
+		}
+
 		std::sort(descriptorSetLayout.begin(), descriptorSetLayout.end(), [](const auto& a, const auto& b) {
 			return a.binding < b.binding;
 		});

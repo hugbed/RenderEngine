@@ -1,7 +1,7 @@
-#include <Renderer/TextureSystem.h>
+#include <Renderer/TextureCache.h>
 
 #include <RHI/Texture.h>
-#include <RHI/CommandBufferPool.h>
+#include <RHI/CommandRingBuffer.h>
 #include <hash.h>
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
@@ -9,21 +9,19 @@
 #include <algorithm>
 #include <iostream>
 
-TextureID TextureSystem::LoadTexture(const AssetPath& assetPath)
+TextureHandle TextureCache::LoadTexture(const AssetPath& assetPath)
 {
-	TextureID id = CreateAndUploadTextureImage(assetPath);
-	vk::Sampler sampler = CreateSampler(m_textures[(size_t)ImageViewType::e2D][id]->GetMipLevels());
-	return id;
+	return CreateAndUploadTextureImage(assetPath);
 }
 
-TextureID TextureSystem::CreateAndUploadTextureImage(const AssetPath& assetPath)
+TextureHandle TextureCache::CreateAndUploadTextureImage(const AssetPath& assetPath)
 {
 	// Check if we already loaded this texture
 	std::string filePathStr = assetPath.PathOnDisk().string();
 	uint64_t fileHash = fnv_hash(reinterpret_cast<uint8_t*>(filePathStr.data()), filePathStr.size());
-	auto cachedTexture = m_fileHashToTextureKey.find(fileHash);
-	if (cachedTexture != m_fileHashToTextureKey.end()) {
-		return cachedTexture->second.id;
+	auto cachedTexture = m_fileHashToTextureHandle.find(fileHash);
+	if (cachedTexture != m_fileHashToTextureHandle.end()) {
+		return cachedTexture->second;
 	}
 
 	// Read image from file
@@ -38,7 +36,7 @@ TextureID TextureSystem::CreateAndUploadTextureImage(const AssetPath& assetPath)
 	// Texture image
 	size_t imageViewTypeIndex = (size_t)ImageViewType::e2D;
 
-	TextureID id = m_textures[imageViewTypeIndex].size();
+	uint32_t textureIndex = m_textures[imageViewTypeIndex].size();
 	m_textures[imageViewTypeIndex].push_back(
 		std::make_unique<Texture>(
 			texWidth, texHeight, 4UL, // R8G8B8A8, depth = 4
@@ -52,21 +50,24 @@ TextureID TextureSystem::CreateAndUploadTextureImage(const AssetPath& assetPath)
 			mipLevels
 		)
 	);
-	TextureKey key = { ImageViewType::e2D, id };
-	auto& texture = m_textures[imageViewTypeIndex][id];
+	TextureKey key = { ImageViewType::e2D, textureIndex };
+	auto& texture = m_textures[imageViewTypeIndex][textureIndex];
 	m_texturesToUpload.push_back(key);
 	m_mipLevels[imageViewTypeIndex].push_back(texture->GetMipLevels());
-	m_fileHashToTextureKey.emplace(fileHash, std::move(key));
 	m_names[imageViewTypeIndex].push_back(filePathStr.data());
 	m_imageTypeCount[(size_t)ImageViewType::e2D]++;
 
 	memcpy(texture->GetStagingMappedData(), reinterpret_cast<const void*>(pixels), (size_t)texWidth* texHeight * 4);
 	stbi_image_free(pixels);
 
-	return id;
+	vk::Sampler sampler = CreateSampler(texture->GetMipLevels());
+	TextureHandle textureHandle = m_bindlessDescriptors->StoreTexture(texture->GetImageView(), std::move(sampler));
+	m_textureHandleToKey.emplace(textureHandle, key);
+	m_fileHashToTextureHandle.emplace(fileHash, textureHandle);
+	return textureHandle;
 }
 
-vk::Sampler TextureSystem::CreateSampler(uint32_t nbMipLevels)
+vk::Sampler TextureCache::CreateSampler(uint32_t nbMipLevels)
 {
 	// Check if we already have a sampler
 	auto it = m_mipLevelToSamplerID.find(nbMipLevels);
@@ -98,7 +99,7 @@ vk::Sampler TextureSystem::CreateSampler(uint32_t nbMipLevels)
 	return m_samplers[samplerID].get();
 }
 
-TextureID TextureSystem::LoadCubeMapFaces(gsl::span<AssetPath> filePaths)
+TextureHandle TextureCache::LoadCubeMapFaces(gsl::span<AssetPath> filePaths)
 {
 	if (filePaths.size() != 6)
 		return {};
@@ -111,14 +112,10 @@ TextureID TextureSystem::LoadCubeMapFaces(gsl::span<AssetPath> filePaths)
 		filename += filePathStr + ";"; // use hash of ";".join(filenames) as id
 	}
 	uint64_t fileHash = fnv_hash((uint8_t*)filename.data(), filename.size());
-	auto cachedTextureIt = m_fileHashToTextureKey.find(fileHash); // todo: use better ID
-	if (cachedTextureIt != m_fileHashToTextureKey.end())
+	auto cachedTextureIt = m_fileHashToTextureHandle.find(fileHash); // todo: use better ID
+	if (cachedTextureIt != m_fileHashToTextureHandle.end())
 	{
-		size_t samplerTypeIndex = (size_t)cachedTextureIt->second.type;
-		TextureID id = cachedTextureIt->second.id;
-		auto& cachedTexture = m_textures[samplerTypeIndex][id];
-		Texture* texture = cachedTexture.get();
-		return cachedTextureIt->second.id;
+		return cachedTextureIt->second;
 	}
 	std::vector<stbi_uc*> faces;
 	faces.reserve(filePaths.size());
@@ -157,7 +154,7 @@ TextureID TextureSystem::LoadCubeMapFaces(gsl::span<AssetPath> filePaths)
 	// Create cubemap
 	size_t samplerTypeIndex = (size_t)ImageViewType::eCube;
 
-	TextureID id = m_textures[samplerTypeIndex].size();
+	uint32_t textureIndex = m_textures[samplerTypeIndex].size();
 	m_textures[samplerTypeIndex].push_back(
 		std::make_unique<Texture>(
 			width, height, 4UL, // R8G8B8A8, depth = 4
@@ -170,7 +167,7 @@ TextureID TextureSystem::LoadCubeMapFaces(gsl::span<AssetPath> filePaths)
 			6 // layerCount (6 for cube)
 		)
 	);
-	auto& texture = m_textures[samplerTypeIndex][id];
+	auto& texture = m_textures[samplerTypeIndex][textureIndex];
 
 	size_t bufferSize = (size_t)width * height * 4ULL;
 	char* data = reinterpret_cast<char*>(texture->GetStagingMappedData());
@@ -183,32 +180,34 @@ TextureID TextureSystem::LoadCubeMapFaces(gsl::span<AssetPath> filePaths)
 		stbi_image_free(face);
 		data += bufferSize;
 	}
-	TextureKey key = { ImageViewType::eCube, id };
+	TextureKey key = { ImageViewType::eCube, textureIndex };
 	m_texturesToUpload.push_back(key);
 	m_mipLevels[samplerTypeIndex].push_back(texture->GetMipLevels());
-	m_fileHashToTextureKey.emplace(fileHash, std::move(key));
 	m_names[samplerTypeIndex].push_back(filename);
 	m_imageTypeCount[(size_t)ImageViewType::eCube]++;
-	CreateSampler(texture->GetMipLevels());
+	vk::Sampler sampler = CreateSampler(texture->GetMipLevels());
 
-	return id;
+	TextureHandle textureHandle = m_bindlessDescriptors->StoreTexture(texture->GetImageView(), std::move(sampler));
+	m_textureHandleToKey[textureHandle] = key;
+	m_fileHashToTextureHandle.emplace(fileHash, textureHandle);
+	return textureHandle;
 }
 
-void TextureSystem::UploadTextures(CommandBufferPool& commandBufferPool)
+void TextureCache::UploadTextures(CommandRingBuffer& commandRingBuffer)
 {
-	vk::CommandBuffer& commandBuffer = commandBufferPool.GetCommandBuffer();
+	vk::CommandBuffer commandBuffer = commandRingBuffer.GetCommandBuffer();
 
 	for (const TextureKey& key : m_texturesToUpload)
 	{
-		const auto& texture = m_textures[(size_t)key.type][key.id];
+		const auto& texture = m_textures[static_cast<size_t>(key.type)][key.index];
 		texture->UploadStagingToGPU(commandBuffer, vk::ImageLayout::eShaderReadOnlyOptimal);
-		auto* stagingBuffer = texture->ReleaseStagingBuffer();
-		commandBufferPool.DestroyAfterSubmit(stagingBuffer);
+		UniqueBuffer* stagingBuffer = texture->ReleaseStagingBuffer();
+		commandRingBuffer.DestroyAfterSubmit(stagingBuffer);
 	}
 	m_texturesToUpload.clear();
 }
 
-SmallVector<vk::DescriptorImageInfo> TextureSystem::GetDescriptorImageInfos(ImageViewType samplerType) const
+SmallVector<vk::DescriptorImageInfo> TextureCache::GetDescriptorImageInfos(ImageViewType samplerType) const
 {
 	const size_t samplerTypeIndex = (size_t)samplerType;
 
@@ -226,11 +225,19 @@ SmallVector<vk::DescriptorImageInfo> TextureSystem::GetDescriptorImageInfos(Imag
 	return imageInfos;
 }
 
-vk::DescriptorImageInfo TextureSystem::GetDescriptorImageInfo(ImageViewType imageViewType, TextureID id) const
+vk::DescriptorImageInfo TextureCache::GetDescriptorImageInfo(ImageViewType imageViewType, TextureHandle textureHandle) const
 {
+	auto it = m_textureHandleToKey.find(textureHandle);
+	if (it == m_textureHandleToKey.end())
+	{
+		assert(!"texture handle not found");
+		return {};
+	}
+
+	uint32_t textureIndex = it->second.index;
 	return vk::DescriptorImageInfo(
-		m_samplers[m_mipLevelToSamplerID.at(m_mipLevels[(size_t)imageViewType][id])].get(),
-		m_textures[(size_t)imageViewType][id]->GetImageView(),
+		m_samplers[m_mipLevelToSamplerID.at(m_mipLevels[(size_t)imageViewType][textureIndex])].get(),
+		m_textures[(size_t)imageViewType][textureIndex]->GetImageView(),
 		vk::ImageLayout::eShaderReadOnlyOptimal
 	);
 }

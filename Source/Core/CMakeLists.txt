@@ -13,3 +13,7 @@ file(GLOB SRC_FILES
 add_library(${PROJECT_NAME} ${SRC_FILES})
 target_include_directories(${PROJECT_NAME} PUBLIC ${PROJECT_SOURCE_DIR})
 
+# Multi-process compilation
+if(MSVC)
+ target_compile_options(${PROJECT_NAME} PRIVATE "/MP")
+endif()

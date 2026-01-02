@@ -1,6 +1,8 @@
 #include <Renderer/ShadowSystem.h>
 
-#include <AssimpScene.h>
+#include <Renderer/ViewProperties.h>
+#include <Renderer/RenderCommandEncoder.h>
+#include <Renderer/TextureCache.h>
 
 #include <utility>
 
@@ -180,7 +182,7 @@ namespace
 		return view;
 	}
 
-	[[nodiscard]] LitViewProperties ComputeShadowTransform(
+	[[nodiscard]] ViewProperties ComputeShadowTransform(
 		const PhongLight& light,
 		const Camera& camera,
 		BoundingBox sceneBox,
@@ -241,7 +243,7 @@ namespace
 			0.0f, 0.0f, 0.5f, 1.0f
 		);
 
-		return LitViewProperties{
+		return ViewProperties{
 			shadowView, clip * proj, glm::vec3()
 		};
 	}
@@ -252,60 +254,31 @@ const AssetPath ShadowSystem::kFragmentShaderFile("/Engine/Generated/Shaders/sha
 
 ShadowSystem::ShadowSystem(
 	vk::Extent2D extent,
-	GraphicsPipelineSystem& graphicsPipelineSystem,
+	GraphicsPipelineCache& graphicsPipelineCache,
+	BindlessDescriptors& bindlessDescriptors,
+	BindlessDrawParams& bindlessDrawParams,
 	MeshAllocator& meshAllocator,
 	SceneTree& sceneTree,
 	LightSystem& lightSystem
 )
 	: m_extent(extent)
-	, m_graphicsPipelineSystem(&graphicsPipelineSystem)
+	, m_graphicsPipelineCache(&graphicsPipelineCache)
 	, m_meshAllocator(&meshAllocator)
 	, m_sceneTree(&sceneTree)
 	, m_lightSystem(&lightSystem)
+	, m_bindlessDescriptors(&bindlessDescriptors)
+	, m_bindlessDrawParams(&bindlessDrawParams)
 {
 	m_sampler = ::CreateSampler(vk::SamplerAddressMode::eClampToEdge);
 	m_renderPass = ::CreateShadowMapRenderPass();
-	CreateDescriptorPool();
-}
-
-ShadowSystem::~ShadowSystem()
-{
-	for (auto&& descriptorSet : m_descriptorSets)
-		descriptorSet.reset();
-	
-	g_device->Get().destroyDescriptorPool(m_descriptorPool);
-}
-
-void ShadowSystem::CreateDescriptorPool()
-{
-	for (auto& descriptorSet : m_descriptorSets)
-		descriptorSet.reset();
-
-	// Set 0 (view):     { 1 buffer containing all shadow map transforms }
-	// Set 1 (scene):    { 1 buffer containing all transforms }
-	std::pair<vk::DescriptorType, uint16_t> descriptorCount[] = {
-		std::make_pair(vk::DescriptorType::eStorageBuffer, 2),
-	};
-	const uint32_t descriptorCountSize = sizeof(descriptorCount) / sizeof(descriptorCount[0]);
-
-	std::vector<vk::DescriptorPoolSize> poolSizes;
-	poolSizes.reserve(descriptorCountSize);
-	for (const auto& descriptor : descriptorCount)
-		poolSizes.emplace_back(descriptor.first, descriptor.second);
-
-	uint32_t maxNbSets = 2; // View + Scene
-	m_descriptorPool = g_device->Get().createDescriptorPool(vk::DescriptorPoolCreateInfo(
-		vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-		maxNbSets,
-		static_cast<uint32_t>(poolSizes.size()), poolSizes.data()
-	));
+	m_drawParamsHandle = m_bindlessDrawParams->DeclareParams<ShadowMapDrawParams>();
 }
 
 void ShadowSystem::Reset(vk::Extent2D extent)
 {
 	m_extent = extent;
 
-	m_graphicsPipelineSystem->ResetGraphicsPipeline(
+	m_graphicsPipelineCache->ResetGraphicsPipeline(
 		m_graphicsPipelineID, ::GetGraphicsPipelineInfo(*m_renderPass, m_extent)
 	);
 	
@@ -320,14 +293,15 @@ ShadowID ShadowSystem::CreateShadowMap(LightID lightID)
 {
 	ShadowID id = (ShadowID)m_lights.size();
 	m_lights.push_back(id);
-	m_properties.emplace_back();
-	m_transforms.emplace_back();
+	m_shadowViews.push_back({});
 	m_depthImages.push_back(::CreateDepthImage(m_extent));
 	m_framebuffers.push_back(::CreateFramebuffer(*m_renderPass, m_extent, m_depthImages.back()->GetImageView()));
+	TextureHandle textureHandle = m_bindlessDescriptors->StoreTexture(m_depthImages.back()->GetImageView(), m_sampler.get());
+	m_materialShadows.push_back(MaterialShadow{ glm::identity<glm::aligned_mat4>(), textureHandle });
 	return id;
 }
 
-void ShadowSystem::UploadToGPU()
+void ShadowSystem::UploadToGPU(CommandRingBuffer& commandRingBuffer)
 {
 	if (GetShadowCount() == 0)
 	{
@@ -335,56 +309,28 @@ void ShadowSystem::UploadToGPU()
 	}
 
 	CreateGraphicsPipeline();
-	CreateDescriptorSets();
+	
+	m_shadowViewsBuffer = ::CreateStorageBuffer(m_shadowViews.size() * sizeof(m_shadowViews[0]));
+	m_materialShadowsBuffer = ::CreateStorageBuffer(m_materialShadows.size() * sizeof(m_materialShadows[0]));
+	m_materialShadowsBufferHandle = m_bindlessDescriptors->StoreBuffer(m_materialShadowsBuffer->Get(), vk::BufferUsageFlagBits::eStorageBuffer);
 
-	m_viewPropertiesBuffer = ::CreateStorageBuffer(m_properties.size() * sizeof(m_properties[0]));
-	m_transformsBuffer = ::CreateStorageBuffer(m_transforms.size() * sizeof(m_transforms[0]));
-
-	::UpdateViewDescriptorSet(
-		m_viewPropertiesBuffer->Get(), m_viewPropertiesBuffer->Size(),
-		GetDescriptorSet(DescriptorSetIndex::View)
-	);
-
-	const UniqueBuffer& transformsBuffer = m_sceneTree->GetTransformsBuffer();
-	::UpdateSceneDescriptorSet(
-		transformsBuffer.Get(), transformsBuffer.Size(),
-		GetDescriptorSet(DescriptorSetIndex::Scene)
-	);
+	m_drawParams.meshTransforms = m_sceneTree->GetTransformsBufferHandle();
+	m_drawParams.shadowViews = m_bindlessDescriptors->StoreBuffer(m_shadowViewsBuffer->Get(), vk::BufferUsageFlagBits::eStorageBuffer);
+	m_bindlessDrawParams->DefineParams(m_drawParamsHandle, m_drawParams);
 }
 
 void ShadowSystem::CreateGraphicsPipeline()
 {
-	ShaderSystem& shaderSystem = m_graphicsPipelineSystem->GetShaderSystem();
-	ShaderID vertexShaderID = shaderSystem.CreateShader(kVertexShaderFile.PathOnDisk());
-	ShaderID fragmentShaderID = shaderSystem.CreateShader(kFragmentShaderFile.PathOnDisk());
-	ShaderInstanceID vertexShaderInstanceID = shaderSystem.CreateShaderInstance(vertexShaderID);
-	ShaderInstanceID fragmentShaderInstanceID = shaderSystem.CreateShaderInstance(fragmentShaderID);
-	m_graphicsPipelineID = m_graphicsPipelineSystem->CreateGraphicsPipeline(
+	ShaderCache& shaderCache = m_graphicsPipelineCache->GetShaderCache();
+	ShaderID vertexShaderID = shaderCache.CreateShader(kVertexShaderFile.PathOnDisk());
+	ShaderID fragmentShaderID = shaderCache.CreateShader(kFragmentShaderFile.PathOnDisk());
+	ShaderInstanceID vertexShaderInstanceID = shaderCache.CreateShaderInstance(vertexShaderID);
+	ShaderInstanceID fragmentShaderInstanceID = shaderCache.CreateShaderInstance(fragmentShaderID);
+	m_graphicsPipelineID = m_graphicsPipelineCache->CreateGraphicsPipeline(
 		vertexShaderInstanceID,
 		fragmentShaderInstanceID,
 		::GetGraphicsPipelineInfo(*m_renderPass, m_extent)
 	);
-}
-
-void ShadowSystem::CreateDescriptorSets()
-{
-	const int nbDescriptorSets = 2; // View + Scene
-
-	std::vector<vk::DescriptorSetLayout> layouts;
-	layouts.reserve(nbDescriptorSets);
-	for (DescriptorSetIndex setIndex : { DescriptorSetIndex::View, DescriptorSetIndex::Scene })
-	{
-		layouts.push_back(m_graphicsPipelineSystem->GetDescriptorSetLayout(
-			m_graphicsPipelineID, (uint8_t)setIndex
-		));
-	}
-
-	auto descriptorSets = g_device->Get().allocateDescriptorSetsUnique(vk::DescriptorSetAllocateInfo(
-		m_descriptorPool, static_cast<uint32_t>(layouts.size()), layouts.data()
-	));
-
-	for (int i = 0; i < nbDescriptorSets; ++i)
-		m_descriptorSets[i] = std::move(descriptorSets[i]);
 }
 
 void ShadowSystem::Update(const Camera& camera, BoundingBox sceneBoundingBox)
@@ -395,7 +341,7 @@ void ShadowSystem::Update(const Camera& camera, BoundingBox sceneBoundingBox)
 	{
 		const PhongLight& light = m_lightSystem->GetLight(m_lights[id]);
 
-		m_properties[id] = ::ComputeShadowTransform(
+		m_shadowViews[id] = ::ComputeShadowTransform(
 			m_lightSystem->GetLight(id),
 			camera,
 			sceneBox,
@@ -403,24 +349,31 @@ void ShadowSystem::Update(const Camera& camera, BoundingBox sceneBoundingBox)
 			m_sceneTree->GetTransforms()
 		);
 
-		m_transforms[id] = m_properties[id].proj * m_properties[id].view;
+		m_materialShadows[id].transform = m_shadowViews[id].proj * m_shadowViews[id].view;
 	}
 
 	// Write values to buffer
 	{
-		size_t writeSize = m_properties.size() * sizeof(m_properties[0]);
-		memcpy(m_viewPropertiesBuffer->GetMappedData(), reinterpret_cast<const void*>(m_properties.data()), writeSize);
-		m_viewPropertiesBuffer->Flush(0, writeSize);
+		size_t writeSize = m_shadowViews.size() * sizeof(m_shadowViews[0]);
+		memcpy(m_shadowViewsBuffer->GetMappedData(), reinterpret_cast<const void*>(m_shadowViews.data()), writeSize);
+		m_shadowViewsBuffer->Flush(0, writeSize);
 	}
 	{
-		size_t writeSize = m_transforms.size() * sizeof(m_transforms[0]);
-		memcpy(m_transformsBuffer->GetMappedData(), reinterpret_cast<const void*>(m_transforms.data()), writeSize);
-		m_transformsBuffer->Flush(0, writeSize);
+		size_t writeSize = m_materialShadows.size() * sizeof(m_materialShadows[0]);
+		memcpy(m_materialShadowsBuffer->GetMappedData(), reinterpret_cast<const void*>(m_materialShadows.data()), writeSize);
+		m_materialShadowsBuffer->Flush(0, writeSize);
 	}
 }
 
-void ShadowSystem::Render(vk::CommandBuffer& commandBuffer, uint32_t frameIndex, const std::vector<MeshDrawInfo> drawCommands) const
+void ShadowSystem::Render(RenderCommandEncoder& renderCommandEncoder, const std::vector<MeshDrawInfo> drawCommands) const
 {
+	renderCommandEncoder.BindDrawParams(m_drawParamsHandle);
+
+	vk::CommandBuffer commandBuffer = renderCommandEncoder.GetCommandBuffer();
+
+	// Bind the one big vertex + index buffers
+	m_meshAllocator->BindGeometry(commandBuffer);
+
 	for (ShadowID id = 0; id < (ShadowID)m_framebuffers.size(); ++id)
 	{
 		vk::ClearValue clearValues;
@@ -432,52 +385,25 @@ void ShadowSystem::Render(vk::CommandBuffer& commandBuffer, uint32_t frameIndex,
 		);
 		commandBuffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
 		{
-			// Bind Pipeline
-			commandBuffer.bindPipeline(
-				vk::PipelineBindPoint::eGraphics,
-				m_graphicsPipelineSystem->GetPipeline(m_graphicsPipelineID)
-			);
-
-			// Bind View
-			uint8_t viewSetIndex = (uint8_t)DescriptorSetIndex::View;
-			vk::PipelineLayout viewPipelineLayout = m_graphicsPipelineSystem->GetPipelineLayout(m_graphicsPipelineID, viewSetIndex);
-			commandBuffer.bindDescriptorSets(
-				vk::PipelineBindPoint::eGraphics,
-				viewPipelineLayout, (uint32_t)viewSetIndex,
-				1, &m_descriptorSets[viewSetIndex].get(),
-				0, nullptr
-			);
+			renderCommandEncoder.BindPipeline(m_graphicsPipelineID);
 
 			// Shadow transforms
+			vk::PipelineLayout pipelineLayout = m_graphicsPipelineCache->GetPipelineLayout(m_graphicsPipelineID);
 			uint32_t shadowIndex = (uint32_t)id;
 			commandBuffer.pushConstants(
-				viewPipelineLayout,
-				vk::ShaderStageFlagBits::eVertex,
+				pipelineLayout,
+				vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
 				offsetof(PushConstants, shadowIndex), sizeof(PushConstants::shadowIndex), &shadowIndex
 			);
 
-			uint8_t modelSetIndex = (uint8_t)DescriptorSetIndex::Scene;
-			vk::PipelineLayout modelPipelineLayout = m_graphicsPipelineSystem->GetPipelineLayout(m_graphicsPipelineID, modelSetIndex);
-
-			// Bind the one big vertex + index buffers
-			m_meshAllocator->BindGeometry(commandBuffer);
-
-			// Bind the model transforms buffer
-			commandBuffer.bindDescriptorSets(
-				vk::PipelineBindPoint::eGraphics,
-				modelPipelineLayout, (uint32_t)DescriptorSetIndex::Scene,
-				1, &m_descriptorSets[modelSetIndex].get(),
-				0, nullptr
-			);
-			
 			for (const auto& drawItem : drawCommands)
 			{
 				uint32_t sceneNodeIndex = static_cast<uint32_t>(drawItem.sceneNodeID);
 
 				// Set model index push constant
 				commandBuffer.pushConstants(
-					modelPipelineLayout,
-					vk::ShaderStageFlagBits::eVertex,
+					pipelineLayout,
+					vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
 					offsetof(PushConstants, sceneNodeIndex), sizeof(PushConstants::sceneNodeIndex), &sceneNodeIndex
 				);
 
@@ -486,6 +412,16 @@ void ShadowSystem::Render(vk::CommandBuffer& commandBuffer, uint32_t frameIndex,
 		}
 		commandBuffer.endRenderPass();
 	}
+}
+
+CombinedImageSampler ShadowSystem::GetCombinedImageSampler(ShadowID id) const
+{
+	return CombinedImageSampler{ m_depthImages[id].get(), m_sampler.get() };
+}
+
+glm::mat4 ShadowSystem::GetLightTransform(ShadowID id) const
+{
+	return m_shadowViews[id].proj * m_shadowViews[id].view;
 }
 
 SmallVector<vk::DescriptorImageInfo, 16> ShadowSystem::GetTexturesInfo() const

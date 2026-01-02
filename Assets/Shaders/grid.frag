@@ -1,6 +1,8 @@
 #version 450
 #extension GL_ARB_separate_shader_objects : enable
 
+// --- Inputs / Outputs --- //
+
 layout(location = 0) in vec3 fragPos;
 layout(location = 1) in vec3 nearPoint;
 layout(location = 2) in vec3 farPoint;
@@ -8,6 +10,16 @@ layout(location = 3) in mat4 fragView;
 layout(location = 7) in mat4 fragProj;
 
 layout(location = 0) out vec4 outColor;
+
+// --- Push Constants --- //
+
+layout(push_constant)
+    uniform PushConstants {
+        layout(offset = 0) uint unused0;
+        layout(offset = 4) uint unused1;
+    } pc;
+
+// ---
 
 float checkerboard(vec2 R, float scale) {
 	return float((
