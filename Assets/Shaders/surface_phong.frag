@@ -76,7 +76,7 @@ void main() {
     vec3 shadedColor = vec3(0.0, 0.0, 0.0);
     for (int i = 0; i < uDrawParams.lightCount; ++i)
     {
-        float shadow = ComputeShadow(GetLights()[i], fragPos, normal);
+        float shadow = ComputeShadow(GetLights()[i], fragPos, normal, uDrawParams.shadows);
         shadedColor += PhongLighting(GetLights()[i], phongProperties, normal, fragPos, viewPos, shadow).rgb;
     }
 

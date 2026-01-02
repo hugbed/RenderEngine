@@ -26,6 +26,8 @@ public:
 		return *m_commandBuffer;
 	}
 
+	uint32_t GetFrameIndex() const { return m_frameIndex; }
+
 	void BeginRender(vk::CommandBuffer& commandBuffer, uint32_t frameIndex)
 	{
 		m_commandBuffer = &commandBuffer;

@@ -9,6 +9,11 @@ LightSystem::LightSystem(BindlessDescriptors& bindlessDescriptors)
 {
 }
 
+void LightSystem::SetLightShadowID(LightID id, uint32_t shadowID)
+{
+	m_lights[id].shadowIndex = shadowID;
+}
+
 void LightSystem::UploadToGPU(CommandRingBuffer& commandRingBuffer)
 {
 	if (m_lights.empty() == false)

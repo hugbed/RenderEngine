@@ -32,6 +32,9 @@ public:
 	void UploadToGPU();
 	void Update();
 	void Render(RenderCommandEncoder& renderCommandEncoder);
+	
+	// todo (hbedard): the render pass should be initialized in the scene so that we can call this in render!
+	void RenderShadowMaps(RenderCommandEncoder& renderCommandEncoder, uint32_t concurrentFrameIndex);
 
 	gsl::not_null<MeshAllocator*> GetMeshAllocator() const { return m_meshAllocator.get(); }
 	gsl::not_null<SceneTree*> GetSceneTree() const { return m_sceneTree.get(); }
@@ -61,5 +64,4 @@ private:
 	void SortTranslucentMeshes();
 
 	void RenderMeshes(RenderCommandEncoder& renderCommandEncoder, const std::vector<MeshDrawInfo>& drawCalls) const;
-	void RenderShadowMaps(RenderCommandEncoder& renderCommandEncoder, uint32_t concurrentFrameIndex);
 };

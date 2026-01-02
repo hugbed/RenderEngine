@@ -122,7 +122,6 @@ void AssimpSceneLoader::LoadLights(vk::CommandBuffer buffer)
 
 			if (light.type == aiLightSource_DIRECTIONAL)
 			{
-				light.intensity *= 0.0079; // W/m^2 to lux for the sun
 				light.shadowIndex = nbShadowCastingLights++;
 				hasShadows = true;
 			}
@@ -139,10 +138,11 @@ void AssimpSceneLoader::LoadLights(vk::CommandBuffer buffer)
 			light.falloffRadius = aLight->mAttenuationConstant > SMALL_NUMBER ? 1.0f / aLight->mAttenuationConstant : BIG_NUMBER;
 		}
 
-		LightID id = GetRenderScene().GetLightSystem()->AddLight(std::move(light));
+		LightID lightID = GetRenderScene().GetLightSystem()->AddLight(std::move(light));
 		if (hasShadows)
 		{
-			GetRenderScene().GetShadowSystem()->CreateShadowMap(id);
+			ShadowID shadowID = GetRenderScene().GetShadowSystem()->CreateShadowMap(lightID);
+			GetRenderScene().GetLightSystem()->SetLightShadowID(lightID, shadowID);
 		}
 	}
 

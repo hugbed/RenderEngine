@@ -51,6 +51,9 @@ public:
 		return id;
 	}
 
+	// todo (hbedard): move ShadowID outside of ShadowSystem.h to include it here
+	void SetLightShadowID(LightID id, uint32_t shadowID);
+
 	const std::vector<Light> GetLights() { return m_lights; }
 
 	const Light& GetLight(LightID id) const { return m_lights[id]; }

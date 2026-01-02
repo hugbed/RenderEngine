@@ -20,7 +20,7 @@ const uint LIGHT_TYPE_SPOT = 3;
 struct Light {
     int type; // see LightType enum
 
-    vec3 pos; // point
+    vec3 position; // point
     vec3 direction; // directional
 
     // colors
@@ -45,7 +45,7 @@ vec4 PhongLighting(
     vec3 viewDir = normalize(viewPos - fragPos);
 
     vec3 lightDir = light.type == LIGHT_TYPE_DIRECTIONAL ?
-        -light.direction : light.pos - fragPos;
+        -light.direction : light.position - fragPos;
     float lightDistance = length(lightDir);
     lightDir /= lightDistance;
 

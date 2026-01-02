@@ -17,21 +17,19 @@ RegisterBuffer(std430, readonly, MaterialShadowDataBuffer, {
     MaterialShadowData shadowData[];
 });
 
-#define GetShadow() GetResource(MaterialShadowDataBuffer, uDrawParams.shadows).shadowData
-#define GetShadowMap(shadowIndex) uGlobalTextures2D[GetShadow()[shadowIndex].shadowMapTextureHandle]
-
-// todo (hbedard): actually put the textures in the global array and add the handle
+#define GetShadow(shadowBuffer) GetResource(MaterialShadowDataBuffer, shadowBuffer).shadowData
+#define GetShadowMap(shadowBuffer, shadowIndex) uGlobalTextures2D[GetShadow(shadowBuffer)[shadowIndex].shadowMapTextureHandle]
 
 /// 1.0 means shadow, 0.0 no shadow
-float ComputeShadow(Light light, vec3 fragPos, vec3 normal)
+float ComputeShadow(Light light, vec3 fragPos, vec3 normal, uint shadowBuffer)
 {
     // todo: implement shadows for other light types
     if (light.type != LIGHT_TYPE_DIRECTIONAL)
         return 0.0;
 
-    vec4 fragLightPos = GetShadow()[light.shadowIndex].transform * vec4(fragPos, 1.0);
+    vec4 fragLightPos = GetShadow(shadowBuffer)[light.shadowIndex].transform * vec4(fragPos, 1.0);
 
-    vec3 lightDir = normalize(light.pos - fragPos);
+    vec3 lightDir = normalize(light.position - fragPos);
 
     float currentDepth = fragLightPos.z / fragLightPos.w;
     // no shadow outside the light's far plane
@@ -45,10 +43,10 @@ float ComputeShadow(Light light, vec3 fragPos, vec3 normal)
 
     // PCF
     float shadow = 0.0;
-    vec2 texelSize = 1.0 / textureSize(GetShadowMap(light.shadowIndex), 0);
+    vec2 texelSize = 1.0 / textureSize(GetShadowMap(shadowBuffer, light.shadowIndex), 0);
     for(int x = -1; x <= 1; ++x) {
         for(int y = -1; y <= 1; ++y) {
-            float depth = texture(GetShadowMap(light.shadowIndex), mapCoord + vec2(x, y) * texelSize).r; 
+            float depth = texture(GetShadowMap(shadowBuffer, light.shadowIndex), mapCoord + vec2(x, y) * texelSize).r; 
             shadow += currentDepth - bias > depth ? 1.0 : 0.0;
         }
     }

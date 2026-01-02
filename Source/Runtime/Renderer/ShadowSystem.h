@@ -19,6 +19,8 @@
 #include <vulkan/vulkan.hpp>
 #include <gsl/pointers>
 
+#include <limits>
+
 class Scene;
 struct ViewProperties;
 struct CombinedImageSampler;
@@ -30,6 +32,7 @@ struct ShadowData
 	glm::mat4 transform;
 };
 
+// todo (hbedard): rename ShadowHandle
 using ShadowID = uint32_t;
 
 class ShadowSystem
@@ -66,6 +69,8 @@ public:
 	BufferHandle GetMaterialShadowsBufferHandle() const { return m_materialShadowsBufferHandle; }
 
 	CombinedImageSampler GetCombinedImageSampler(ShadowID id) const;
+
+	TextureHandle GetShadowMapTextureHandle(ShadowID id) const;
 
 private:
 	// Only created when we know the VertexShaderConstants

@@ -419,6 +419,11 @@ CombinedImageSampler ShadowSystem::GetCombinedImageSampler(ShadowID id) const
 	return CombinedImageSampler{ m_depthImages[id].get(), m_sampler.get() };
 }
 
+TextureHandle ShadowSystem::GetShadowMapTextureHandle(ShadowID id) const
+{
+	return m_materialShadows[id].shadowMapTextureHandle;
+}
+
 glm::mat4 ShadowSystem::GetLightTransform(ShadowID id) const
 {
 	return m_shadowViews[id].proj * m_shadowViews[id].view;

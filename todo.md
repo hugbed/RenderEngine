@@ -17,3 +17,4 @@
 * [ ] Shader that don't exist anymore remain in the generated folder
 * [ ] Shader build is successful in visual studio even if it fails?
 * [ ] imgui can't find pdbs anymore now that binaries are somewhere else
+* [ ] support adding debug info to shaders to debug with RenderDoc

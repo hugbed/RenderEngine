@@ -123,6 +123,12 @@ void Renderer::Render(vk::CommandBuffer commandBuffer, uint32_t imageIndex)
 {
 	auto& framebuffer = m_framebuffers[imageIndex];
 
+	RenderCommandEncoder renderCommandEncoder(*m_graphicsPipelineCache, *m_renderScene->GetMaterialSystem(), *m_bindlessDrawParams);
+	renderCommandEncoder.BeginRender(commandBuffer, GetFrameIndex());
+	renderCommandEncoder.BindBindlessDescriptorSet(m_bindlessDescriptors->GetPipelineLayout(), m_bindlessDescriptors->GetDescriptorSet());
+	m_renderScene->RenderShadowMaps(renderCommandEncoder, renderCommandEncoder.GetFrameIndex());
+	renderCommandEncoder.EndRender();
+
 	// Render scene to a secondary command buffer
 	vk::UniqueCommandBuffer& renderPassCommandBuffer = m_renderCommandBuffers[imageIndex];
 	vk::CommandBufferInheritanceInfo info(m_renderPass->Get(), 0, m_framebuffers[imageIndex].Get());

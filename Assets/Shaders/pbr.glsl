@@ -2,7 +2,7 @@
 
 #define PI 3.14159265359
 
-struct PBRMaterial
+struct Material
 {
     vec4 baseColor; // linear RGB [0..1]
     vec4 emissive; // linear RGB [0..1] + exposure compensation
@@ -19,16 +19,16 @@ struct PBRMaterial
     uint pad0;
     uint pad1;
 };
-RegisterBuffer(std430, readonly, PBRMaterialBuffer, {
-    PBRMaterial materials[];
+RegisterBuffer(std430, readonly, MaterialBuffer, {
+    Material materials[];
 });
-#define GetPBRMaterials(bufferHandle) GetResource(PBRMaterialBuffer, bufferHandle).materials
+#define GetMaterials(bufferHandle) GetResource(MaterialBuffer, bufferHandle).materials
 
 const uint LIGHT_TYPE_DIRECTIONAL = 1;
 const uint LIGHT_TYPE_POINT = 2;
 const uint LIGHT_TYPE_SPOT = 3;
 
-struct PBRLight
+struct Light
 {
     vec3 color;
     vec3 position;
@@ -40,10 +40,10 @@ struct PBRLight
     uint shadowIndex;
     uint type;
 };
-RegisterBuffer(std430, readonly, PBRLightBuffer, {
-    PBRLight lights[];
+RegisterBuffer(std430, readonly, LightBuffer, {
+    Light lights[];
 });
-#define GetPBRLights(bufferHandle) GetResource(PBRLightBuffer, bufferHandle).lights
+#define GetLights(bufferHandle) GetResource(LightBuffer, bufferHandle).lights
 
 float D_GGX(float NoH, float a)
 {
@@ -70,17 +70,17 @@ float Fd_Lambert()
     return 1.0 / PI;
 }
 
-vec3 RemapBaseColor(PBRMaterial pbr)
+vec3 RemapBaseColor(Material pbr)
 {
     return (1.0 - pbr.metallic) * pbr.baseColor.rgb;
 }
 
-vec3 RemapReflectance(PBRMaterial pbr)
+vec3 RemapReflectance(Material pbr)
 {
     return vec3(0.16 * pbr.reflectance * pbr.reflectance * (1.0 - pbr.metallic) + pbr.baseColor * pbr.metallic);
 }
 
-vec3 BRDF(vec3 n, vec3 v, vec3 l, PBRMaterial pbr)
+vec3 BRDF(vec3 n, vec3 v, vec3 l, Material pbr)
 {
     vec3 diffuseColor = RemapBaseColor(pbr);
     vec3 f0 = RemapReflectance(pbr);
@@ -128,7 +128,7 @@ float ComputeSpotAngleAttenuation(vec3 l, vec3 lightDir, float cosInnerAngle, fl
     return attenuation * attenuation;
 }
 
-vec3 EvaluatePunctualLight(PBRLight light, vec3 brdf, vec3 l, float NoL)
+vec3 EvaluatePunctualLight(Light light, vec3 brdf, vec3 l, float NoL)
 {
     float attenuation = 1.0; // no attenuation for directional lights
     if (light.type == LIGHT_TYPE_POINT || light.type == LIGHT_TYPE_SPOT)
@@ -161,27 +161,35 @@ float exposureFromEV100(float ev100) {
     return 1.0 / (pow(2.0, ev100) * 1.2);
 }
 
+#include "shadow.glsl"
+
 vec3 BRDF_Lighting(
     vec3 worldPosition, vec3 normal, vec3 viewPosition,
     uint materialBuffer, uint materialHandle,
-    uint lightBuffer, uint lightCount) 
+    uint lightBuffer, uint lightCount,
+    uint shadowBuffer) 
 {
-    PBRMaterial pbr = GetPBRMaterials(materialBuffer)[materialHandle];
+    Material pbr = GetMaterials(materialBuffer)[materialHandle];
     
     vec3 l0 = vec3(0.0);
     for (uint lightIndex = 0; lightIndex < lightCount; ++lightIndex)
     {
-        PBRLight light = GetPBRLights(lightBuffer)[lightIndex];
+        Light light = GetLights(lightBuffer)[lightIndex];
+        float shadow = 0.0;
+        if (light.type == LIGHT_TYPE_DIRECTIONAL)
+        { 
+            shadow = ComputeShadow(light, worldPosition, normal, shadowBuffer);
+        }
         vec3 n = normalize(normal);
         vec3 v = normalize(viewPosition - worldPosition);
         vec3 l = normalize(light.position - worldPosition);
         float NoL = clamp(dot(n, l), 0.0, 1.0);
-        l0 += EvaluatePunctualLight(light, BRDF(n, v, l, pbr), l, NoL);
+        l0 = l0 + (1.0 - shadow) * EvaluatePunctualLight(light, BRDF(n, v, l, pbr), l, NoL);
     }
 
-    // todo (hbedard): this part is temporary
+    // todo (hbedard): use IBL for indirect lighting
     vec3 ambient = vec3(0.03) * pbr.baseColor.xyz * (1.0 - pbr.ambientOcclusion);
-    float ev100 = EV100FromExposureSettings(5.0, 0.5, 400.0);
+    float ev100 = EV100FromExposureSettings(2.8, 0.5, 800.0);
     float exposure = exposureFromEV100(ev100);
     vec3 color = ambient + l0 * exposure;
     return color;

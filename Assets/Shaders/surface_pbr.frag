@@ -36,6 +36,7 @@ void main() {
     vec3 color = BRDF_Lighting(
         fragPos, fragNormal, viewPos,
         uDrawParams.materials, pc.materialIndex,
-        uDrawParams.lights, uDrawParams.lightCount);
+        uDrawParams.lights, uDrawParams.lightCount,
+        uDrawParams.shadows);
     outColor = vec4(color, 1.0);
 }
