@@ -17,7 +17,7 @@ int main(int argc, char* argv[])
 	}
 
 	std::optional<std::string> projectFilePath = argParser.GetString("project");
-	std::filesystem::path engineDir = std::filesystem::absolute((std::filesystem::path(argv[0]) / "../../../../.."));
+	std::filesystem::path engineDir = std::filesystem::absolute((std::filesystem::current_path()));
 	AssetPath::SetEngineDirectory(engineDir);
 	AssetPath::SetGameDirectory(std::filesystem::path(projectFilePath.value()).parent_path());
 

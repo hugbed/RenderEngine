@@ -18,19 +18,19 @@ if (WIN32)
   set(CMAKE_SHARED_LIBRARY_PREFIX "")
 endif ()
 
-# Multi-processor compilation
-if(MSVC)
-    add_compile_options(/MP /EHsc) # todo (hbedard): disable exceptions
-endif ()
-
 # CMake modules
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/modules/")
 
-# Output in a bin directory
-set(CMAKE_BINARY_DIR ${CMAKE_SOURCE_DIR}/Binaries/${CMAKE_GENERATOR_PLATFORM})
-set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/$<CONFIG>/lib)
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/$<CONFIG>/lib)
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/$<CONFIG>/bin)
+# Multi-processor compilation
+if(MSVC)
+  add_compile_options(/MP /EHsc) # todo (hbedard): disable exceptions
+endif ()
+
+# todo (hbedard): set up install for this
+# set(CMAKE_BINARY_DIR ${CMAKE_SOURCE_DIR}/Binaries/${CMAKE_GENERATOR_PLATFORM})
+# set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/$<CONFIG>/lib)
+# set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/$<CONFIG>/lib)
+# set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/$<CONFIG>/bin)
 
 # Support folders
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
@@ -55,9 +55,9 @@ endif ()
 # compile-shaders2.py will rebuild only when necessary.
 
 file(GLOB_RECURSE SHADER_FILES
-    ${PROJECT_SOURCE_DIR}/Shaders/*.vert
-    ${PROJECT_SOURCE_DIR}/Shaders/*.frag
-    ${PROJECT_SOURCE_DIR}/Shaders/*.glsl)
+  ${PROJECT_SOURCE_DIR}/Shaders/*.vert
+  ${PROJECT_SOURCE_DIR}/Shaders/*.frag
+  ${PROJECT_SOURCE_DIR}/Shaders/*.glsl)
 
 add_custom_target(
   BuildShaders ALL

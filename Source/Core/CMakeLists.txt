@@ -12,6 +12,7 @@ file(GLOB SRC_FILES
 
 add_library(${PROJECT_NAME} ${SRC_FILES})
 target_include_directories(${PROJECT_NAME} PUBLIC ${PROJECT_SOURCE_DIR})
+source_group(TREE "${PROJECT_SOURCE_DIR}" FILES ${SRC_FILES})
 
 # Multi-process compilation
 if(MSVC)

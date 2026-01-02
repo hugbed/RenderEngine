@@ -148,7 +148,7 @@ int main(int argc, char* argv[])
 	std::optional<std::string> sceneFilePathStr = argParser.GetString("scenePath");
 	// todo (hbedard): check that those are good :)
 
-	std::filesystem::path engineDir = std::filesystem::absolute((std::filesystem::path(argv[0]) / "../../../../.."));
+	std::filesystem::path engineDir = std::filesystem::absolute((std::filesystem::current_path()));
 	AssetPath::SetEngineDirectory(engineDir);
 	AssetPath::SetGameDirectory(std::filesystem::path(gameDirectory.value()));
 

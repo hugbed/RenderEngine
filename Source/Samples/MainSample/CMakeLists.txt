@@ -14,12 +14,18 @@ include_directories(
 
 file(GLOB_RECURSE SRC_FILES
   ${PROJECT_SOURCE_DIR}/*.h
-  ${PROJECT_SOURCE_DIR}/*.cpp
-  ${GLM_INCLUDE_DIRS}/util/glm.natvis)
+  ${PROJECT_SOURCE_DIR}/*.cpp)
 
-add_executable(${PROJECT_NAME} ${SRC_FILES})
+add_executable(${PROJECT_NAME}
+  ${SRC_FILES}
+  ${GLM_INCLUDE_DIRS}/util/glm.natvis)
 target_link_libraries(
   ${PROJECT_NAME}
     VkRHI
     Runtime)
 add_dependencies(${PROJECT_NAME} BuildShaders)
+source_group(TREE "${PROJECT_SOURCE_DIR}" FILES ${SRC_FILES})
+
+if (MSVC)
+  set_property(TARGET ${PROJECT_NAME} PROPERTY VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+endif ()

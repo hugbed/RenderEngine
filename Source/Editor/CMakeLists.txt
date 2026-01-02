@@ -16,10 +16,11 @@ include_directories(
 
 file(GLOB_RECURSE SRC_FILES
   ${PROJECT_SOURCE_DIR}/*.h
-  ${PROJECT_SOURCE_DIR}/*.cpp
-  ${GLM_INCLUDE_DIRS}/util/glm.natvis)
+  ${PROJECT_SOURCE_DIR}/*.cpp)
 
-add_executable(${PROJECT_NAME} ${SRC_FILES})
+add_executable(${PROJECT_NAME}
+  ${SRC_FILES}
+  ${GLM_INCLUDE_DIRS}/util/glm.natvis)
 set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD 23)
 target_link_libraries(
   ${PROJECT_NAME}
@@ -27,3 +28,4 @@ target_link_libraries(
     VkRHI
     Runtime)
 add_dependencies(${PROJECT_NAME} BuildShaders)
+source_group(TREE "${PROJECT_SOURCE_DIR}" FILES ${SRC_FILES})

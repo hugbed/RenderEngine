@@ -27,3 +27,4 @@ target_link_libraries(
     spirv-cross-glsl
     spirv-cross-reflect
     Microsoft.GSL::GSL)
+source_group(TREE "${PROJECT_SOURCE_DIR}" FILES ${SRC_FILES})

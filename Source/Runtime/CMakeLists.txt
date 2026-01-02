@@ -14,9 +14,10 @@ include_directories(
 
 file(GLOB_RECURSE SRC_FILES
     ${PROJECT_SOURCE_DIR}/*.h
-    ${PROJECT_SOURCE_DIR}/*.cpp) 
+    ${PROJECT_SOURCE_DIR}/*.cpp)
 
 add_library(${PROJECT_NAME} ${SRC_FILES})
 target_include_directories(${PROJECT_NAME} PUBLIC ${PROJECT_SOURCE_DIR})
 target_link_libraries(${PROJECT_NAME} Core ${Vulkan_LIBRARY} VkRHI assimp imgui)
 add_dependencies(${PROJECT_NAME} BuildShaders)
+source_group(TREE "${PROJECT_SOURCE_DIR}" FILES ${SRC_FILES})
