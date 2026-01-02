@@ -139,8 +139,8 @@ if __name__ == '__main__':
 	#	exit(1)
 	script_path = os.path.dirname(os.path.realpath(__file__))
 
-	shaders_path = sys.argv[1] # e.g. "F:\\Personal\\RenderEngine\\Source\\Samples\\MainSample\\Shaders"
-	output_path = sys.argv[2] # e.g. "F:\\Personal\\RenderEngine\\Build\\Source\\Samples\\MainSample"
+	shaders_path = sys.argv[1].replace("\\", "/") # e.g. "F:\\Personal\\RenderEngine\\Source\\Samples\\MainSample\\Shaders"
+	output_path = sys.argv[2].replace("\\", "/") # e.g. "F:\\Personal\\RenderEngine\\Build\\Source\\Samples\\MainSample"
 
 	print("[SPIRV] Reading shaders from: {}".format(shaders_path))
 	print("[SPIRV] Outputing shaders to: {}".format(output_path))
@@ -154,7 +154,7 @@ if __name__ == '__main__':
 	# Load previous file hashes
 	last_file_hashes = {}
 	script_path = os.path.dirname(os.path.realpath(__file__))
-	config_file = os.path.join(script_path, "..", "Intermediate", "Projects", "config.json") # todo: replace hardcoded
+	config_file = os.path.join(script_path, "..", "Intermediate", "Projects", "shader_cache.json") # todo: find a better directory
 	if os.path.exists(config_file):
 		with open(config_file) as f:
 			config = json.load(f)
@@ -194,9 +194,18 @@ if __name__ == '__main__':
 		try:
 			build_shader(shader_in, shader_out)
 		except Exception as e:
+			# don't update hash if compilation failed
+			current_file_hashes[file] = last_file_hashes[file]
 			print(e)
 
-	# todo (hbedard): don't update hash if compilation failed!
+	# Remove unused generated files 
+	for filename, file_hash in last_file_hashes.items():
+		if not filename in current_file_hashes:
+			file_output = os.path.join(output_path, shader_filename_to_spv(filename))
+			has_output = os.path.splitext(filename)[1] in [ ".frag", ".vert" ]
+			if has_output and os.path.exists(file_output):
+				print("[SPIRV] Deleting obsolete output: {}".format(file_output))
+				os.remove(file_output)
 
 	# Save current hashes
 	with open(config_file, 'w+') as f:
