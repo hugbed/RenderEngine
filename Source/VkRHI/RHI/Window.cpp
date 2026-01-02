@@ -9,7 +9,7 @@ Window::Window(vk::Extent2D extent, std::string_view apiName)
 	glfwInit();
 
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-	glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
+	glfwWindowHint(GLFW_SRGB_CAPABLE | GLFW_RESIZABLE, GLFW_TRUE);
 	
 	m_window = glfwCreateWindow(extent.width, extent.height, apiName.data(), nullptr, nullptr);
 }

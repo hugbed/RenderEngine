@@ -4,7 +4,6 @@
 #include <Renderer/RenderScene.h>
 #include <Renderer/RenderCommandEncoder.h>
 #include <Renderer/TextureCache.h>
-#include <Renderer/SurfaceLitMaterialSystem.h>
 #include <RHI/Framebuffer.h>
 #include <RHI/GraphicsPipelineCache.h>
 #include <RHI/PhysicalDevice.h>

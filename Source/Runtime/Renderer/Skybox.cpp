@@ -104,7 +104,6 @@ void Skybox::SetViewBufferHandles(gsl::span<const BufferHandle> viewBufferHandle
 	std::copy(viewBufferHandles.begin(), viewBufferHandles.end(), std::back_inserter(m_viewBufferHandles));
 }
 
-// todo (hbedard): no need to pass the command buffer here no?
 void Skybox::UploadToGPU(CommandRingBuffer& commandRingBuffer)
 {
 	// Create and upload vertex buffer

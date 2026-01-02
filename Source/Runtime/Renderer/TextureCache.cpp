@@ -40,7 +40,7 @@ TextureHandle TextureCache::CreateAndUploadTextureImage(const AssetPath& assetPa
 	m_textures[imageViewTypeIndex].push_back(
 		std::make_unique<Texture>(
 			texWidth, texHeight, 4UL, // R8G8B8A8, depth = 4
-			vk::Format::eR8G8B8A8Unorm, // figure out gamma correction if we need to do sRGB or something
+			vk::Format::eR8G8B8A8Srgb, // figure out gamma correction if we need to do sRGB or something
 			vk::ImageTiling::eOptimal,
 			vk::ImageUsageFlagBits::eTransferSrc |
 			vk::ImageUsageFlagBits::eTransferDst | // src and dst for mipmaps blit
@@ -158,7 +158,7 @@ TextureHandle TextureCache::LoadCubeMapFaces(gsl::span<AssetPath> filePaths)
 	m_textures[samplerTypeIndex].push_back(
 		std::make_unique<Texture>(
 			width, height, 4UL, // R8G8B8A8, depth = 4
-			vk::Format::eR8G8B8A8Unorm, // figure out gamma correction if we need to do sRGB or something
+			vk::Format::eR8G8B8A8Srgb, // figure out gamma correction if we need to do sRGB or something
 			vk::ImageTiling::eOptimal,
 			vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
 			vk::ImageAspectFlagBits::eColor,

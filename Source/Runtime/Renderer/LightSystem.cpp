@@ -16,7 +16,7 @@ void LightSystem::UploadToGPU(CommandRingBuffer& commandRingBuffer)
 		vk::CommandBuffer commandBuffer = commandRingBuffer.GetCommandBuffer();
 
 		const vk::BufferUsageFlagBits bufferUsage = vk::BufferUsageFlagBits::eStorageBuffer;
-		vk::DeviceSize bufferSize = m_lights.size() * sizeof(PhongLight);
+		vk::DeviceSize bufferSize = m_lights.size() * sizeof(Light);
 		m_lightsBuffer = std::make_unique<UniqueBufferWithStaging>(bufferSize, bufferUsage);
 		memcpy(m_lightsBuffer->GetStagingMappedData(), reinterpret_cast<const void*>(m_lights.data()), bufferSize);
 		m_lightsBuffer->CopyStagingToGPU(commandBuffer);

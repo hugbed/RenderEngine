@@ -1,6 +1,7 @@
-#include <Renderer/SurfaceLitMaterialSystem.h>
+#include <Renderer/MaterialSystem.h>
 
 #include <Renderer/Bindless.h>
+#include <Renderer/LightSystem.h>
 #include <Renderer/RenderCommandEncoder.h>
 #include <Renderer/SceneTree.h>
 #include <Renderer/ShadowSystem.h>
@@ -8,10 +9,10 @@
 #include <RHI/GraphicsPipelineCache.h>
 #include <RHI/CommandRingBuffer.h>
 
-const AssetPath SurfaceLitMaterialSystem::kVertexShader = AssetPath("/Engine/Generated/Shaders/primitive_vert.spv");
-const AssetPath SurfaceLitMaterialSystem::kFragmentShader = AssetPath("/Engine/Generated/Shaders/surface_frag.spv");
+const AssetPath MaterialSystem::kVertexShader = AssetPath("/Engine/Generated/Shaders/primitive_vert.spv");
+const AssetPath MaterialSystem::kFragmentShader = AssetPath("/Engine/Generated/Shaders/surface_pbr_frag.spv");
 
-SurfaceLitMaterialSystem::SurfaceLitMaterialSystem(
+MaterialSystem::MaterialSystem(
 	vk::RenderPass renderPass,
 	vk::Extent2D swapchainExtent,
 	GraphicsPipelineCache& graphicsPipelineCache,
@@ -31,10 +32,10 @@ SurfaceLitMaterialSystem::SurfaceLitMaterialSystem(
 	, m_shadowSystem(&shadowSystem)
 	, m_nextHandle(MaterialShadingDomain::Surface, MaterialShadingModel::Lit, 0)
 {
-	m_drawParamsHandle = m_bindlessDrawParams->DeclareParams<SurfaceLitDrawParams>();
+	m_drawParamsHandle = m_bindlessDrawParams->DeclareParams<MaterialDrawParams>();
 }
 
-void SurfaceLitMaterialSystem::Reset(vk::RenderPass renderPass, vk::Extent2D extent)
+void MaterialSystem::Reset(vk::RenderPass renderPass, vk::Extent2D extent)
 {
 	m_renderPass = renderPass;
 	m_imageExtent = extent;
@@ -43,14 +44,14 @@ void SurfaceLitMaterialSystem::Reset(vk::RenderPass renderPass, vk::Extent2D ext
 	{
 		// Assume that each material uses a different pipeline
 		GraphicsPipelineInfo info(m_renderPass, m_imageExtent);
-		info.blendEnable = m_pipelineProperties[i].isTransparent;
+		info.blendEnable = m_pipelineProperties[i].isTranslucent;
 		m_graphicsPipelineCache->ResetGraphicsPipeline(
 			m_graphicsPipelineIDs[i], info
 		);
 	}
 }
 
-MaterialHandle SurfaceLitMaterialSystem::CreateMaterialInstance(const LitMaterialInstanceInfo& materialInfo)
+MaterialHandle MaterialSystem::CreateMaterialInstance(const MaterialInstanceInfo& materialInfo)
 {
 	MaterialHandle id = m_nextHandle;
 
@@ -62,20 +63,20 @@ MaterialHandle SurfaceLitMaterialSystem::CreateMaterialInstance(const LitMateria
 	return id;
 }
 
-void SurfaceLitMaterialSystem::SetViewBufferHandles(gsl::span<const BufferHandle> viewBufferHandles)
+void MaterialSystem::SetViewBufferHandles(gsl::span<const BufferHandle> viewBufferHandles)
 {
 	m_viewBufferHandles.clear();
 	m_viewBufferHandles.reserve(viewBufferHandles.size());
 	std::copy(viewBufferHandles.begin(), viewBufferHandles.end(), std::back_inserter(m_viewBufferHandles));
 }
 
-void SurfaceLitMaterialSystem::UploadToGPU(CommandRingBuffer& commandRingBuffer)
+void MaterialSystem::UploadToGPU(CommandRingBuffer& commandRingBuffer)
 {
 	CreatePendingInstances();
-	CreateAndUploadUniformBuffer(commandRingBuffer);
+	CreateAndUploadStorageBuffer(commandRingBuffer);
 
 	assert(!m_viewBufferHandles.empty());
-	SurfaceLitDrawParams drawParams = m_drawParams;
+	MaterialDrawParams drawParams = m_drawParams;
 	drawParams.lights = m_lightSystem->GetLightsBufferHandle();
 	drawParams.lightCount = m_lightSystem->GetLightCount();
 	drawParams.materials = m_uniformBufferHandle;
@@ -89,7 +90,7 @@ void SurfaceLitMaterialSystem::UploadToGPU(CommandRingBuffer& commandRingBuffer)
 	}
 }
 
-void SurfaceLitMaterialSystem::Draw(RenderCommandEncoder& renderCommandEncoder, gsl::span<const MeshDrawInfo> drawCalls) const
+void MaterialSystem::Draw(RenderCommandEncoder& renderCommandEncoder, gsl::span<const MeshDrawInfo> drawCalls) const
 {
 	vk::CommandBuffer commandBuffer = renderCommandEncoder.GetCommandBuffer();
 
@@ -104,12 +105,12 @@ void SurfaceLitMaterialSystem::Draw(RenderCommandEncoder& renderCommandEncoder, 
 	}
 }
 
-void SurfaceLitMaterialSystem::CreatePendingInstances()
+void MaterialSystem::CreatePendingInstances()
 {
 	for (const auto& instanceInfo : m_toInstantiate)
 	{
 		const MaterialHandle handle = instanceInfo.first;
-		const LitMaterialInstanceInfo& materialInfo = instanceInfo.second;
+		const MaterialInstanceInfo& materialInfo = instanceInfo.second;
 		uint32_t materialIndex = handle.GetIndex();
 		m_graphicsPipelineIDs.resize(materialIndex + 1ULL);
 		m_graphicsPipelineIDs[materialIndex] = LoadGraphicsPipeline(materialInfo);
@@ -118,7 +119,7 @@ void SurfaceLitMaterialSystem::CreatePendingInstances()
 	m_toInstantiate.clear();
 }
 
-GraphicsPipelineID SurfaceLitMaterialSystem::LoadGraphicsPipeline(const LitMaterialInstanceInfo& materialInfo)
+GraphicsPipelineID MaterialSystem::LoadGraphicsPipeline(const MaterialInstanceInfo& materialInfo)
 {
 	auto instanceIDIt = m_materialHashToHandle.find(fnv_hash(&materialInfo));
 	if (instanceIDIt != m_materialHashToHandle.end())
@@ -134,7 +135,7 @@ GraphicsPipelineID SurfaceLitMaterialSystem::LoadGraphicsPipeline(const LitMater
 
 	uint32_t pipelineIndex = m_graphicsPipelineIDs.size();
 	GraphicsPipelineInfo info(m_renderPass, m_imageExtent);
-	info.blendEnable = materialInfo.pipelineProperties.isTransparent;
+	info.blendEnable = materialInfo.pipelineProperties.isTranslucent;
 	GraphicsPipelineID id = m_graphicsPipelineCache->CreateGraphicsPipeline(
 		vertexInstanceID, fragmentInstanceID, info
 	);
@@ -145,25 +146,25 @@ GraphicsPipelineID SurfaceLitMaterialSystem::LoadGraphicsPipeline(const LitMater
 	return id;
 }
 
-void SurfaceLitMaterialSystem::CreateAndUploadUniformBuffer(CommandRingBuffer& commandRingBuffer)
+void MaterialSystem::CreateAndUploadStorageBuffer(CommandRingBuffer& commandRingBuffer)
 {
-	if (m_uniformBuffer != nullptr)
+	if (m_storageBuffer != nullptr)
 		return; // nothing to do
 
 	vk::CommandBuffer commandBuffer = commandRingBuffer.GetCommandBuffer();
 	
 	const vk::BufferUsageFlagBits bufferUsage = vk::BufferUsageFlagBits::eStorageBuffer;
 	const void* data = reinterpret_cast<const void*>(m_properties.data());
-	size_t bufferSize = m_properties.size() * sizeof(LitMaterialProperties);
-	m_uniformBuffer = std::make_unique<UniqueBufferWithStaging>(bufferSize, bufferUsage);
-	memcpy(m_uniformBuffer->GetStagingMappedData(), data, bufferSize);
-	m_uniformBuffer->CopyStagingToGPU(commandBuffer);
-	commandRingBuffer.DestroyAfterSubmit(m_uniformBuffer->ReleaseStagingBuffer());
+	size_t bufferSize = m_properties.size() * sizeof(m_properties[0]);
+	m_storageBuffer = std::make_unique<UniqueBufferWithStaging>(bufferSize, bufferUsage);
+	memcpy(m_storageBuffer->GetStagingMappedData(), data, bufferSize);
+	m_storageBuffer->CopyStagingToGPU(commandBuffer);
+	commandRingBuffer.DestroyAfterSubmit(m_storageBuffer->ReleaseStagingBuffer());
 
-	m_uniformBufferHandle = m_bindlessDescriptors->StoreBuffer(m_uniformBuffer->Get(), bufferUsage);
+	m_uniformBufferHandle = m_bindlessDescriptors->StoreBuffer(m_storageBuffer->Get(), bufferUsage);
 }
 
-vk::PipelineLayout SurfaceLitMaterialSystem::GetPipelineLayout() const
+vk::PipelineLayout MaterialSystem::GetPipelineLayout() const
 {
 	// all materials should have the same pipeline layout
 	return m_graphicsPipelineCache->GetPipelineLayout(m_graphicsPipelineIDs.back());

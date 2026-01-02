@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Renderer/LightSystem.h>
 #include <Renderer/TextureCache.h>
 #include <Renderer/MeshAllocator.h>
 #include <Renderer/MaterialDefines.h>
@@ -24,69 +23,56 @@ class BindlessDescriptors;
 class SceneTree;
 class ShadowSystem;
 class RenderCommandEncoder;
+class LightSystem;
 
 // todo: find better naming for those structures
 
-enum class PhongLightType
+enum class MaterialTextureType : uint8_t
 {
-	Directional = 1,
-	Point = 2,
-	Spot = 3,
-	Count
-};
-
-struct PhongMaterialProperties
-{
-	glm::aligned_vec4 diffuse;
-	glm::aligned_vec4 specular;
-	glm::aligned_float32 shininess;
-};
-
-struct EnvironmentMaterialProperties
-{
-	glm::aligned_float32 ior;
-	glm::aligned_float32 metallic; // reflection {0, 1}
-	glm::aligned_float32 transmission; // refraction [0..1]
-	glm::aligned_int32 cubeMapTexture;
-};
-
-enum class PhongMaterialTextures : uint8_t
-{
-	eDiffuse = 0,
-	eSpecular,
+	eBaseColor = 0,
+	eEmissive,
+	eMetallic,
+	eRoughness,
+	eNormals,
+	eAmbientOcclusion,
 	eCount
 };
 
-struct LitMaterialProperties
+struct MaterialProperties
 {
-	PhongMaterialProperties phong;
-	EnvironmentMaterialProperties env;
-	TextureHandle textures[(uint8_t)PhongMaterialTextures::eCount];
+	glm::vec4 baseColor; // linear RGB [0..1]
+	glm::vec4 emissive; // linear RGB [0..1] + exposure compensation
+	float reflectance; // [0..1]
+	float metallic; // [0..1]
+	float perceptualRoughness; // [0..1]
+	float ambientOcclusion; // [0..1]
+	TextureHandle textures[static_cast<uint8_t>(MaterialTextureType::eCount)];
+	uint32_t padding[2];
 };
 
-struct LitMaterialPipelineProperties
+struct MaterialPipelineProperties
 {
-	bool isTransparent = false;
+	bool isTranslucent = false;
 };
 
-struct LitMaterialInstanceInfo
+struct MaterialInstanceInfo
 {
-	LitMaterialProperties properties = {};
-	LitMaterialPipelineProperties pipelineProperties = {};
+	MaterialProperties properties = {};
+	MaterialPipelineProperties pipelineProperties = {};
 };
 
 /* Loads and creates resources for base materials so that
  * material instance creation reuses graphics pipelines 
  * and shaders whenever possible. Owns materials to update them
  * when resources are reset. */
-class SurfaceLitMaterialSystem
+class MaterialSystem
 {
 public:
 	static const AssetPath kVertexShader;
 	static const AssetPath kFragmentShader;
 
 	// todo (hbedard): actually just pass the renderer
-	SurfaceLitMaterialSystem(
+	MaterialSystem(
 		vk::RenderPass renderPass,
 		vk::Extent2D swapchainExtent,
 		GraphicsPipelineCache& graphicsPipelineCache,
@@ -97,7 +83,7 @@ public:
 		ShadowSystem& shadowSystem
 	);
 
-	IMPLEMENT_MOVABLE_ONLY(SurfaceLitMaterialSystem)
+	IMPLEMENT_MOVABLE_ONLY(MaterialSystem)
 
 	void Reset(vk::RenderPass renderPass, vk::Extent2D extent);
 	
@@ -107,7 +93,7 @@ public:
 
 	// Reserve a material ID for a given set of material properties
 	// The graphics pipeline and GPU resources will not be created until UploadToGPU is called
-	MaterialHandle CreateMaterialInstance(const LitMaterialInstanceInfo& materialInfo);
+	MaterialHandle CreateMaterialInstance(const MaterialInstanceInfo& materialInfo);
 
 	// This can be called once the total number of resources is known (constants)
 	// So that actual GPU resources are created and uploaded
@@ -123,31 +109,31 @@ public:
 	
 	GraphicsPipelineID GetGraphicsPipelineID(MaterialHandle materialHandle) const { return m_graphicsPipelineIDs[materialHandle.GetIndex()]; }
 
-	bool IsTransparent(MaterialHandle materialHandle) const { return m_pipelineProperties[materialHandle.GetIndex()].isTransparent; }
+	bool IsTransparent(MaterialHandle materialHandle) const { return m_pipelineProperties[materialHandle.GetIndex()].isTranslucent; }
 
 	BufferHandle GetUniformBufferHandle() const { return m_uniformBufferHandle; }
 
 	vk::PipelineLayout GetPipelineLayout() const;
 
 private:
-	struct SurfaceLitDrawParams
+	struct MaterialDrawParams
 	{
-		BufferHandle view;
-		BufferHandle transforms;
-		BufferHandle lights;
-		uint32_t lightCount;
-		BufferHandle materials;
-		BufferHandle shadowTransforms;
-		uint32_t padding[2];
+		BufferHandle view = BufferHandle::Invalid;
+		BufferHandle transforms = BufferHandle::Invalid;
+		BufferHandle lights = BufferHandle::Invalid;
+		uint32_t lightCount = 0;
+		BufferHandle materials = BufferHandle::Invalid;
+		BufferHandle shadowTransforms = BufferHandle::Invalid;
+		uint32_t padding[2] = { 0, 0 };
 	};
-	SurfaceLitDrawParams m_drawParams;
+	MaterialDrawParams m_drawParams;
 	BindlessDrawParamsHandle m_drawParamsHandle;
 	std::vector<BufferHandle> m_viewBufferHandles;
 
-	GraphicsPipelineID LoadGraphicsPipeline(const LitMaterialInstanceInfo& materialInfo);
+	GraphicsPipelineID LoadGraphicsPipeline(const MaterialInstanceInfo& materialInfo);
 
 	void CreatePendingInstances();
-	void CreateAndUploadUniformBuffer(CommandRingBuffer& commandRingBuffer);
+	void CreateAndUploadStorageBuffer(CommandRingBuffer& commandRingBuffer);
 
 	vk::RenderPass m_renderPass; // light/color pass, there could be others
 	vk::Extent2D m_imageExtent;
@@ -160,15 +146,15 @@ private:
 	std::map<uint64_t, MaterialHandle> m_materialHashToHandle;
 
 	// MaterialInstanceID -> Array Index
-	std::vector<LitMaterialInstanceInfo> m_materialInstanceInfo;
+	std::vector<MaterialInstanceInfo> m_materialInstanceInfo;
 	std::vector<GraphicsPipelineID> m_graphicsPipelineIDs;
-	std::vector<LitMaterialProperties> m_properties;
-	std::vector<LitMaterialPipelineProperties> m_pipelineProperties;
+	std::vector<MaterialProperties> m_properties;
+	std::vector<MaterialPipelineProperties> m_pipelineProperties;
 
-	std::vector<std::pair<MaterialHandle, LitMaterialInstanceInfo>> m_toInstantiate;
+	std::vector<std::pair<MaterialHandle, MaterialInstanceInfo>> m_toInstantiate;
 
 	// GPU resources
-	std::unique_ptr<UniqueBufferWithStaging> m_uniformBuffer; // containing all LitMaterialProperties
+	std::unique_ptr<UniqueBufferWithStaging> m_storageBuffer; // containing all MaterialProperties
 	gsl::not_null<BindlessDescriptors*> m_bindlessDescriptors;
 	gsl::not_null<BindlessDrawParams*> m_bindlessDrawParams;
 	BufferHandle m_uniformBufferHandle = BufferHandle::Invalid;

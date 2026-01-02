@@ -11,17 +11,25 @@
 class CommandRingBuffer;
 class BindlessDescriptors;
 
-struct PhongLight
+enum class LightType : uint32_t
 {
-	glm::aligned_int32 type; // LightType
-	glm::aligned_vec3 pos;
-	glm::aligned_vec3 direction;
-	glm::aligned_vec4 ambient;
-	glm::aligned_vec4 diffuse;
-	glm::aligned_vec4 specular;
-	glm::aligned_float32 innerCutoff; // (cos of the inner angle)
-	glm::aligned_float32 outerCutoff; // (cos of the outer angle)
+	Directional = 1,
+	Point = 2,
+	Spot = 3,
+	Count
+};
+
+struct Light
+{
+	glm::aligned_vec4 color;
+	glm::aligned_vec3 position;
+	glm::aligned_vec3 direction; // directional/spot
+	glm::aligned_float32 intensity; // illuminance in lx (directional) or luminous power in lm
+	glm::aligned_float32 falloffRadius; // point/spot
+	glm::aligned_float32 cosInnerAngle; // spot (cos of the innerAngle)
+	glm::aligned_float32 cosOuterAngle; // spot (cos of the outerAngle)
 	glm::aligned_uint32 shadowIndex;
+	glm::aligned_uint32 type; // LightType
 };
 
 using LightID = uint32_t;
@@ -36,16 +44,16 @@ public:
 		m_lights.reserve(m_lights.size() + count);
 	}
 	
-	LightID AddLight(PhongLight light)
+	LightID AddLight(Light light)
 	{
 		LightID id = static_cast<LightID>(m_lights.size());
 		m_lights.push_back(std::move(light));
 		return id;
 	}
 
-	const std::vector<PhongLight> GetLights() { return m_lights; }
+	const std::vector<Light> GetLights() { return m_lights; }
 
-	const PhongLight& GetLight(LightID id) const { return m_lights[id]; }
+	const Light& GetLight(LightID id) const { return m_lights[id]; }
 
 	uint32_t GetLightCount() const { return static_cast<uint32_t>(m_lights.size()); }
 
@@ -54,7 +62,7 @@ public:
 	BufferHandle GetLightsBufferHandle() const { return m_lightsBufferHandle; }
 
 private:
-	std::vector<PhongLight> m_lights;
+	std::vector<Light> m_lights;
 	std::unique_ptr<UniqueBufferWithStaging> m_lightsBuffer;
 	gsl::not_null<BindlessDescriptors*> m_bindlessDescriptors;
 	BufferHandle m_lightsBufferHandle = BufferHandle::Invalid;

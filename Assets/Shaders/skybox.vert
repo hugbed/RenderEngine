@@ -21,6 +21,7 @@ RegisterUniform(ViewUniforms, {
     mat4 view;
     mat4 proj;
     vec3 pos;
+    // float exposure;
 });
 
 layout(set = 1, binding = 0) uniform DrawParameters {

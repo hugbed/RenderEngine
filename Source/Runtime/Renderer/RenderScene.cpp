@@ -6,7 +6,7 @@
 #include <Renderer/LightSystem.h>
 #include <Renderer/MeshAllocator.h>
 #include <Renderer/Renderer.h>
-#include <Renderer/SurfaceLitMaterialSystem.h>
+#include <Renderer/MaterialSystem.h>
 #include <Renderer/SceneTree.h>
 #include <Renderer/Skybox.h>
 #include <Renderer/ShadowSystem.h>
@@ -15,6 +15,8 @@
 #include <vulkan/vulkan.hpp>
 #include <glm_includes.h>
 
+// todo (hbedard): just pass the scene to these so they can bind to what they want
+// or perhaps a struct with all buffer handles
 RenderScene::RenderScene(Renderer& renderer)
 	: m_renderer(&renderer)
 	, m_meshAllocator(std::make_unique<MeshAllocator>())
@@ -30,7 +32,7 @@ RenderScene::RenderScene(Renderer& renderer)
 		*m_lightSystem))
 	, m_cameraViewSystem(std::make_unique<CameraViewSystem>(
 		m_renderer->GetImageExtent()))
-	, m_materialSystem(std::make_unique<SurfaceLitMaterialSystem>(
+	, m_materialSystem(std::make_unique<MaterialSystem>(
 		m_renderer->GetRenderPass(),
 		m_renderer->GetImageExtent(),
 		*m_renderer->GetGraphicsPipelineCache(),
@@ -74,6 +76,7 @@ void RenderScene::Reset()
 	vk::Extent2D newExtent = m_renderer->GetImageExtent();
 	vk::RenderPass newRenderPass = m_renderer->GetRenderPass();
 	m_cameraViewSystem->Reset(newExtent);
+	//m_phongMaterialSystem->Reset(newRenderPass, newExtent);
 	m_materialSystem->Reset(newRenderPass, newExtent);
 	m_grid->Reset(newRenderPass, newExtent);
 	m_skybox->Reset(newRenderPass, newExtent);
@@ -98,7 +101,7 @@ void RenderScene::PopulateMeshDrawCalls()
 		if (m_materialSystem->IsTransparent(mesh.materialHandle) == false)
 			m_opaqueDrawCalls.push_back(std::move(info));
 		else
-			m_translucentDrawCalls .push_back(std::move(info));
+			m_translucentDrawCalls.push_back(std::move(info));
 		});
 }
 

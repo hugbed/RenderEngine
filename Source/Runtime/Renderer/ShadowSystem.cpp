@@ -183,7 +183,7 @@ namespace
 	}
 
 	[[nodiscard]] ViewProperties ComputeShadowTransform(
-		const PhongLight& light,
+		const Light& light,
 		const Camera& camera,
 		BoundingBox sceneBox,
 		const std::vector<BoundingBox>& boxes,
@@ -291,8 +291,8 @@ void ShadowSystem::Reset(vk::Extent2D extent)
 
 ShadowID ShadowSystem::CreateShadowMap(LightID lightID)
 {
-	ShadowID id = (ShadowID)m_lights.size();
-	m_lights.push_back(id);
+	ShadowID id = static_cast<ShadowID>(m_lights.size());
+	m_lights.push_back(lightID);
 	m_shadowViews.push_back({});
 	m_depthImages.push_back(::CreateDepthImage(m_extent));
 	m_framebuffers.push_back(::CreateFramebuffer(*m_renderPass, m_extent, m_depthImages.back()->GetImageView()));
@@ -339,7 +339,7 @@ void ShadowSystem::Update(const Camera& camera, BoundingBox sceneBoundingBox)
 
 	for (ShadowID id = 0; id < m_lights.size(); ++id)
 	{
-		const PhongLight& light = m_lightSystem->GetLight(m_lights[id]);
+		const Light& light = m_lightSystem->GetLight(m_lights[id]);
 
 		m_shadowViews[id] = ::ComputeShadowTransform(
 			m_lightSystem->GetLight(id),

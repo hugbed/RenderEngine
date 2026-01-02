@@ -2,7 +2,8 @@
 
 #include <Renderer/Renderer.h>
 #include <Renderer/RenderScene.h>
-#include <Renderer/SurfaceLitMaterialSystem.h>
+#include <Renderer/MaterialSystem.h>
+#include <Renderer/LightSystem.h>
 #include <Renderer/ShadowSystem.h>
 #include <Renderer/CameraViewSystem.h>
 #include <Renderer/SceneTree.h>
@@ -12,6 +13,7 @@
 #include <math.h>
 #include <string>
 #include <filesystem>
+#include <numbers>
 
 namespace
 {
@@ -36,13 +38,12 @@ namespace
 		float maxComponent = std::max(color.x, std::max(color.y, color.z));
 
 		if (maxComponent > 1.0f)
-			return color / maxComponent;
+			return glm::vec4(glm::vec3(color)/ maxComponent, color.a);
 
 		return color;
 	}
 }
 
-// todo (hbedard): makes no sense to create stuff outside and pass all this here :)
 AssimpSceneLoader::AssimpSceneLoader(
 	std::string basePath,
 	std::string sceneFilename,
@@ -101,39 +102,48 @@ void AssimpSceneLoader::LoadLights(vk::CommandBuffer buffer)
 
 		aiNode* node = m_assimp.scene->mRootNode->FindNode(aLight->mName);
 		glm::mat4 transform = ::ComputeAiNodeGlobalTransform(node);
+		
+		Light light;
+		light.type = static_cast<uint32_t>(aLight->mType);
+		light.color = glm::make_vec4(&aLight->mColorDiffuse.r);
+		light.intensity = std::max(light.color.r, std::max(light.color.g, light.color.b));
+		if (light.intensity > 1.0f)
+		{
+			light.color /= light.intensity;
+		}
+		light.position = transform[3];
+		light.intensity = light.intensity / 683.0f;
 
-		PhongLight light;
-		light.type = (int)aLight->mType;
-		light.ambient = glm::vec4(0.2f, 0.2f, 0.2f, 1.0f); // add a little until we have global illumination
-		light.diffuse = ::ClampColor(glm::make_vec4(&aLight->mColorDiffuse.r));
-		light.specular = ::ClampColor(glm::make_vec4(&aLight->mColorSpecular.r));
-		light.pos = transform[3];
-
-		if (aLight->mType != aiLightSource_POINT)
+		bool hasShadows = false;
+		if ((aLight->mType == aiLightSource_DIRECTIONAL) || (aLight->mType == aiLightSource_SPOT))
 		{
 			light.direction = glm::make_vec3(&aLight->mDirection.x);
 			light.direction = glm::vec4(transform * glm::vec4(light.direction, 0.0f));
-		}
 
-		if (aLight->mType == aiLightSource_SPOT)
-		{
-			// falloff exponent is not correctly read from collada
-			// so set outer angle to 120% of inner angle for now
-			light.innerCutoff = std::cos(aLight->mAngleInnerCone);
-			light.outerCutoff = std::cos(aLight->mAngleInnerCone * 1.20f);
+			if (light.type == aiLightSource_DIRECTIONAL)
+			{
+				light.intensity *= 0.0079; // W/m^2 to lux for the sun
+				light.shadowIndex = nbShadowCastingLights++;
+				hasShadows = true;
+			}
+			if (aLight->mType == aiLightSource_SPOT)
+			{
+				light.cosInnerAngle = std::cos(aLight->mAngleInnerCone);
+				light.cosOuterAngle = std::cos(aLight->mAngleOuterCone);
+			}
 		}
-
-		// mustdo: different shadow types (2d, cascade, cube) will need a different index count
-		bool hasShadows = false;
-		if (light.type == aiLightSource_DIRECTIONAL)
+		else if (aLight->mType == aiLightSource_POINT)
 		{
-			light.shadowIndex = nbShadowCastingLights++;
-			hasShadows = true;
+			static constexpr float SMALL_NUMBER = 1.0e-6f;
+			static constexpr float BIG_NUMBER = 1.0e6f; // todo (hbedard): that's no good
+			light.falloffRadius = aLight->mAttenuationConstant > SMALL_NUMBER ? 1.0f / aLight->mAttenuationConstant : BIG_NUMBER;
 		}
 
 		LightID id = GetRenderScene().GetLightSystem()->AddLight(std::move(light));
 		if (hasShadows)
+		{
 			GetRenderScene().GetShadowSystem()->CreateShadowMap(id);
+		}
 	}
 
 	// todo: support no shadow casting lights
@@ -255,6 +265,8 @@ void AssimpSceneLoader::LoadMaterials(vk::CommandBuffer commandBuffer)
 	if (m_materials.size() == m_assimp.scene->mNumMaterials)
 		return;
 
+	TextureHandle dummyTextureID = m_renderer->GetTextureCache()->LoadTexture(AssetPath("/Engine/Textures/dummy_texture.png"));
+
 	// Create a material instance per material description in the scene
 	// todo: eventually create materials according to the needs of materials in the scene
 	// to support different types of materials
@@ -264,24 +276,36 @@ void AssimpSceneLoader::LoadMaterials(vk::CommandBuffer commandBuffer)
 		auto& assimpMaterial = m_assimp.scene->mMaterials[i];
 
 		// Properties
-		LitMaterialInstanceInfo materialInfo;
+		MaterialInstanceInfo materialInfo;
 
-		aiColor4D color;
-		assimpMaterial->Get(AI_MATKEY_COLOR_DIFFUSE, color);
-		materialInfo.properties.phong.diffuse = glm::make_vec4(&color.r);
+		aiColor4D color = {};
+		assimpMaterial->Get(AI_MATKEY_BASE_COLOR, color);
+		materialInfo.properties.baseColor = glm::make_vec4(&color.r);
 
-		assimpMaterial->Get(AI_MATKEY_COLOR_SPECULAR, color);
-		materialInfo.properties.phong.specular = glm::make_vec4(&color.r);
+		aiColor4D emissive = {};
+		assimpMaterial->Get(AI_MATKEY_COLOR_EMISSIVE, emissive);
+		materialInfo.properties.emissive = glm::make_vec4(&emissive.r);
 
-		assimpMaterial->Get(AI_MATKEY_SHININESS, materialInfo.properties.phong.shininess);
+		float ior = 1.5f;
+		assimpMaterial->Get(AI_MATKEY_REFRACTI, ior);
+		materialInfo.properties.reflectance = (ior - 1.0f) * (ior - 1.0f) / ((ior + 1.0f) * (ior + 1.0f));
+
+		float metallic = 0.0f;;
+		assimpMaterial->Get(AI_MATKEY_METALLIC_FACTOR, metallic);
+		materialInfo.properties.metallic = metallic;
+
+		float roughness = 0.0f;;
+		assimpMaterial->Get(AI_MATKEY_ROUGHNESS_FACTOR, roughness);
+		materialInfo.properties.perceptualRoughness = roughness;
+
+		// todo (hbedard): this only comes from a texture right?
+		materialInfo.properties.ambientOcclusion = 0.0f;
 
 		// If a material is transparent, opacity will be fetched
 		// from the diffuse alpha channel (material property * diffuse texture)
 		float opacity = 1.0f;
 		assimpMaterial->Get(AI_MATKEY_OPACITY, opacity);
-
-		// todo: reuse same materials for materials with the same name
-		materialInfo.pipelineProperties.isTransparent = opacity < 1.0f;
+		materialInfo.pipelineProperties.isTranslucent = opacity < 1.0f;
 
 //#ifdef DEBUG_MODE
 //		aiString name;
@@ -290,8 +314,7 @@ void AssimpSceneLoader::LoadMaterials(vk::CommandBuffer commandBuffer)
 //#endif
 	
 		// Create default textures
-		TextureHandle dummyTextureID = m_renderer->GetTextureCache()->LoadTexture(AssetPath("/Engine/Textures/dummy_texture.png"));
-		for (int textureIndex = 0; textureIndex < (int)PhongMaterialTextures::eCount; ++textureIndex)
+		for (int textureIndex = 0; textureIndex < (int)MaterialTextureType::eCount; ++textureIndex)
 			materialInfo.properties.textures[textureIndex] = dummyTextureID;
 
 		// Load textures
@@ -308,21 +331,13 @@ void AssimpSceneLoader::LoadMaterials(vk::CommandBuffer commandBuffer)
 		// todo: use sRGB format for color textures if necessary
 		// it looks like gamma correction is OK for now but it might
 		// not be the case for all textures
-		loadTexture(aiTextureType_DIFFUSE, (size_t)PhongMaterialTextures::eDiffuse);
-		loadTexture(aiTextureType_SPECULAR, (size_t)PhongMaterialTextures::eSpecular);
+		loadTexture(aiTextureType_BASE_COLOR, static_cast<size_t>(MaterialTextureType::eBaseColor));
+		loadTexture(aiTextureType_EMISSIVE, static_cast<size_t>(MaterialTextureType::eEmissive));
+		loadTexture(aiTextureType_METALNESS, static_cast<size_t>(MaterialTextureType::eMetallic));
+		loadTexture(aiTextureType_DIFFUSE_ROUGHNESS, static_cast<size_t>(MaterialTextureType::eRoughness));
+		loadTexture(aiTextureType_NORMALS, static_cast<size_t>(MaterialTextureType::eNormals));
+		loadTexture(aiTextureType_LIGHTMAP, static_cast<size_t>(MaterialTextureType::eAmbientOcclusion));
 
-		// Environment mapping
-		assimpMaterial->Get(AI_MATKEY_REFRACTI, materialInfo.properties.env.ior);
-		materialInfo.properties.env.metallic = 0.0f;
-		materialInfo.properties.env.transmission = 0.0f;
-
-		TextureHandle skyboxTexture = GetRenderScene().GetSkybox()->GetTextureHandle();
-		if (skyboxTexture != TextureHandle::Invalid)
-			materialInfo.properties.env.cubeMapTexture = static_cast<glm::aligned_int32>(skyboxTexture);
-
-		auto materialHandle = GetRenderScene().GetMaterialSystem()->CreateMaterialInstance(materialInfo);
-
-		// Keep ownership of the material instance
-		m_materials[i] = materialHandle;
+		m_materials[i] = GetRenderScene().GetMaterialSystem()->CreateMaterialInstance(materialInfo);
 	}
 }

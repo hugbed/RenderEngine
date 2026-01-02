@@ -19,7 +19,7 @@ layout(location = 3) out vec3 viewPos;
 layout(push_constant)
     uniform SceneNodeIndex {
 	    layout(offset = 0) uint sceneNodeIndex; // index into MeshTransforms.transforms
-        layout(offset = 4) uint unused1;
+        layout(offset = 4) uint materialIndex;
     } pc;
 
 // --- Descriptors --- //
@@ -28,6 +28,7 @@ RegisterUniform(ViewUniforms, {
     mat4 view;
     mat4 proj;
     vec3 pos;
+    // float exposure;
 });
 
 RegisterBuffer(std430, readonly, MeshTransforms, {

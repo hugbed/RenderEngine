@@ -11,7 +11,7 @@ namespace
 	{
 		for (const auto& availableFormat : availableFormats)
 		{
-			if (availableFormat.format == vk::Format::eB8G8R8A8Unorm &&
+			if (availableFormat.format == vk::Format::eR8G8B8A8Srgb &&
 				availableFormat.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear)
 			{
 				return availableFormat;

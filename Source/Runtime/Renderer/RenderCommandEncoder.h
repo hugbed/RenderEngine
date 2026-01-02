@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Renderer/SurfaceLitMaterialSystem.h>
+#include <Renderer/MaterialSystem.h>
 #include <Renderer/MeshAllocator.h>
 #include <RHI/GraphicsPipelineCache.h>
 #include <Renderer/Bindless.h>
@@ -13,7 +13,7 @@ class RenderCommandEncoder
 public:
 	RenderCommandEncoder(
 		GraphicsPipelineCache& graphicsPipelineCache,
-		SurfaceLitMaterialSystem& materialSystem,
+		MaterialSystem& materialSystem,
 		const BindlessDrawParams& bindlessDrawParams
 	)
 		: m_graphicsPipelineCache(&graphicsPipelineCache)
@@ -106,7 +106,7 @@ public:
 	{
 		if (newMaterial != m_material)
 		{
-			vk::PipelineLayout pipelineLayout = m_graphicsPipelineCache->GetPipelineLayout(m_pipelineID, 0); // todo (hbedard): is that right?
+			vk::PipelineLayout pipelineLayout = m_graphicsPipelineCache->GetPipelineLayout(m_pipelineID, 0);
 
 			uint32_t materialIndex = newMaterial.GetIndex();
 

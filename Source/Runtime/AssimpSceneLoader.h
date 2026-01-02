@@ -1,8 +1,6 @@
 #pragma once
 
 #include <Renderer/TextureCache.h>
-#include <Renderer/SurfaceLitMaterialSystem.h>
-#include <Renderer/LightSystem.h>
 #include <Renderer/ShadowSystem.h>
 #include <Renderer/RenderCommandEncoder.h>
 #include <Renderer/Skybox.h>
@@ -26,7 +24,6 @@ class ShadowSystem;
 class SceneTree;
 class Grid;
 
-// todo (hbedard): create an importer for assimp files, and add a Scene class in Renderer
 class AssimpSceneLoader
 {
 public:

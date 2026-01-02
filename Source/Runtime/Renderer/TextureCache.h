@@ -36,7 +36,6 @@ struct TextureKey
 	uint32_t index;
 };
 
-// todo (hbedard): rename TextureCache
 class TextureCache
 {
 public:

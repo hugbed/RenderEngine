@@ -15,7 +15,6 @@ class GraphicsPipelineCache;
 class RenderPass;
 class RenderScene;
 class ShaderCache;
-class SurfaceLitMaterialSystem;
 class Swapchain;
 class TextureCache;
 class Window;

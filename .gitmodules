@@ -21,4 +21,4 @@
 	url = git@github.com:marzer/tomlplusplus.git
 [submodule "ThirdParty/imgui"]
 	path = ThirdParty/imgui
-	url = git@github.com:ocornut/imgui.git
+	url = git@github.com:hugbed/imgui.git

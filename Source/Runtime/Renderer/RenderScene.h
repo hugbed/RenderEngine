@@ -14,7 +14,7 @@ class RenderCommandEncoder;
 class SceneTree;
 class Skybox;
 class ShadowSystem;
-class SurfaceLitMaterialSystem;
+class MaterialSystem;
 
 namespace vk
 {
@@ -38,7 +38,7 @@ public:
 	gsl::not_null<LightSystem*> GetLightSystem() const { return m_lightSystem.get(); }
 	gsl::not_null<ShadowSystem*> GetShadowSystem() const { return m_shadowSystem.get(); }
 	gsl::not_null<CameraViewSystem*> GetCameraViewSystem() const { return m_cameraViewSystem.get(); }
-	gsl::not_null<SurfaceLitMaterialSystem*> GetMaterialSystem() const { return m_materialSystem.get(); }
+	gsl::not_null<MaterialSystem*> GetMaterialSystem() const { return m_materialSystem.get(); }
 	gsl::not_null<Grid*> GetGrid() const { return m_grid.get(); }
 	gsl::not_null<Skybox*> GetSkybox() const { return m_skybox.get(); }
 
@@ -49,11 +49,10 @@ private:
 	std::unique_ptr<LightSystem> m_lightSystem;
 	std::unique_ptr<ShadowSystem> m_shadowSystem;
 	std::unique_ptr<CameraViewSystem> m_cameraViewSystem;
-	std::unique_ptr<SurfaceLitMaterialSystem> m_materialSystem;
+	std::unique_ptr<MaterialSystem> m_materialSystem;
 	std::unique_ptr<Grid> m_grid;
 	std::unique_ptr<Skybox> m_skybox;
 
-	// todo (hbedard): consider handling this somewhere else
 	std::vector<MeshDrawInfo> m_opaqueDrawCalls;
 	std::vector<MeshDrawInfo> m_translucentDrawCalls;
 
