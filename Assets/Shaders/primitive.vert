@@ -24,12 +24,7 @@ layout(push_constant)
 
 // --- Descriptors --- //
 
-RegisterUniform(ViewUniforms, {
-    mat4 view;
-    mat4 proj;
-    vec3 pos;
-    // float exposure;
-});
+#include "view.glsl"
 
 RegisterBuffer(std430, readonly, MeshTransforms, {
     mat4 transforms[];
@@ -46,16 +41,17 @@ layout(set = 1, binding = 0) uniform DrawParameters {
   uint pad0; uint pad1;
 } uDrawParams;
 
-#define GetView() GetResource(ViewUniforms, uDrawParams.view)
+#define GetView() GetResource(ViewUniforms, uDrawParams.view).view
 #define GetTransforms() GetResource(MeshTransforms, uDrawParams.transforms).transforms
 
 // ---
 
 void main() {
     mat4 transform = GetTransforms()[pc.sceneNodeIndex];
-    fragPos = vec3(transform * vec4(inPosition, 1.0));
+    vec4 pos = transform * vec4(inPosition, 1.0); 
+    fragPos = pos.xyz / pos.w;
     gl_Position = GetView().proj * GetView().view * vec4(fragPos, 1.0);
     fragTexCoord = inTexCoord;
-    fragNormal = mat3(transform) * inNormal; // assumes afine transform
+    fragNormal = normalize(transpose(inverse(mat3(transform))) * inNormal);
     viewPos = GetView().pos;
 }

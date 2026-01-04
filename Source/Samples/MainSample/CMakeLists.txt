@@ -19,10 +19,10 @@ file(GLOB_RECURSE SRC_FILES
 add_executable(${PROJECT_NAME}
   ${SRC_FILES}
   ${GLM_INCLUDE_DIRS}/util/glm.natvis)
-target_link_libraries(
-  ${PROJECT_NAME}
+target_link_libraries(${PROJECT_NAME}
     VkRHI
     Runtime)
+target_precompile_headers(${PROJECT_NAME} REUSE_FROM Runtime)
 add_dependencies(${PROJECT_NAME} BuildShaders)
 source_group(TREE "${PROJECT_SOURCE_DIR}" FILES ${SRC_FILES})
 

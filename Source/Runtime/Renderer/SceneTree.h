@@ -12,7 +12,7 @@
 
 class CommandRingBuffer;
 
-enum class SceneNodeHandle : uint32_t { Invalid = std::numeric_limits<uint32_t>::max() };
+enum class SceneNodeHandle : uint32_t { Invalid = (std::numeric_limits<uint32_t>::max)() };
 
 template <typename EnumType, typename NumberType>
 EnumType id_cast(NumberType number)

@@ -44,6 +44,8 @@ public:
 
 	float GetFarPlane() const { return m_farPlane; }
 
+	float GetExposure() const { return m_exposure; }
+
 	std::vector<glm::vec3> ComputeFrustrumCorners() const;
 
 	void SetFieldOfView(float fov)
@@ -65,6 +67,11 @@ public:
 		m_lookAt = std::move(lookat);
 		m_upVector = std::move(up);
 		UpdateViewMatrix();
+	}
+
+	void SetExposure(float exposure)
+	{
+		m_exposure = exposure;
 	}
 
 	void Move(const glm::vec3& direction, float speed)
@@ -125,6 +132,7 @@ private:
 	float m_nearPlane;
 	float m_farPlane;
 	float m_fieldOfView;
+	float m_exposure;
 	int m_imageWidth;
 	int m_imageHeight;
 };

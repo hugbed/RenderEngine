@@ -31,8 +31,7 @@ enum class MaterialTextureType : uint8_t
 {
 	eBaseColor = 0,
 	eEmissive,
-	eMetallic,
-	eRoughness,
+	eOcclusionMetallicRoughness,
 	eNormals,
 	eAmbientOcclusion,
 	eCount
@@ -40,14 +39,14 @@ enum class MaterialTextureType : uint8_t
 
 struct MaterialProperties
 {
-	glm::vec4 baseColor; // linear RGB [0..1]
-	glm::vec4 emissive; // linear RGB [0..1] + exposure compensation
-	float reflectance; // [0..1]
-	float metallic; // [0..1]
-	float perceptualRoughness; // [0..1]
-	float ambientOcclusion; // [0..1]
+	glm::vec4 baseColor = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f); // linear RGB [0..1]
+	glm::vec4 emissive = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f); // linear RGB [0..1] + exposure compensation
+	float f0 = 0.04f; // [0..1]
+	float metallic = 1.0f; // [0..1]
+	float perceptualRoughness = 1.0f; // [0..1]
+	float ambientOcclusion = 1.0f; // [0..1]
 	TextureHandle textures[static_cast<uint8_t>(MaterialTextureType::eCount)];
-	uint32_t padding[2];
+	uint32_t padding[3];
 };
 
 struct MaterialPipelineProperties

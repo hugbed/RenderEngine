@@ -24,9 +24,9 @@ TextureHandle TextureCache::CreateAndUploadTextureImage(const AssetPath& assetPa
 		return cachedTexture->second;
 	}
 
-	// Read image from file
+	// Read image from file (16 bits if possible, otherwise upsample)
 	int texWidth = 0, texHeight = 0, texChannels = 0;
-	stbi_uc* pixels = stbi_load(filePathStr.data(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+	stbi_us* pixels = stbi_load_16(filePathStr.data(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
 	if (pixels == nullptr || texWidth == 0 || texHeight == 0 || texChannels == 0) {
 		throw std::runtime_error("failed to load texture image!");
 	}
@@ -39,8 +39,8 @@ TextureHandle TextureCache::CreateAndUploadTextureImage(const AssetPath& assetPa
 	uint32_t textureIndex = m_textures[imageViewTypeIndex].size();
 	m_textures[imageViewTypeIndex].push_back(
 		std::make_unique<Texture>(
-			texWidth, texHeight, 4UL, // R8G8B8A8, depth = 4
-			vk::Format::eR8G8B8A8Srgb, // figure out gamma correction if we need to do sRGB or something
+			texWidth, texHeight, 4UL * sizeof(stbi_us), // depth = 4
+			vk::Format::eR16G16B16A16Unorm,
 			vk::ImageTiling::eOptimal,
 			vk::ImageUsageFlagBits::eTransferSrc |
 			vk::ImageUsageFlagBits::eTransferDst | // src and dst for mipmaps blit
@@ -57,7 +57,7 @@ TextureHandle TextureCache::CreateAndUploadTextureImage(const AssetPath& assetPa
 	m_names[imageViewTypeIndex].push_back(filePathStr.data());
 	m_imageTypeCount[(size_t)ImageViewType::e2D]++;
 
-	memcpy(texture->GetStagingMappedData(), reinterpret_cast<const void*>(pixels), (size_t)texWidth* texHeight * 4);
+	memcpy(texture->GetStagingMappedData(), reinterpret_cast<const void*>(pixels), (size_t)texWidth* texHeight * 4 * sizeof(stbi_us));
 	stbi_image_free(pixels);
 
 	vk::Sampler sampler = CreateSampler(texture->GetMipLevels());
@@ -117,7 +117,7 @@ TextureHandle TextureCache::LoadCubeMapFaces(gsl::span<AssetPath> filePaths)
 	{
 		return cachedTextureIt->second;
 	}
-	std::vector<stbi_uc*> faces;
+	std::vector<stbi_us*> faces;
 	faces.reserve(filePaths.size());
 
 	bool success = true;
@@ -128,7 +128,7 @@ TextureHandle TextureCache::LoadCubeMapFaces(gsl::span<AssetPath> filePaths)
 		const AssetPath& faceFilePath = filePaths[i];
 		const std::string faceFilePathStr = faceFilePath.PathOnDisk().string();
 		int texWidth = 0, texHeight = 0, texChannels = 0;
-		stbi_uc* pixels = stbi_load(faceFilePathStr.data(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+		stbi_us* pixels = stbi_load_16(faceFilePathStr.data(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
 		if (pixels == nullptr || texWidth == 0 || texHeight == 0 || texChannels == 0)
 		{
 #ifdef _DEBUG
@@ -157,8 +157,8 @@ TextureHandle TextureCache::LoadCubeMapFaces(gsl::span<AssetPath> filePaths)
 	uint32_t textureIndex = m_textures[samplerTypeIndex].size();
 	m_textures[samplerTypeIndex].push_back(
 		std::make_unique<Texture>(
-			width, height, 4UL, // R8G8B8A8, depth = 4
-			vk::Format::eR8G8B8A8Srgb, // figure out gamma correction if we need to do sRGB or something
+			width, height, 4UL * sizeof(stbi_us),
+			vk::Format::eR16G16B16A16Unorm,
 			vk::ImageTiling::eOptimal,
 			vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
 			vk::ImageAspectFlagBits::eColor,
@@ -169,7 +169,7 @@ TextureHandle TextureCache::LoadCubeMapFaces(gsl::span<AssetPath> filePaths)
 	);
 	auto& texture = m_textures[samplerTypeIndex][textureIndex];
 
-	size_t bufferSize = (size_t)width * height * 4ULL;
+	size_t bufferSize = (size_t)width * height * 4ULL * sizeof(stbi_us);
 	char* data = reinterpret_cast<char*>(texture->GetStagingMappedData());
 	for (auto* face : faces)
 	{

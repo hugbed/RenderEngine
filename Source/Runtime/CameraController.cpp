@@ -112,6 +112,7 @@ bool CameraController::HandleCameraMouseScroll(std::chrono::duration<float> dt_s
 	else if (m_cameraMode == CameraMode::FreeCamera && inputs.isRightMouseDown)
 	{
 		m_speed += scrollOffsetY;
+		m_speed = std::max(m_speed, 0.1f);
 		return true;
 	}
 

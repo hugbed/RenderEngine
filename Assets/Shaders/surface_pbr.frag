@@ -20,6 +20,8 @@ layout(push_constant)
 	    layout(offset = 4) uint materialIndex; // index into material.properties
     } pc;
 
+#include "view.glsl"
+
 #include "pbr.glsl"
 
 layout(set = 1, binding = 0) uniform DrawParameters {
@@ -32,11 +34,18 @@ layout(set = 1, binding = 0) uniform DrawParameters {
   uint pad0; uint pad1;
 } uDrawParams;
 
+#define GetView() GetResource(ViewUniforms, uDrawParams.view).view
+
 void main() {
+    View view = GetView();
+    float exposure = view.exposure;
+    uint debugInput = view.debugInput;
+    uint debugEquation = view.debugEquation;
     vec3 color = BRDF_Lighting(
-        fragPos, fragNormal, viewPos,
+        fragPos, fragTexCoord, fragNormal, viewPos,
         uDrawParams.materials, pc.materialIndex,
         uDrawParams.lights, uDrawParams.lightCount,
-        uDrawParams.shadows);
+        uDrawParams.shadows, 
+        view);
     outColor = vec4(color, 1.0);
 }

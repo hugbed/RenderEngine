@@ -140,7 +140,7 @@ namespace
 	[[nodiscard]] std::unique_ptr<Image> CreateDepthImage(vk::Extent2D extent)
 	{
 		return std::make_unique<Image>(
-			extent.width, extent.height, 1UL,
+			extent.width, extent.height,
 			g_physicalDevice->FindDepthFormat(),
 			vk::ImageTiling::eOptimal,
 			vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled,
@@ -335,6 +335,11 @@ void ShadowSystem::CreateGraphicsPipeline()
 
 void ShadowSystem::Update(const Camera& camera, BoundingBox sceneBoundingBox)
 {
+	if (GetShadowCount() == 0)
+	{
+		return;
+	}
+
 	BoundingBox sceneBox = m_sceneTree->ComputeWorldBoundingBox();
 
 	for (ShadowID id = 0; id < m_lights.size(); ++id)
@@ -367,6 +372,11 @@ void ShadowSystem::Update(const Camera& camera, BoundingBox sceneBoundingBox)
 
 void ShadowSystem::Render(RenderCommandEncoder& renderCommandEncoder, const std::vector<MeshDrawInfo> drawCommands) const
 {
+	if (GetShadowCount() == 0)
+	{
+		return;
+	}
+
 	renderCommandEncoder.BindDrawParams(m_drawParamsHandle);
 
 	vk::CommandBuffer commandBuffer = renderCommandEncoder.GetCommandBuffer();

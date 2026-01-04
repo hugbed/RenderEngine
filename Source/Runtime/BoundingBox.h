@@ -1,6 +1,6 @@
 #pragma once
 
-#include "glm_includes.h"
+#include <glm_includes.h>
 
 #include <array>
 
@@ -54,8 +54,8 @@ struct BoundingBox
 		{
 			glm::vec4 p_4 = transform * glm::vec4(corner, 1.0f);
 			glm::vec3 p = glm::vec3(p_4.x, p_4.y, p_4.z) / p_4.w;
-			box.min = glm::min(box.min, p);
-			box.max = glm::max(box.max, p);
+			box.min = (glm::min)(box.min, p);
+			box.max = (glm::max)(box.max, p);
 		}
 		return box;
 	}

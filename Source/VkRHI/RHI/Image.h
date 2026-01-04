@@ -18,7 +18,7 @@ public:
 	using value_type = vk::Image;
 
 	Image(
-		uint32_t width, uint32_t height, uint32_t depth,
+		uint32_t width, uint32_t height,
 		vk::Format format,
 		vk::ImageTiling tiling,
 		vk::ImageUsageFlags usage,

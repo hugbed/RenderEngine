@@ -17,12 +17,7 @@ layout(push_constant)
 
 // --- Descriptors --- //
 
-RegisterUniform(ViewUniforms, {
-    mat4 view;
-    mat4 proj;
-    vec3 pos;
-    // float exposure;
-});
+#include "view.glsl"
 
 layout(set = 1, binding = 0) uniform DrawParameters {
   uint view;
@@ -30,7 +25,7 @@ layout(set = 1, binding = 0) uniform DrawParameters {
   uint pad0; uint pad1;
 } uDrawParams;
 
-#define GetView() GetResource(ViewUniforms, uDrawParams.view)
+#define GetView() GetResource(ViewUniforms, uDrawParams.view).view
 
 // ---
 

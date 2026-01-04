@@ -75,40 +75,72 @@ protected:
 		std::chrono::duration<float> dt_s = GetDeltaTime();
 		const Inputs& inputs = m_inputSystem.GetFrameInputs();
 		HandleOptionsKeys(inputs);
+		m_renderScene->GetCameraViewSystem()->GetCamera().SetExposure(m_imGuiState.cameraExposure);
 		m_cameraController->Update(dt_s, inputs);
 		m_inputSystem.EndFrame();
 
 		Renderer::Update();
 	}
 
-	void ShowMenuFile()
+	struct ImGuiState
 	{
-		if (ImGui::MenuItem("Open", "Ctrl+O")) {}
-		if (ImGui::BeginMenu("Open Recent"))
-		{
-			ImGui::MenuItem("fish_hat.c");
-			ImGui::MenuItem("fish_hat.inl");
-			ImGui::MenuItem("fish_hat.h");
-			ImGui::EndMenu();
-		}
-	}
+		bool isCameraMenuOpen = false;
+		float cameraExposure = 0.213f;
+		int selectedViewDebugInputOption = 0;
+		int selectedViewDebugEquation = 0;
+	} m_imGuiState;
 
 	void UpdateImGui()
 	{
 		m_inputSystem.CaptureMouseInputs(ImGui::GetIO().WantCaptureMouse);
 
 		// Add ImGui widgets here
-		/*ImGui::ShowDemoWindow();*/
+		ImGui::Begin("Options");
+		
+		ImGui::SliderFloat("Exposure", &m_imGuiState.cameraExposure, 0.0f, 0.5f);
 
-		if (ImGui::BeginMainMenuBar())
+		bool viewDebugOptionsChanged = false;
+
+		const char* viewDebugInputOptions[] = {
+			"None",
+			"BaseColor",
+			"DiffuseColor",
+			"Normal",
+			"Occlusion",
+			"Emissive",
+			"Metallic",
+			"Roughness",
+		};
+		if (ImGui::Combo("View Debug Input",
+				&m_imGuiState.selectedViewDebugInputOption,
+				viewDebugInputOptions, IM_ARRAYSIZE(viewDebugInputOptions)))
 		{
-			if (ImGui::BeginMenu("File"))
-			{
-				ShowMenuFile();
-				ImGui::EndMenu();
-			}
-			ImGui::EndMainMenuBar();
+			viewDebugOptionsChanged = true;
 		}
+
+		const char* viewDebugEquationOptions[] = {
+			"None",
+			"Diffuse",
+			"F",
+			"G",
+			"D",
+			"Specular",
+		};
+		if (ImGui::Combo("View Debug Equation",
+				&m_imGuiState.selectedViewDebugEquation,
+				viewDebugEquationOptions, IM_ARRAYSIZE(viewDebugEquationOptions)))
+		{
+			viewDebugOptionsChanged = true;
+		}
+
+		if (viewDebugOptionsChanged)
+		{
+			m_renderScene->GetCameraViewSystem()->SetViewDebug(
+				static_cast<ViewDebugInput>(m_imGuiState.selectedViewDebugInputOption),
+				static_cast<ViewDebugEquation>(m_imGuiState.selectedViewDebugEquation));
+		}
+
+		ImGui::End();
 	}
 
 	bool HandleOptionsKeys(const Inputs& inputs)

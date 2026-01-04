@@ -58,12 +58,19 @@ void CameraViewSystem::UploadToGPU(CommandRingBuffer& commandRingBuffer)
 
 void CameraViewSystem::Update(uint32_t concurrentFrameIndex)
 {
-	m_viewUniforms.pos = m_camera.GetEye();
+	m_viewUniforms.position = m_camera.GetEye();
 	m_viewUniforms.view = m_camera.GetViewMatrix();
 	m_viewUniforms.proj = m_camera.GetProjectionMatrix();
+	m_viewUniforms.exposure = m_camera.GetExposure();
 
 	// Upload to GPU
 	assert(concurrentFrameIndex < m_viewUniformBuffers.size());
 	auto& uniformBuffer = m_viewUniformBuffers[concurrentFrameIndex];
 	memcpy(uniformBuffer.GetMappedData(), reinterpret_cast<const void*>(&m_viewUniforms), sizeof(ViewProperties));
+}
+
+void CameraViewSystem::SetViewDebug(ViewDebugInput debugInput, ViewDebugEquation debugEquation)
+{
+	m_viewUniforms.debugInput = debugInput;
+	m_viewUniforms.debugEquation = debugEquation;
 }

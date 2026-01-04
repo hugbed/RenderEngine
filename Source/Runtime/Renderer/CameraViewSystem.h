@@ -27,6 +27,8 @@ public:
 	const Camera& GetCamera() const { return m_camera; }
 	Camera& GetCamera() { return m_camera; }
 
+	void SetViewDebug(ViewDebugInput debugInput, ViewDebugEquation debugEquation);
+
 private:
 	std::vector<UniqueBuffer> m_viewUniformBuffers;
 	std::vector<BufferHandle> m_viewBufferHandles;

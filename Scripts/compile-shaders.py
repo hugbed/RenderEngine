@@ -77,7 +77,7 @@ def get_difference(old_map, new_map):
 	return diffs
 
 def build_shader(shader_path, output_path):
-	command = ["glslc.exe", shader_path, "-o", str(output_path)]
+	command = ["glslc.exe",  "-g", shader_path, "-o", str(output_path)]
 	subprocess.check_call(command, stderr=subprocess.STDOUT)
 
 def shader_filename_to_spv(file_path):
@@ -195,7 +195,8 @@ if __name__ == '__main__':
 			build_shader(shader_in, shader_out)
 		except Exception as e:
 			# don't update hash if compilation failed
-			current_file_hashes[file] = last_file_hashes[file]
+			hash = last_file_hashes[file] if file in last_file_hashes else 0
+			current_file_hashes[file] = hash
 			print(e)
 
 	# Remove unused generated files 

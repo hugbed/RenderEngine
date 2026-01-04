@@ -112,13 +112,13 @@ void AssimpSceneLoader::LoadLights(vk::CommandBuffer buffer)
 			light.color /= light.intensity;
 		}
 		light.position = transform[3];
-		light.intensity = light.intensity / 683.0f;
+		light.intensity = 10.0f * light.intensity / 683.0f;
 
 		bool hasShadows = false;
 		if ((aLight->mType == aiLightSource_DIRECTIONAL) || (aLight->mType == aiLightSource_SPOT))
 		{
 			light.direction = glm::make_vec3(&aLight->mDirection.x);
-			light.direction = glm::vec4(transform * glm::vec4(light.direction, 0.0f));
+			light.direction = glm::vec3(transform * glm::vec4(light.direction, 0.0f));
 
 			if (light.type == aiLightSource_DIRECTIONAL)
 			{
@@ -217,7 +217,7 @@ SceneNodeHandle AssimpSceneLoader::LoadSceneNode(const aiNode& fileNode, glm::ma
 
 		size_t vertexIndexOffset = GetRenderScene().GetMeshAllocator()->GetVertexCount();
 
-		bool hasUV = aMesh->HasTextureCoords(0);
+		bool hasUV[2] = { aMesh->HasTextureCoords(0), aMesh->HasTextureCoords(1) };
 		bool hasColor = aMesh->HasVertexColors(0);
 		bool hasNormals = aMesh->HasNormals();
 
@@ -226,7 +226,7 @@ SceneNodeHandle AssimpSceneLoader::LoadSceneNode(const aiNode& fileNode, glm::ma
 		{
 			Vertex vertex;
 			vertex.pos = glm::make_vec3(&aMesh->mVertices[v].x);
-			vertex.texCoord = hasUV ? glm::make_vec2(&aMesh->mTextureCoords[0][v].x) : glm::vec2(0.0f);
+			vertex.texCoord = hasUV[0] ? glm::make_vec2(&aMesh->mTextureCoords[0][v].x) : glm::vec2(0.0f);
 			vertex.texCoord.y = -vertex.texCoord.y;
 			vertex.normal = hasNormals ? glm::make_vec3(&aMesh->mNormals[v].x) : glm::vec3(0.0f);
 
@@ -265,8 +265,6 @@ void AssimpSceneLoader::LoadMaterials(vk::CommandBuffer commandBuffer)
 	if (m_materials.size() == m_assimp.scene->mNumMaterials)
 		return;
 
-	TextureHandle dummyTextureID = m_renderer->GetTextureCache()->LoadTexture(AssetPath("/Engine/Textures/dummy_texture.png"));
-
 	// Create a material instance per material description in the scene
 	// todo: eventually create materials according to the needs of materials in the scene
 	// to support different types of materials
@@ -279,33 +277,42 @@ void AssimpSceneLoader::LoadMaterials(vk::CommandBuffer commandBuffer)
 		MaterialInstanceInfo materialInfo;
 
 		aiColor4D color = {};
-		assimpMaterial->Get(AI_MATKEY_BASE_COLOR, color);
-		materialInfo.properties.baseColor = glm::make_vec4(&color.r);
+		if (assimpMaterial->Get(AI_MATKEY_BASE_COLOR, color) == aiReturn_SUCCESS)
+		{
+			materialInfo.properties.baseColor = glm::make_vec4(&color.r);
+		}
 
 		aiColor4D emissive = {};
-		assimpMaterial->Get(AI_MATKEY_COLOR_EMISSIVE, emissive);
-		materialInfo.properties.emissive = glm::make_vec4(&emissive.r);
+		if (assimpMaterial->Get(AI_MATKEY_COLOR_EMISSIVE, emissive) == aiReturn_SUCCESS)
+		{
+			materialInfo.properties.emissive = glm::make_vec4(&emissive.r);
+		}
 
 		float ior = 1.5f;
-		assimpMaterial->Get(AI_MATKEY_REFRACTI, ior);
-		materialInfo.properties.reflectance = (ior - 1.0f) * (ior - 1.0f) / ((ior + 1.0f) * (ior + 1.0f));
+		if (assimpMaterial->Get(AI_MATKEY_REFRACTI, ior) == aiReturn_SUCCESS)
+		{
+			materialInfo.properties.f0 = std::pow(((ior - 1.0f) / (ior + 1.0f)), 2);
+		}
 
-		float metallic = 0.0f;;
-		assimpMaterial->Get(AI_MATKEY_METALLIC_FACTOR, metallic);
-		materialInfo.properties.metallic = metallic;
+		float metallic = 0.0f;
+		if (assimpMaterial->Get(AI_MATKEY_METALLIC_FACTOR, metallic) == aiReturn_SUCCESS)
+		{
+			materialInfo.properties.metallic = metallic;
+		}
 
-		float roughness = 0.0f;;
-		assimpMaterial->Get(AI_MATKEY_ROUGHNESS_FACTOR, roughness);
-		materialInfo.properties.perceptualRoughness = roughness;
-
-		// todo (hbedard): this only comes from a texture right?
-		materialInfo.properties.ambientOcclusion = 0.0f;
+		float roughness = 0.0f;
+		if (assimpMaterial->Get(AI_MATKEY_ROUGHNESS_FACTOR, roughness) == aiReturn_SUCCESS)
+		{
+			materialInfo.properties.perceptualRoughness = roughness;
+		}
 
 		// If a material is transparent, opacity will be fetched
 		// from the diffuse alpha channel (material property * diffuse texture)
 		float opacity = 1.0f;
-		assimpMaterial->Get(AI_MATKEY_OPACITY, opacity);
-		materialInfo.pipelineProperties.isTranslucent = opacity < 1.0f;
+		if (assimpMaterial->Get(AI_MATKEY_OPACITY, opacity) == aiReturn_SUCCESS)
+		{
+			materialInfo.pipelineProperties.isTranslucent = opacity < 1.0f;
+		}
 
 //#ifdef DEBUG_MODE
 //		aiString name;
@@ -315,7 +322,9 @@ void AssimpSceneLoader::LoadMaterials(vk::CommandBuffer commandBuffer)
 	
 		// Create default textures
 		for (int textureIndex = 0; textureIndex < (int)MaterialTextureType::eCount; ++textureIndex)
-			materialInfo.properties.textures[textureIndex] = dummyTextureID;
+		{
+			materialInfo.properties.textures[textureIndex] = TextureHandle::Invalid;
+		}
 
 		// Load textures
 		auto loadTexture = [this, &assimpMaterial, &commandBuffer, &materialInfo](aiTextureType type, size_t textureIndex) { // todo: move this to a function
@@ -333,10 +342,8 @@ void AssimpSceneLoader::LoadMaterials(vk::CommandBuffer commandBuffer)
 		// not be the case for all textures
 		loadTexture(aiTextureType_BASE_COLOR, static_cast<size_t>(MaterialTextureType::eBaseColor));
 		loadTexture(aiTextureType_EMISSIVE, static_cast<size_t>(MaterialTextureType::eEmissive));
-		loadTexture(aiTextureType_METALNESS, static_cast<size_t>(MaterialTextureType::eMetallic));
-		loadTexture(aiTextureType_DIFFUSE_ROUGHNESS, static_cast<size_t>(MaterialTextureType::eRoughness));
+		loadTexture(aiTextureType_GLTF_METALLIC_ROUGHNESS, static_cast<size_t>(MaterialTextureType::eOcclusionMetallicRoughness));
 		loadTexture(aiTextureType_NORMALS, static_cast<size_t>(MaterialTextureType::eNormals));
-		loadTexture(aiTextureType_LIGHTMAP, static_cast<size_t>(MaterialTextureType::eAmbientOcclusion));
 
 		m_materials[i] = GetRenderScene().GetMaterialSystem()->CreateMaterialInstance(materialInfo);
 	}
