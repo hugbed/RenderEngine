@@ -50,7 +50,7 @@ public:
 
 	IMPLEMENT_MOVABLE_ONLY(ShadowSystem)
 
-	void Reset(vk::Extent2D extent);
+	void Reset();
 
 	ShadowID CreateShadowMap(LightID lightID);
 
@@ -86,11 +86,11 @@ private:
 
 	struct ShadowMapDrawParams
 	{
-		BufferHandle meshTransforms;
-		BufferHandle shadowViews;
-		uint32_t padding[2];
+		BufferHandle meshTransforms = BufferHandle::Invalid;
+		BufferHandle shadowViews = BufferHandle::Invalid;
+		uint32_t padding[2] = { 0 , 0 };
 	};
-	ShadowMapDrawParams m_drawParams;
+	ShadowMapDrawParams m_drawParams = {};
 	BindlessDrawParamsHandle m_drawParamsHandle = BindlessDrawParamsHandle::Invalid;
 
 	static const AssetPath kVertexShaderFile;
@@ -115,7 +115,7 @@ private:
 
 	// Use these resources for all shadow map rendering
 	vk::UniqueSampler m_sampler; // use the same sampler for all images
-	GraphicsPipelineID m_graphicsPipelineID; // all shadows use the same shaders
+	GraphicsPipelineID m_graphicsPipelineID = (std::numeric_limits<uint32_t>::max)(); // all shadows use the same shaders
 	std::unique_ptr<UniqueBuffer> m_shadowViewsBuffer; // for rendering shadow maps
 	std::unique_ptr<UniqueBuffer> m_materialShadowsBuffer; // for using shadows in material rendering
 	BufferHandle m_materialShadowsBufferHandle = BufferHandle::Invalid;

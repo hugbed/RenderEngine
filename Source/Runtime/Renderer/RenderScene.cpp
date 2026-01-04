@@ -23,7 +23,7 @@ RenderScene::RenderScene(Renderer& renderer)
 	, m_sceneTree(std::make_unique<SceneTree>(*m_renderer->GetBindlessDescriptors()))
 	, m_lightSystem(std::make_unique<LightSystem>(*m_renderer->GetBindlessDescriptors()))
 	, m_shadowSystem(std::make_unique<ShadowSystem>(
-		m_renderer->GetImageExtent(),
+		vk::Extent2D(4096, 4096),
 		*m_renderer->GetGraphicsPipelineCache(),
 		*m_renderer->GetBindlessDescriptors(),
 		*m_renderer->GetBindlessDrawParams(),

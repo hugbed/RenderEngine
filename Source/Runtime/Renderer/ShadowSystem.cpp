@@ -274,10 +274,8 @@ ShadowSystem::ShadowSystem(
 	m_drawParamsHandle = m_bindlessDrawParams->DeclareParams<ShadowMapDrawParams>();
 }
 
-void ShadowSystem::Reset(vk::Extent2D extent)
+void ShadowSystem::Reset()
 {
-	m_extent = extent;
-
 	m_graphicsPipelineCache->ResetGraphicsPipeline(
 		m_graphicsPipelineID, ::GetGraphicsPipelineInfo(*m_renderPass, m_extent)
 	);

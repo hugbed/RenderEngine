@@ -367,7 +367,7 @@ float exposureFromEV100(float ev100) {
     return 1.0 / (pow(2.0, ev100) * 1.2);
 }
 
-// #include "shadow.glsl"
+#include "shadow.glsl"
 
 vec3 BRDF_Lighting(
     vec3 fragPos, vec2 fragTexCoord, vec3 fragNormal, vec3 viewPosition,
@@ -394,13 +394,17 @@ vec3 BRDF_Lighting(
         pbr.NoH = clamp(dot(pbr.n, pbr.h), 0.0, 1.0);
         pbr.NoL = clamp(dot(pbr.n, pbr.l), 0.0, 1.0);
         pbr.HoL = clamp(dot(pbr.h, pbr.l), 0.0, 1.0);
-
-        // if directional:
-        // float shadow = 0.0;
-        // shadow = ComputeShadow(light, fragPos, n, shadowBuffer);
-
         brdf = BRDF(pbr, material);
-        l0 = l0 + /* (1.0 - shadow) * */ EvaluatePunctualLight(pbr, light, brdf.Fr_Fd);
+        vec3 lightResult = EvaluatePunctualLight(pbr, light, brdf.Fr_Fd);
+
+        // Shadows
+        float shadow = 0.0;
+        if (light.type == LIGHT_TYPE_DIRECTIONAL)
+        {
+            shadow = ComputeShadow(light, fragPos, pbr.n, shadowBuffer);
+        }
+
+        l0 = l0 + (1.0 - shadow) * lightResult;
     }
 
     switch (view.debugInput)
@@ -441,7 +445,7 @@ vec3 BRDF_Lighting(
     vec3 color = l0;
     color += material.emissive.rgb * material.emissive.a;//* pow(2.0, ev100 + emissive.w - 3.0);
     color *= view.exposure;
-    // vec3 ambient = vec3(0.03) * material.baseColor * (1.0 - material.ambientOcclusion);
-    //color += ambient;
+    vec3 ambient = vec3(0.03) * material.baseColor * material.occlusion;
+    color += ambient;
     return vec3(color);
 }
