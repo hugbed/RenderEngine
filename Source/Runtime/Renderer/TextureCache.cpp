@@ -18,11 +18,16 @@ TextureHandle TextureCache::CreateAndUploadTextureImage(const AssetPath& assetPa
 {
 	// Check if we already loaded this texture
 	std::string filePathStr = assetPath.PathOnDisk().string();
-	uint64_t fileHash = fnv_hash(reinterpret_cast<uint8_t*>(filePathStr.data()), filePathStr.size());
+	uint64_t fileHash = fnv_hash_data(reinterpret_cast<uint8_t*>(filePathStr.data()), filePathStr.size());
 	auto cachedTexture = m_fileHashToTextureHandle.find(fileHash);
 	if (cachedTexture != m_fileHashToTextureHandle.end()) {
+		assert(m_fileHashToFileName.at(fileHash) == filePathStr);
 		return cachedTexture->second;
 	}
+
+	// todo (hbedard): only in debug
+	assert(!m_fileHashToFileName.contains(fileHash));
+	m_fileHashToFileName[fileHash] = filePathStr;
 
 	// Read image from file (16 bits if possible, otherwise upsample)
 	int texWidth = 0, texHeight = 0, texChannels = 0;

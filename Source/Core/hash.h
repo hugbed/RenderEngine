@@ -2,7 +2,9 @@
 
 #include <cstdint>
 
-static uint64_t fnv_hash(const uint8_t* data, size_t size, uint64_t seed = 0xcbf29ce484222325)
+// todo (hbedard): the implementation below can be mistaken for the one above with the default param!
+
+static uint64_t fnv_hash_data(const uint8_t* data, size_t size, uint64_t seed = 0xcbf29ce484222325)
 {
 	const uint64_t fnv_offset_basis = seed;
 	constexpr uint64_t fnv_prime = 0x100000001b3;
@@ -20,5 +22,5 @@ static uint64_t fnv_hash(const uint8_t* data, size_t size, uint64_t seed = 0xcbf
 template <class T>
 uint64_t fnv_hash(T&& obj, uint64_t seed = 0xcbf29ce484222325)
 {
-	return fnv_hash(reinterpret_cast<const uint8_t*>(&obj), sizeof(T), seed);
+	return fnv_hash_data(reinterpret_cast<const uint8_t*>(&obj), sizeof(T), seed);
 }

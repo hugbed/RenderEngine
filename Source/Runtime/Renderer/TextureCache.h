@@ -70,6 +70,7 @@ private:
 	using SamplerID = uint32_t;
 
 	std::map<uint64_t, TextureHandle> m_fileHashToTextureHandle;
+	std::map<uint64_t, std::string> m_fileHashToFileName; // todo (hbedard): only in debug
 	std::map<uint32_t, SamplerID> m_mipLevelToSamplerID;
 	std::vector<TextureKey> m_texturesToUpload;
 
