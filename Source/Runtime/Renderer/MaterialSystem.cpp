@@ -44,7 +44,7 @@ void MaterialSystem::Reset(vk::RenderPass renderPass, vk::Extent2D extent)
 	{
 		// Assume that each material uses a different pipeline
 		GraphicsPipelineInfo info(m_renderPass, m_imageExtent);
-		info.blendEnable = m_pipelineProperties[i].isTranslucent;
+		info.blendEnable = m_pipelineProperties[i].alphaMode == AlphaMode::eBlend;
 		m_graphicsPipelineCache->ResetGraphicsPipeline(
 			m_graphicsPipelineIDs[i], info
 		);
@@ -135,7 +135,7 @@ GraphicsPipelineID MaterialSystem::LoadGraphicsPipeline(const MaterialInstanceIn
 
 	uint32_t pipelineIndex = m_graphicsPipelineIDs.size();
 	GraphicsPipelineInfo info(m_renderPass, m_imageExtent);
-	info.blendEnable = materialInfo.pipelineProperties.isTranslucent;
+	info.blendEnable = materialInfo.pipelineProperties.alphaMode == AlphaMode::eBlend;
 	GraphicsPipelineID id = m_graphicsPipelineCache->CreateGraphicsPipeline(
 		vertexInstanceID, fragmentInstanceID, info
 	);

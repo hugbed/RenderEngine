@@ -49,9 +49,16 @@ struct MaterialProperties
 	uint32_t padding[3];
 };
 
+enum class AlphaMode
+{
+	eOpaque,
+	eMask,
+	eBlend,
+};
+
 struct MaterialPipelineProperties
 {
-	bool isTranslucent = false;
+	AlphaMode alphaMode;
 };
 
 struct MaterialInstanceInfo
@@ -108,7 +115,7 @@ public:
 	
 	GraphicsPipelineID GetGraphicsPipelineID(MaterialHandle materialHandle) const { return m_graphicsPipelineIDs[materialHandle.GetIndex()]; }
 
-	bool IsTransparent(MaterialHandle materialHandle) const { return m_pipelineProperties[materialHandle.GetIndex()].isTranslucent; }
+	bool IsTranslucent(MaterialHandle materialHandle) const { return m_pipelineProperties[materialHandle.GetIndex()].alphaMode == AlphaMode::eBlend; }
 
 	BufferHandle GetUniformBufferHandle() const { return m_uniformBufferHandle; }
 

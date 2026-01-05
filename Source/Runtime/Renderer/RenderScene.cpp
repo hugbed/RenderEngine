@@ -120,7 +120,7 @@ void RenderScene::PopulateMeshDrawCalls()
 {
 	m_meshAllocator->ForEachMesh([this](SceneNodeHandle sceneNodeID, Mesh mesh) {
 		MeshDrawInfo info = { sceneNodeID, std::move(mesh) };
-		if (m_materialSystem->IsTransparent(mesh.materialHandle) == false)
+		if (m_materialSystem->IsTranslucent(mesh.materialHandle) == false)
 			m_opaqueMeshes.push_back(std::move(info));
 		else
 			m_translucentMeshes.push_back(std::move(info));

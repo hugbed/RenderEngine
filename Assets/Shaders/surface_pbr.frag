@@ -41,11 +41,11 @@ void main() {
     float exposure = view.exposure;
     uint debugInput = view.debugInput;
     uint debugEquation = view.debugEquation;
-    vec3 color = BRDF_Lighting(
+    vec4 color = BRDF_Lighting(
         fragPos, fragTexCoord, fragNormal, viewPos,
         uDrawParams.materials, pc.materialIndex,
         uDrawParams.lights, uDrawParams.lightCount,
         uDrawParams.shadows, 
         view);
-    outColor = vec4(color, 1.0);
+    outColor = color;
 }

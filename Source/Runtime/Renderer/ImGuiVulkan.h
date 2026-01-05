@@ -26,10 +26,10 @@ public:
 		VkRenderPass renderPass;
 	};
 
-	ImGuiVulkan(const Resources& resources, vk::CommandBuffer commandBuffer);
+	ImGuiVulkan(const Resources& resources);
 	~ImGuiVulkan();
 
-	void Reset(const Resources& resources, vk::CommandBuffer commandBuffer);
+	void Reset(const Resources& resources);
 
 	void BeginFrame();
 	void RecordCommands(uint32_t frameIndex, VkFramebuffer framebuffer);
@@ -45,4 +45,7 @@ private:
 	VkDescriptorPool m_imguiDescriptorPool = VK_NULL_HANDLE;
 	std::vector<vk::UniqueCommandBuffer> m_imguiCommandBuffers;
 	vk::UniqueCommandPool m_secondaryCommandPool;
+
+	void Init(const Resources& resources);
+	void Shutdown();
 };

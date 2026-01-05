@@ -157,7 +157,7 @@ vec3 GetOcclusionRoughnessMetallic(Material material, vec2 fragTexCoord)
 struct RemappedMaterial
 {
     vec3 normal;
-    vec3 baseColor; // linear RGB [0..1]
+    vec4 baseColor; // linear RGB [0..1] + opacity
     vec3 diffuseColor;
     vec4 emissive; // linear RGB [0..1] + exposure compensation
     vec3 f0; // [0..1]
@@ -168,7 +168,7 @@ struct RemappedMaterial
 
 vec3 RemapBaseColor(vec3 baseColor, float metallic)
 {
-    return (1.0 - metallic) * baseColor.rgb;
+    return (1.0 - metallic) * baseColor;
 }
 
 // f0 = 0.16 * reflectance ^ 2
@@ -189,7 +189,7 @@ RemappedMaterial RemapMaterial(Material material, vec3 fragPos, vec2 fragTexCoor
     RemappedMaterial remappedMaterial;
 
     remappedMaterial.normal = GetNormal(material, fragPos, fragTexCoord, fragNormal);
-    remappedMaterial.baseColor = GetBaseColor(material, fragTexCoord).rgb;
+    remappedMaterial.baseColor = GetBaseColor(material, fragTexCoord);
     remappedMaterial.emissive = GetEmissive(material, fragTexCoord);
 
     vec3 occlusionRoughnessMetallic = GetOcclusionRoughnessMetallic(material, fragTexCoord);
@@ -197,11 +197,11 @@ RemappedMaterial RemapMaterial(Material material, vec3 fragPos, vec2 fragTexCoor
     remappedMaterial.roughness = RemapRoughness(occlusionRoughnessMetallic.g);
     remappedMaterial.metallic = occlusionRoughnessMetallic.b;
 
-    remappedMaterial.diffuseColor = RemapBaseColor(remappedMaterial.baseColor, remappedMaterial.metallic);
+    remappedMaterial.diffuseColor = RemapBaseColor(remappedMaterial.baseColor.rgb, remappedMaterial.metallic);
 
     remappedMaterial.f0 = RemapReflectance(material.f0,
         remappedMaterial.metallic,
-        remappedMaterial.baseColor);
+        remappedMaterial.baseColor.rgb);
 
     return remappedMaterial;
 }
@@ -369,7 +369,7 @@ float exposureFromEV100(float ev100) {
 
 #include "shadow.glsl"
 
-vec3 BRDF_Lighting(
+vec4 BRDF_Lighting(
     vec3 fragPos, vec2 fragTexCoord, vec3 fragNormal, vec3 viewPosition,
     uint materialBuffer, uint materialHandle,
     uint lightBuffer, uint lightCount,
@@ -412,31 +412,31 @@ vec3 BRDF_Lighting(
         case 1: // baseColor
             return material.baseColor;
         case 2: // diffuseColor
-            return material.diffuseColor;
+            return vec4(material.diffuseColor, 1.0);
         case 3: // normals
-            return material.normal;
+            return vec4(material.normal, 1.0);
         case 4: // Occlusion
-            return vec3(material.occlusion);
+            return vec4(vec3(material.occlusion), 1.0);
         case 5: // Emissive
-            return material.emissive.rgb * material.emissive.a;
+            return vec4(material.emissive.rgb * material.emissive.a, 1.0);
         case 6: // Metallic
-            return vec3(material.metallic);
+            return vec4(vec3(material.metallic), 1.0);
         case 7: // Roughness
-            return vec3(material.roughness);
+            return vec4(vec3(material.roughness), 1.0);
     };
 
     switch (view.debugEquation)
     {
         case 1: // diffuse
-            return brdf.Fd;
+            return vec4(brdf.Fd, 1.0);
         case 2: // F
-            return brdf.F;
+            return vec4(brdf.F, 1.0);
         case 3: // G
-            return vec3(brdf.G) * 4 * (abs(pbr.NoL) * abs(pbr.NoV));
+            return vec4(vec3(brdf.G) * 4 * (abs(pbr.NoL) * abs(pbr.NoV)), 1.0);
         case 4: // D
-            return vec3(brdf.D);
+            return vec4(vec3(brdf.D), 1.0);
         case 5: // Specular
-            return brdf.Fr;
+            return vec4(brdf.Fr, 1.0);
     };
 
     // todo (hbedard): use IBL for indirect lighting
@@ -445,7 +445,7 @@ vec3 BRDF_Lighting(
     vec3 color = l0;
     color += material.emissive.rgb * material.emissive.a;//* pow(2.0, ev100 + emissive.w - 3.0);
     color *= view.exposure;
-    vec3 ambient = vec3(0.03) * material.baseColor * material.occlusion;
+    vec3 ambient = vec3(0.03) * material.baseColor.rgb * material.occlusion;
     color += ambient;
-    return vec3(color);
+    return vec4(color, material.baseColor.a);
 }

@@ -295,13 +295,14 @@ void GraphicsPipelineCache::ResetGraphicsPipeline(
 	vk::PipelineColorBlendAttachmentState colorBlendAttachment;
 	if (info.blendEnable)
 	{
+		rasterizerState.cullMode = vk::CullModeFlagBits::eNone;
 		colorBlendAttachment.blendEnable = true;
 		colorBlendAttachment.srcColorBlendFactor = vk::BlendFactor::eSrcAlpha;
 		colorBlendAttachment.dstColorBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha;
 		colorBlendAttachment.colorBlendOp = vk::BlendOp::eAdd;
-		colorBlendAttachment.srcAlphaBlendFactor = vk::BlendFactor::eSrcAlpha;
-		colorBlendAttachment.dstAlphaBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha;
-		colorBlendAttachment.alphaBlendOp = vk::BlendOp::eSubtract;
+		colorBlendAttachment.srcAlphaBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha;
+		colorBlendAttachment.dstAlphaBlendFactor = vk::BlendFactor::eZero;
+		colorBlendAttachment.alphaBlendOp = vk::BlendOp::eAdd;
 	}
 
 	colorBlendAttachment.colorWriteMask =

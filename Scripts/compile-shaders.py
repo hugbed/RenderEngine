@@ -77,7 +77,7 @@ def get_difference(old_map, new_map):
 	return diffs
 
 def build_shader(shader_path, output_path):
-	command = ["glslc.exe",  "-g", shader_path, "-o", str(output_path)]
+	command = ["glslc.exe",  "-g", shader_path, "-o", str(output_path)] # todo (hbedard): optional debug -g argument
 	subprocess.check_call(command, stderr=subprocess.STDOUT)
 
 def shader_filename_to_spv(file_path):

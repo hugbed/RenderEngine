@@ -43,7 +43,7 @@ struct GraphicsPipelineInfo
 	vk::CullModeFlagBits cullMode = vk::CullModeFlagBits::eBack;
 	vk::Extent2D viewportExtent;
 	vk::RenderPass renderPass; // could be an internal RenderPassID
-	bool blendEnable = false;
+	bool blendEnable = false; // todo (hbedard): support mask
 	bool depthTestEnable = true;
 	bool depthWriteEnable = true;
 };

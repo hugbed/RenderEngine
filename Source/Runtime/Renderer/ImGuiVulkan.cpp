@@ -10,9 +10,19 @@ namespace
 	}
 }
 
-ImGuiVulkan::ImGuiVulkan(const Resources& resources, vk::CommandBuffer commandBuffer)
+ImGuiVulkan::ImGuiVulkan(const Resources& resources)
 	: m_device(resources.device)
 	, m_renderPass(resources.renderPass)
+{
+	Init(resources);
+}
+
+ImGuiVulkan::~ImGuiVulkan()
+{
+	Shutdown();
+}
+
+void ImGuiVulkan::Init(const Resources& resources)
 {
 	// Create a descriptor pool specifically for IMGUI
 	VkDescriptorPoolSize poolSizes[] =
@@ -87,7 +97,7 @@ ImGuiVulkan::ImGuiVulkan(const Resources& resources, vk::CommandBuffer commandBu
 	}
 }
 
-ImGuiVulkan::~ImGuiVulkan()
+void ImGuiVulkan::Shutdown()
 {
 	ImGui_ImplVulkan_Shutdown();
 	ImGui_ImplGlfw_Shutdown();
@@ -100,28 +110,13 @@ ImGuiVulkan::~ImGuiVulkan()
 		vkDestroyDescriptorPool(m_device, m_imguiDescriptorPool, nullptr);
 }
 
-void ImGuiVulkan::Reset(const Resources& resources, vk::CommandBuffer commandBuffer)
+void ImGuiVulkan::Reset(const Resources& resources)
 {
-	ImGui_ImplVulkan_Shutdown();
-
 	m_device = resources.device;
 	m_renderPass = resources.renderPass;
 
-	ImGui_ImplVulkan_InitInfo init_info = {};
-	init_info.Instance = resources.instance;
-	init_info.PhysicalDevice = resources.physicalDevice;
-	init_info.Device = m_device;
-	init_info.QueueFamily = resources.queueFamily;
-	init_info.Queue = resources.queue;
-	init_info.PipelineCache = VK_NULL_HANDLE;
-	init_info.DescriptorPool = m_imguiDescriptorPool;
-	init_info.Allocator = nullptr;
-	init_info.MinImageCount = 2;
-	init_info.ImageCount = resources.imageCount;
-	init_info.PipelineInfoMain.RenderPass = m_renderPass;
-	init_info.PipelineInfoMain.MSAASamples = (VkSampleCountFlagBits)resources.MSAASamples;
-	init_info.CheckVkResultFn = &::CheckVkResult;
-	assert(ImGui_ImplVulkan_Init(&init_info) && "Could not initialize imgui");
+	Shutdown();
+	Init(resources);
 }
 
 void ImGuiVulkan::BeginFrame()

@@ -57,7 +57,7 @@ void Renderer::OnInit()
 	m_bindlessDrawParams->Build(commandBuffer);
 
 	ImGuiVulkan::Resources resources = PopulateImGuiResources(m_window, m_instance, m_swapchain->GetImageCount(), m_renderPass->Get());
-	m_imGui = std::make_unique<ImGuiVulkan>(resources, commandBuffer);
+	m_imGui = std::make_unique<ImGuiVulkan>(resources);
 }
 
 void Renderer::OnSwapchainRecreated()
@@ -83,7 +83,7 @@ void Renderer::OnSwapchainRecreated()
 			m_instance,
 			m_swapchain->GetImageCount(),
 			m_renderPass->Get());
-		m_imGui->Reset(resources, commandBuffer);
+		m_imGui->Reset(resources);
 	}
 	commandBuffer.end();
 

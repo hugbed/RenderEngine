@@ -8,6 +8,7 @@
 #include <Renderer/CameraViewSystem.h>
 #include <Renderer/SceneTree.h>
 #include <RHI/CommandRingBuffer.h>
+#include <assimp/GltfMaterial.h>
 
 #define _USE_MATH_DEFINES
 #include <math.h>
@@ -306,12 +307,22 @@ void AssimpSceneLoader::LoadMaterials(vk::CommandBuffer commandBuffer)
 			materialInfo.properties.perceptualRoughness = roughness;
 		}
 
-		// If a material is transparent, opacity will be fetched
-		// from the diffuse alpha channel (material property * diffuse texture)
-		float opacity = 1.0f;
-		if (assimpMaterial->Get(AI_MATKEY_OPACITY, opacity) == aiReturn_SUCCESS)
+		// If a material is translucent, opacity will be fetched from the base color alpha channel
+		aiString alphaMode;
+		if (assimpMaterial->Get(AI_MATKEY_GLTF_ALPHAMODE, alphaMode) == aiReturn_SUCCESS)
 		{
-			materialInfo.pipelineProperties.isTranslucent = opacity < 1.0f;
+			if (alphaMode.C_Str() == std::string("MASK"))
+			{
+				materialInfo.pipelineProperties.alphaMode = AlphaMode::eMask;
+			}
+			else if (alphaMode.C_Str() == std::string("BLEND"))
+			{
+				materialInfo.pipelineProperties.alphaMode = AlphaMode::eBlend;
+			}
+			else
+			{
+				materialInfo.pipelineProperties.alphaMode = AlphaMode::eOpaque;
+			}
 		}
 
 //#ifdef DEBUG_MODE
