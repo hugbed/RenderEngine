@@ -77,7 +77,7 @@ void AssimpSceneLoader::LoadScene(vk::CommandBuffer commandBuffer)
 	auto sceneName = AssetPath(m_sceneDir + "/" + m_sceneFilename);
 
 	m_assimp.importer = std::make_unique<Assimp::Importer>();
-	std::string scenePathStr = sceneName.PathOnDisk().string();
+	std::string scenePathStr = sceneName.GetPathOnDisk().string();
 	m_assimp.scene = m_assimp.importer->ReadFile(scenePathStr, 0);
 	if (m_assimp.scene == nullptr)
 	{
@@ -227,8 +227,8 @@ SceneNodeHandle AssimpSceneLoader::LoadSceneNode(const aiNode& fileNode, glm::ma
 		{
 			Vertex vertex;
 			vertex.pos = glm::make_vec3(&aMesh->mVertices[v].x);
-			vertex.texCoord = hasUV[0] ? glm::make_vec2(&aMesh->mTextureCoords[0][v].x) : glm::vec2(0.0f);
-			vertex.texCoord.y = -vertex.texCoord.y;
+			vertex.uv = hasUV[0] ? glm::make_vec2(&aMesh->mTextureCoords[0][v].x) : glm::vec2(0.0f);
+			vertex.uv.y = -vertex.uv.y; // v axis flipped for vulkan
 			vertex.normal = hasNormals ? glm::make_vec3(&aMesh->mNormals[v].x) : glm::vec3(0.0f);
 
 			m_maxVertexDist = (std::max)(m_maxVertexDist, glm::length(vertex.pos - glm::vec3(0.0f)));

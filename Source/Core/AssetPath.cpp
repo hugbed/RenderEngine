@@ -7,7 +7,7 @@
 std::filesystem::path AssetPath::m_engineDirectory;
 std::filesystem::path AssetPath::m_gameDirectory;
 
-std::filesystem::path AssetPath::PathOnDisk() const
+std::filesystem::path AssetPath::GetPathOnDisk() const
 {
 	assert(!m_engineDirectory.empty() && !m_gameDirectory.empty());
 

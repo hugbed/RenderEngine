@@ -14,7 +14,7 @@
 
 namespace Renderer_Private
 {
-	ImGuiVulkan::Resources PopulateImGuiResources(const Window& window, vk::Instance instance, uint32_t imageCount, vk::RenderPass renderPass)
+	ImGuiVulkan::Resources PopulateImGuiResources(const Window& window, vk::Instance instance, vk::Extent2D extent, const Swapchain& swapchain)
 	{
 		ImGuiVulkan::Resources resources = {};
 		resources.window = window.GetGLFWWindow();
@@ -23,9 +23,14 @@ namespace Renderer_Private
 		resources.device = g_device->Get();
 		resources.queueFamily = g_physicalDevice->GetQueueFamilies().graphicsFamily.value();
 		resources.queue = g_device->GetGraphicsQueue();
-		resources.imageCount = imageCount;
+		resources.imageCount = swapchain.GetImageCount();
 		resources.MSAASamples = (VkSampleCountFlagBits)g_physicalDevice->GetMsaaSamples();
-		resources.renderPass = renderPass;
+		resources.extent = extent;
+		vk::PipelineRenderingCreateInfo renderingCreateInfo;
+		renderingCreateInfo.colorAttachmentCount = 1;
+		renderingCreateInfo.pColorAttachmentFormats = &swapchain.GetColorAttachmentFormat();
+		renderingCreateInfo.depthAttachmentFormat = swapchain.GetDepthAttachmentFormat();
+		resources.pipelineRenderingCreateInfo = renderingCreateInfo;
 		return resources;
 	}
 }
@@ -33,8 +38,6 @@ namespace Renderer_Private
 Renderer::Renderer(vk::Instance instance, vk::SurfaceKHR surface, vk::Extent2D extent, Window& window)
 	: RenderLoop(surface, extent, window)
 	, m_instance(instance)
-	, m_renderPass(std::make_unique<RenderPass>(m_swapchain->GetImageDescription().format))
-	, m_framebuffers(Framebuffer::FromSwapchain(*m_swapchain, m_renderPass->Get()))
 	, m_shaderCache(std::make_unique<ShaderCache>())
 	, m_graphicsPipelineCache(std::make_unique<GraphicsPipelineCache>(*m_shaderCache))
 	, m_bindlessDescriptors(std::make_unique<BindlessDescriptors>())
@@ -56,19 +59,17 @@ void Renderer::OnInit()
 	m_textureCache->UploadTextures(m_commandRingBuffer);
 	m_bindlessDrawParams->Build(commandBuffer);
 
-	ImGuiVulkan::Resources resources = PopulateImGuiResources(m_window, m_instance, m_swapchain->GetImageCount(), m_renderPass->Get());
+	ImGuiVulkan::Resources resources = PopulateImGuiResources(
+		m_window,
+		m_instance,
+		GetImageExtent(),
+		*m_swapchain);
 	m_imGui = std::make_unique<ImGuiVulkan>(resources);
 }
 
 void Renderer::OnSwapchainRecreated()
 {
 	using namespace Renderer_Private;
-
-	// Reset resources that depend on the swapchain images
-	m_framebuffers.clear();
-	m_renderPass.reset();
-	m_renderPass = std::make_unique<RenderPass>(m_swapchain->GetImageDescription().format);
-	m_framebuffers = Framebuffer::FromSwapchain(*m_swapchain, m_renderPass->Get());
 
 	// --- Recreate everything that depends on the swapchain images --- //
 
@@ -81,8 +82,8 @@ void Renderer::OnSwapchainRecreated()
 		ImGuiVulkan::Resources resources = PopulateImGuiResources(
 			m_window,
 			m_instance,
-			m_swapchain->GetImageCount(),
-			m_renderPass->Get());
+			GetImageExtent(),
+			*m_swapchain);
 		m_imGui->Reset(resources);
 	}
 	commandBuffer.end();
@@ -105,34 +106,8 @@ void Renderer::Update()
 
 void Renderer::Render(vk::CommandBuffer commandBuffer, uint32_t imageIndex)
 {
-	auto& framebuffer = m_framebuffers[imageIndex];
-
 	m_renderScene->Render();
-
-	// Render ImGui to another secondary command buffer
-	m_imGui->RecordCommands(imageIndex, framebuffer.Get());
-
-	// Execute both secondary command buffers from the main command buffer
-	std::array<vk::ClearValue, 2> clearValues = {
-		vk::ClearColorValue(std::array<float, 4>{ 0.0f, 0.0f, 0.0f, 1.0f }),
-		vk::ClearDepthStencilValue(1.0f, 0.0f)
-	};
-	auto renderPassInfo = vk::RenderPassBeginInfo(
-		m_renderPass->Get(), framebuffer.Get(),
-		vk::Rect2D(vk::Offset2D(0, 0), framebuffer.GetExtent()),
-		static_cast<uint32_t>(clearValues.size()), clearValues.data()
-	);
-	commandBuffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eSecondaryCommandBuffers);
-	{
-		commandBuffer.executeCommands(m_renderScene->GetBasePassCommandBuffer());
-		commandBuffer.executeCommands(m_imGui->GetCommandBuffer(imageIndex));
-	}
-	commandBuffer.endRenderPass();
-}
-
-vk::RenderPass Renderer::GetRenderPass() const
-{
-	return m_renderPass->Get();
+	m_imGui->Render(commandBuffer, imageIndex, *m_swapchain);
 }
 
 vk::Extent2D Renderer::GetImageExtent() const
@@ -156,11 +131,6 @@ const Swapchain& Renderer::GetSwapchain() const
 	return *m_swapchain;
 }
 
-const Framebuffer& Renderer::GetFramebuffer() const
-{
-	return m_framebuffers[m_imageIndex];
-}
-
 uint32_t Renderer::GetImageIndex() const
 {
 	return m_imageIndex;
@@ -168,7 +138,12 @@ uint32_t Renderer::GetImageIndex() const
 
 uint32_t Renderer::GetImageCount() const
 {
-	return static_cast<uint32_t>(m_framebuffers.size());
+	return static_cast<uint32_t>(m_swapchain->GetImageCount());
+}
+
+RenderingInfo Renderer::GetRenderingInfo(std::optional<vk::ClearColorValue> clearColorValue, std::optional<vk::ClearDepthStencilValue> clearDepthValue) const
+{
+	return m_swapchain->GetRenderingInfo(m_imageIndex, clearColorValue, clearDepthValue);
 }
 
 gsl::not_null<GraphicsPipelineCache*> Renderer::GetGraphicsPipelineCache() const

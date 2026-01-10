@@ -3,6 +3,7 @@
 #include <RHI/Image.h>
 #include <RHI/Device.h>
 #include <RHI/PhysicalDevice.h>
+#include <RHI/Swapchain.h>
 #include <RHI/vk_utils.h>
 #include <hash.h>
 
@@ -43,7 +44,7 @@ namespace GraphicsPipelineHelpers
 
 		ASSERT(offset == buffer.size());
 
-		return fnv_hash(buffer.data(), buffer.size());
+		return fnv_hash_data(buffer.data(), buffer.size());
 	}
 
 	[[nodiscard]] uint64_t HashDescriptorSetLayoutBinding(uint32_t setIndex, const vk::DescriptorSetLayoutBinding& binding)
@@ -211,10 +212,19 @@ namespace GraphicsPipelineHelpers
 	}
 }
 
-GraphicsPipelineInfo::GraphicsPipelineInfo(vk::RenderPass renderPass, vk::Extent2D viewportExtent)
+GraphicsPipelineInfo::GraphicsPipelineInfo(vk::RenderPass renderPass, vk::Extent2D imageExtent)
 	: sampleCount(g_physicalDevice->GetMsaaSamples())
-	, viewportExtent(viewportExtent)
+	, viewportExtent(imageExtent)
 	, renderPass(renderPass)
+	, useDynamicRendering(false)
+{
+}
+
+GraphicsPipelineInfo::GraphicsPipelineInfo(PipelineRenderingCreateInfo renderingCreateInfo, vk::Extent2D imageExtent)
+	: sampleCount(g_physicalDevice->GetMsaaSamples())
+	, viewportExtent(imageExtent)
+	, renderingCreateInfo(std::move(renderingCreateInfo))
+	, useDynamicRendering(true)
 {
 }
 
@@ -258,11 +268,10 @@ void GraphicsPipelineCache::ResetGraphicsPipeline(
 		bindingDescription
 	);
 
-	vk::SpecializationInfo specializationInfo[2] = {};
-	vk::PipelineShaderStageCreateInfo shaderStages[] = {
-		m_shaderCache->GetShaderStageInfo(vertexShaderID, specializationInfo[0]),
-		m_shaderCache->GetShaderStageInfo(fragmentShaderID, specializationInfo[1])
-	};
+	vk::SpecializationInfo specializationInfo[2] = { vk::SpecializationInfo(), vk::SpecializationInfo() };
+	std::array<vk::PipelineShaderStageCreateInfo, 2> shaderStages;
+	shaderStages[0] = m_shaderCache->GetShaderStageInfo(vertexShaderID, specializationInfo[0]);
+	shaderStages[1] = m_shaderCache->GetShaderStageInfo(fragmentShaderID, specializationInfo[1]);
 
 	vk::PipelineInputAssemblyStateCreateInfo inputAssembly({}, info.primitiveTopology);
 
@@ -329,10 +338,11 @@ void GraphicsPipelineCache::ResetGraphicsPipeline(
 		{}, // back
 		0.0f, 1.0f // depthBounds (min, max)
 	);
+
 	vk::GraphicsPipelineCreateInfo graphicsPipelineCreateInfo(
 		vk::PipelineCreateFlags(),
-		2, // stageCount
-		shaderStages,
+		static_cast<uint32_t>(shaderStages.size()), // stageCount
+		shaderStages.data(),
 		&vertexInputInfo,
 		&inputAssembly,
 		nullptr, // tesselation
@@ -343,7 +353,11 @@ void GraphicsPipelineCache::ResetGraphicsPipeline(
 		&colorBlending,
 		nullptr, // dynamicState
 		m_pipelineLayouts.back(),
-		info.renderPass
+		info.useDynamicRendering ? vk::RenderPass() : info.renderPass,
+		{}, // basePipelineHandle
+		{}, // basePipelineIndex
+		{},
+		info.useDynamicRendering ? &info.renderingCreateInfo.Get() : nullptr
 	);
 
 	::ReserveIndex(id, m_pipelines);

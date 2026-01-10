@@ -4,11 +4,12 @@
 #include <Renderer/RenderCommandEncoder.h>
 #include <RHI/Device.h>
 #include <RHI/CommandRingBuffer.h>
-#include <RHI/RenderPass.h>
+#include <RHI/Swapchain.h>
 #include <AssetPath.h>
 
 #include <iostream>
 
+// todo (hbedard): expose this as a reusable cube
 const std::vector<float> vertices = {
 	// positions          
 	-1.0f,  1.0f, -1.0f,
@@ -55,8 +56,7 @@ const std::vector<float> vertices = {
 };
 
 Skybox::Skybox(
-	vk::RenderPass renderPass,
-	vk::Extent2D swapchainExtent,
+	const Swapchain& swapchain,
 	GraphicsPipelineCache& graphicsPipelineCache,
 	BindlessDescriptors& bindlessDescriptors,
 	BindlessDrawParams& bindlessDrawParams,
@@ -80,20 +80,20 @@ Skybox::Skybox(
 
 	// Create graphics pipeline
 	ShaderCache& shaderCache = m_graphicsPipelineCache->GetShaderCache();
-	ShaderID vertexShaderID = shaderCache.CreateShader(AssetPath("/Engine/Generated/Shaders/skybox_vert.spv").PathOnDisk(), "main");
-	ShaderID fragmentShaderID = shaderCache.CreateShader(AssetPath("/Engine/Generated/Shaders/skybox_frag.spv").PathOnDisk(), "main");
+	ShaderID vertexShaderID = shaderCache.CreateShader(AssetPath("/Engine/Generated/Shaders/skybox_vert.spv").GetPathOnDisk(), "main");
+	ShaderID fragmentShaderID = shaderCache.CreateShader(AssetPath("/Engine/Generated/Shaders/skybox_frag.spv").GetPathOnDisk(), "main");
 	m_vertexShader = shaderCache.CreateShaderInstance(vertexShaderID);
 	m_fragmentShader = shaderCache.CreateShaderInstance(fragmentShaderID);
-	GraphicsPipelineInfo info(renderPass, swapchainExtent);
+	GraphicsPipelineInfo info(swapchain.GetPipelineRenderingCreateInfo(), swapchain.GetImageExtent());
 	m_graphicsPipelineID = m_graphicsPipelineCache->CreateGraphicsPipeline(
 		m_vertexShader, m_fragmentShader, info
 	);
 	m_drawParamsHandle = m_bindlessDrawParams->DeclareParams<SkyboxDrawParams>();
 }
 
-void Skybox::Reset(vk::RenderPass renderPass, vk::Extent2D swapchainExtent)
+void Skybox::Reset(const Swapchain& swapchain)
 {
-	GraphicsPipelineInfo info(renderPass, swapchainExtent);
+	GraphicsPipelineInfo info(swapchain.GetPipelineRenderingCreateInfo(), swapchain.GetImageExtent());
 	m_graphicsPipelineCache->ResetGraphicsPipeline(m_graphicsPipelineID, info);
 }
 
@@ -123,18 +123,29 @@ void Skybox::UploadToGPU(CommandRingBuffer& commandRingBuffer)
 	}
 }
 
-void Skybox::Draw(RenderCommandEncoder& renderCommandEncoder)
+void Skybox::Render(RenderCommandEncoder& renderCommandEncoder)
 {
 	// Expects the unlit view descriptors to be bound
 	// Assumes owner already bound the graphics pipeline
 
 	vk::CommandBuffer commandBuffer = renderCommandEncoder.GetCommandBuffer();
 	renderCommandEncoder.BindDrawParams(m_drawParamsHandle);
-	renderCommandEncoder.BindPipeline(GetGraphicsPipelineID());
+	renderCommandEncoder.BindPipeline(m_graphicsPipelineID);
 
 	// Bind vertex buffer
 	vk::DeviceSize offsets[] = { 0 };
 	vk::Buffer vertexBuffers[] = { m_vertexBuffer->Get() };
 	commandBuffer.bindVertexBuffers(0, 1, vertexBuffers, offsets);
 	commandBuffer.draw(vertices.size() / 3, 1, 0, 0);
+}
+
+vk::Buffer Skybox::GetVertexBuffer() const
+{
+	assert(m_vertexBuffer != nullptr);
+	return m_vertexBuffer->Get();
+}
+
+uint32_t Skybox::GetVertexCount() const
+{
+	return vertices.size() / 3U;
 }

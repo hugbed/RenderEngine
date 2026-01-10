@@ -13,8 +13,7 @@ const AssetPath MaterialSystem::kVertexShader = AssetPath("/Engine/Generated/Sha
 const AssetPath MaterialSystem::kFragmentShader = AssetPath("/Engine/Generated/Shaders/surface_pbr_frag.spv");
 
 MaterialSystem::MaterialSystem(
-	vk::RenderPass renderPass,
-	vk::Extent2D swapchainExtent,
+	const Swapchain& swapchain,
 	GraphicsPipelineCache& graphicsPipelineCache,
 	BindlessDescriptors& bindlessDescriptors,
 	BindlessDrawParams& bindlessDrawParams,
@@ -22,8 +21,7 @@ MaterialSystem::MaterialSystem(
 	LightSystem& lightSystem,
 	ShadowSystem& shadowSystem
 )
-	: m_renderPass(renderPass)
-	, m_imageExtent(swapchainExtent)
+	: m_swapchain(&swapchain)
 	, m_graphicsPipelineCache(&graphicsPipelineCache)
 	, m_bindlessDescriptors(&bindlessDescriptors)
 	, m_bindlessDrawParams(&bindlessDrawParams)
@@ -35,15 +33,12 @@ MaterialSystem::MaterialSystem(
 	m_drawParamsHandle = m_bindlessDrawParams->DeclareParams<MaterialDrawParams>();
 }
 
-void MaterialSystem::Reset(vk::RenderPass renderPass, vk::Extent2D extent)
+void MaterialSystem::Reset(const Swapchain& swapchain)
 {
-	m_renderPass = renderPass;
-	m_imageExtent = extent;
-
+	GraphicsPipelineInfo info(swapchain.GetPipelineRenderingCreateInfo(), m_swapchain->GetImageExtent());
 	for (size_t i = 0; i < m_graphicsPipelineIDs.size(); ++i)
 	{
 		// Assume that each material uses a different pipeline
-		GraphicsPipelineInfo info(m_renderPass, m_imageExtent);
 		info.blendEnable = m_pipelineProperties[i].alphaMode == AlphaMode::eBlend;
 		m_graphicsPipelineCache->ResetGraphicsPipeline(
 			m_graphicsPipelineIDs[i], info
@@ -127,14 +122,14 @@ GraphicsPipelineID MaterialSystem::LoadGraphicsPipeline(const MaterialInstanceIn
 
 	ShaderCache& shaderCache = m_graphicsPipelineCache->GetShaderCache();
 
-	ShaderID vertexShaderID = shaderCache.CreateShader(kVertexShader.PathOnDisk());
-	ShaderID fragmentShaderID = shaderCache.CreateShader(kFragmentShader.PathOnDisk());
+	ShaderID vertexShaderID = shaderCache.CreateShader(kVertexShader.GetPathOnDisk());
+	ShaderID fragmentShaderID = shaderCache.CreateShader(kFragmentShader.GetPathOnDisk());
 
 	ShaderInstanceID vertexInstanceID = shaderCache.CreateShaderInstance(vertexShaderID);
 	ShaderInstanceID fragmentInstanceID = shaderCache.CreateShaderInstance(fragmentShaderID);
 
 	uint32_t pipelineIndex = m_graphicsPipelineIDs.size();
-	GraphicsPipelineInfo info(m_renderPass, m_imageExtent);
+	GraphicsPipelineInfo info(m_swapchain->GetPipelineRenderingCreateInfo(), m_swapchain->GetImageExtent());
 	info.blendEnable = materialInfo.pipelineProperties.alphaMode == AlphaMode::eBlend;
 	GraphicsPipelineID id = m_graphicsPipelineCache->CreateGraphicsPipeline(
 		vertexInstanceID, fragmentInstanceID, info

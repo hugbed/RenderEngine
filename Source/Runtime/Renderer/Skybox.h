@@ -13,13 +13,13 @@ class TextureCache;
 class CommandRingBuffer;
 class RenderPass;
 class RenderCommandEncoder;
+class Swapchain;
 
 class Skybox
 {
 public:
 	Skybox(
-		vk::RenderPass renderPass,
-		vk::Extent2D swapchainExtent,
+		const Swapchain& swapchain,
 		GraphicsPipelineCache& graphicsPipelineCache,
 		BindlessDescriptors& bindlessDescriptors,
 		BindlessDrawParams& bindlessDrawParams,
@@ -30,18 +30,14 @@ public:
 
 	void UploadToGPU(CommandRingBuffer& commandRingBuffer);
 
-	void Reset(vk::RenderPass renderPass, vk::Extent2D swapchainExtent);
+	void Reset(const Swapchain& swapchain);
 
-	void Draw(RenderCommandEncoder& renderCommandEncoder);
-
-	GraphicsPipelineID GetGraphicsPipelineID() const { return m_graphicsPipelineID; }
-
-	vk::PipelineLayout GetGraphicsPipelineLayout(uint8_t set) const
-	{
-		return m_graphicsPipelineCache->GetPipelineLayout(m_graphicsPipelineID, set);
-	}
+	void Render(RenderCommandEncoder& renderCommandEncoder);
 
 	TextureHandle GetTextureHandle() const { return m_drawParams.skyboxTexture; }
+
+	vk::Buffer GetVertexBuffer() const;
+	uint32_t GetVertexCount() const;
 
 private:
 	struct SkyboxDrawParams

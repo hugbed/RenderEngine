@@ -2,7 +2,6 @@
 
 #include <Renderer/ViewProperties.h>
 #include <Renderer/RenderCommandEncoder.h>
-#include <Renderer/TextureCache.h>
 
 #include <utility>
 
@@ -85,6 +84,7 @@ namespace
 	{
 		GraphicsPipelineInfo info(renderPass, extent);
 		info.sampleCount = vk::SampleCountFlagBits::e1;
+		info.useDynamicRendering = false; // todo (hbedard): until we remove the render pass
 
 		// Use front culling to prevent peter-panning
 		// note that this prevents from rendering shadows
@@ -320,8 +320,8 @@ void ShadowSystem::UploadToGPU(CommandRingBuffer& commandRingBuffer)
 void ShadowSystem::CreateGraphicsPipeline()
 {
 	ShaderCache& shaderCache = m_graphicsPipelineCache->GetShaderCache();
-	ShaderID vertexShaderID = shaderCache.CreateShader(kVertexShaderFile.PathOnDisk());
-	ShaderID fragmentShaderID = shaderCache.CreateShader(kFragmentShaderFile.PathOnDisk());
+	ShaderID vertexShaderID = shaderCache.CreateShader(kVertexShaderFile.GetPathOnDisk());
+	ShaderID fragmentShaderID = shaderCache.CreateShader(kFragmentShaderFile.GetPathOnDisk());
 	ShaderInstanceID vertexShaderInstanceID = shaderCache.CreateShaderInstance(vertexShaderID);
 	ShaderInstanceID fragmentShaderInstanceID = shaderCache.CreateShaderInstance(fragmentShaderID);
 	m_graphicsPipelineID = m_graphicsPipelineCache->CreateGraphicsPipeline(

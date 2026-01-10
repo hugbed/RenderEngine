@@ -3,6 +3,7 @@
 #include <Renderer/Renderer.h>
 #include <Renderer/Bindless.h>
 #include <RHI/CommandRingBuffer.h>
+#include <RHI/Swapchain.h>
 #include <RHI/constants.h>
 
 CameraViewSystem::CameraViewSystem(vk::Extent2D imageExtent)
@@ -46,8 +47,9 @@ void CameraViewSystem::Init(Renderer& renderer)
 	// todo (hbedard): somehwere notify other systems that this is set
 }
 
-void CameraViewSystem::Reset(vk::Extent2D newImageExtent)
+void CameraViewSystem::Reset(const Swapchain& swapchain)
 {
+	vk::Extent2D newImageExtent = swapchain.GetImageExtent();
 	m_camera.SetImageExtent(newImageExtent.width, newImageExtent.height);
 }
 

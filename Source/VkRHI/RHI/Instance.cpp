@@ -7,7 +7,7 @@ static char const* EngineName = "RenderEngine";
 
 Instance::Instance(const Window& window)
 {
-	vk::ApplicationInfo appInfo(AppName, 1, EngineName, 1, VK_API_VERSION_1_2);
+	vk::ApplicationInfo appInfo(AppName, 1, EngineName, 1, VK_API_VERSION_1_3);
 
 	auto extensions = GetRequiredExtensions(window);
 	auto layers = debug_utils::kValidationLayers;

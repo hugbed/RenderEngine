@@ -31,6 +31,8 @@ public:
 
 	const vk::ImageView& GetImageView() const { return m_imageView.get(); }
 
+	const vk::Format& GetFormat() const { return m_format; }
+
 	uint32_t GetMipLevels() const { return m_mipLevels; }
 
 	value_type Get() const { return m_image.Get(); }

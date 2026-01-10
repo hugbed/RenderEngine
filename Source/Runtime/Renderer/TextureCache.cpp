@@ -3,21 +3,54 @@
 #include <RHI/Texture.h>
 #include <RHI/CommandRingBuffer.h>
 #include <hash.h>
-#define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
 #include <algorithm>
 #include <iostream>
+#include <tinyexr.h>
+
+namespace TextureCache_Private
+{
+	struct TinyExrData
+	{
+		TinyExrData(const std::filesystem::path& filePath)
+		{
+			std::string filePathStr = filePath.string();
+			result = LoadEXR(&data, &width, &height, filePathStr.c_str(), &errorMessage);
+			if (result != TINYEXR_SUCCESS)
+			{
+				data = nullptr;
+				std::cerr << "could not load '" << filePathStr << "'" << std::endl;
+			}
+		}
+
+		~TinyExrData()
+		{
+			if (data != nullptr)
+			{
+				free(data);
+				data = nullptr;
+			}
+		}
+
+		const char* errorMessage = nullptr;
+		float* data = nullptr; // width * height * RGBA
+		int32_t width = 0;
+		int32_t height = 0;
+		int32_t result = 0;
+	};
+}
 
 TextureHandle TextureCache::LoadTexture(const AssetPath& assetPath)
 {
 	return CreateAndUploadTextureImage(assetPath);
 }
 
+// todo (hbedard): consider using the KTX format for textures
 TextureHandle TextureCache::CreateAndUploadTextureImage(const AssetPath& assetPath)
 {
 	// Check if we already loaded this texture
-	std::string filePathStr = assetPath.PathOnDisk().string();
+	std::string filePathStr = assetPath.GetPathOnDisk().string();
 	uint64_t fileHash = fnv_hash_data(reinterpret_cast<uint8_t*>(filePathStr.data()), filePathStr.size());
 	auto cachedTexture = m_fileHashToTextureHandle.find(fileHash);
 	if (cachedTexture != m_fileHashToTextureHandle.end()) {
@@ -44,7 +77,7 @@ TextureHandle TextureCache::CreateAndUploadTextureImage(const AssetPath& assetPa
 	uint32_t textureIndex = m_textures[imageViewTypeIndex].size();
 	m_textures[imageViewTypeIndex].push_back(
 		std::make_unique<Texture>(
-			texWidth, texHeight, 4UL * sizeof(stbi_us), // depth = 4
+			texWidth, texHeight, static_cast<uint32_t>(4UL * sizeof(stbi_us)),
 			vk::Format::eR16G16B16A16Unorm,
 			vk::ImageTiling::eOptimal,
 			vk::ImageUsageFlagBits::eTransferSrc |
@@ -64,6 +97,65 @@ TextureHandle TextureCache::CreateAndUploadTextureImage(const AssetPath& assetPa
 
 	memcpy(texture->GetStagingMappedData(), reinterpret_cast<const void*>(pixels), (size_t)texWidth* texHeight * 4 * sizeof(stbi_us));
 	stbi_image_free(pixels);
+
+	vk::Sampler sampler = CreateSampler(texture->GetMipLevels());
+	TextureHandle textureHandle = m_bindlessDescriptors->StoreTexture(texture->GetImageView(), std::move(sampler));
+	m_textureHandleToKey.emplace(textureHandle, key);
+	m_fileHashToTextureHandle.emplace(fileHash, textureHandle);
+	return textureHandle;
+}
+
+// todo (hbedard): there's a lot of copy paste with a standard 2D texture (it's just that it's a float that changes something
+TextureHandle TextureCache::LoadHdri(const AssetPath& exrPath)
+{
+	using namespace TextureCache_Private;
+
+	// Check if we already loaded this texture
+	std::string filePathStr = exrPath.GetPathOnDisk().string();
+	uint64_t fileHash = fnv_hash_data(reinterpret_cast<uint8_t*>(filePathStr.data()), filePathStr.size());
+	auto cachedTexture = m_fileHashToTextureHandle.find(fileHash);
+	if (cachedTexture != m_fileHashToTextureHandle.end()) {
+		assert(m_fileHashToFileName.at(fileHash) == filePathStr);
+		return cachedTexture->second;
+	}
+
+	// todo (hbedard): only in debug
+	assert(!m_fileHashToFileName.contains(fileHash));
+	m_fileHashToFileName[fileHash] = filePathStr;
+
+	TinyExrData exr(filePathStr);
+	if (exr.result != TINYEXR_SUCCESS)
+	{
+		return TextureHandle::Invalid;
+	}
+
+	uint32_t mipLevels = static_cast<uint32_t>(std::floor(std::log2((std::max)(exr.width, exr.height)))) + 1;
+
+	// Texture image
+	size_t imageViewTypeIndex = (size_t)ImageViewType::e2D;
+
+	uint32_t textureIndex = m_textures[imageViewTypeIndex].size();
+	m_textures[imageViewTypeIndex].push_back(
+		std::make_unique<Texture>(
+			exr.width, exr.height, static_cast<uint32_t>(4UL * sizeof(float)),
+			vk::Format::eR32G32B32A32Sfloat,
+			vk::ImageTiling::eOptimal,
+			vk::ImageUsageFlagBits::eTransferSrc |
+			vk::ImageUsageFlagBits::eTransferDst | // src and dst for mipmaps blit
+			vk::ImageUsageFlagBits::eSampled,
+			vk::ImageAspectFlagBits::eColor,
+			vk::ImageViewType::e2D,
+			mipLevels
+		)
+	);
+	TextureKey key = { ImageViewType::e2D, textureIndex };
+	auto& texture = m_textures[imageViewTypeIndex][textureIndex];
+	m_texturesToUpload.push_back(key);
+	m_mipLevels[imageViewTypeIndex].push_back(texture->GetMipLevels());
+	m_names[imageViewTypeIndex].push_back(filePathStr.data());
+	m_imageTypeCount[(size_t)ImageViewType::e2D]++;
+
+	memcpy(texture->GetStagingMappedData(), reinterpret_cast<const void*>(exr.data), (size_t)exr.width * exr.height * 4 * sizeof(float));
 
 	vk::Sampler sampler = CreateSampler(texture->GetMipLevels());
 	TextureHandle textureHandle = m_bindlessDescriptors->StoreTexture(texture->GetImageView(), std::move(sampler));
@@ -131,7 +223,7 @@ TextureHandle TextureCache::LoadCubeMapFaces(gsl::span<AssetPath> filePaths)
 	for (size_t i = 0; i < filePaths.size(); ++i)
 	{
 		const AssetPath& faceFilePath = filePaths[i];
-		const std::string faceFilePathStr = faceFilePath.PathOnDisk().string();
+		const std::string faceFilePathStr = faceFilePath.GetPathOnDisk().string();
 		int texWidth = 0, texHeight = 0, texChannels = 0;
 		stbi_us* pixels = stbi_load_16(faceFilePathStr.data(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
 		if (pixels == nullptr || texWidth == 0 || texHeight == 0 || texChannels == 0)
@@ -162,7 +254,7 @@ TextureHandle TextureCache::LoadCubeMapFaces(gsl::span<AssetPath> filePaths)
 	uint32_t textureIndex = m_textures[samplerTypeIndex].size();
 	m_textures[samplerTypeIndex].push_back(
 		std::make_unique<Texture>(
-			width, height, 4UL * sizeof(stbi_us),
+			width, height, static_cast<uint32_t>(4UL * sizeof(stbi_us)),
 			vk::Format::eR16G16B16A16Unorm,
 			vk::ImageTiling::eOptimal,
 			vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,

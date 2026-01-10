@@ -24,7 +24,7 @@ namespace
 	{
 		auto mode = std::find_if(availablePresentModes.begin(), availablePresentModes.end(), [](const auto& mode) {
 			return mode == vk::PresentModeKHR::eMailbox;
-			});
+		});
 		return mode != availablePresentModes.end() ? *mode : vk::PresentModeKHR::eFifo;
 	}
 
@@ -123,6 +123,56 @@ Swapchain::Swapchain(vk::SurfaceKHR surface, vk::Extent2D desiredExtent)
 	);
 }
 
+void Swapchain::TransitionImageForRendering(vk::CommandBuffer commandBuffer, uint32_t imageIndex) const
+{
+	vk::ImageMemoryBarrier2 startRenderingBarrier;
+	startRenderingBarrier.srcStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput;
+	startRenderingBarrier.srcAccessMask = vk::AccessFlagBits2::eNone;
+	startRenderingBarrier.dstStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput;
+	startRenderingBarrier.dstAccessMask = vk::AccessFlagBits2::eColorAttachmentRead | vk::AccessFlagBits2::eColorAttachmentWrite;
+	startRenderingBarrier.oldLayout = vk::ImageLayout::eUndefined;
+	startRenderingBarrier.newLayout = vk::ImageLayout::eAttachmentOptimal;
+	startRenderingBarrier.image = GetImage(imageIndex);
+	startRenderingBarrier.setSubresourceRange(vk::ImageSubresourceRange(
+		vk::ImageAspectFlagBits::eColor,
+		0, // baseMipLevel
+		1, // levelCount
+		0, // baseArrayLayer
+		1 // layerCount
+	));
+
+	vk::DependencyInfo presentBarrierDependencyInfo;
+	presentBarrierDependencyInfo.imageMemoryBarrierCount = 1;
+	presentBarrierDependencyInfo.pImageMemoryBarriers = &startRenderingBarrier;
+
+	commandBuffer.pipelineBarrier2(presentBarrierDependencyInfo);
+}
+
+void Swapchain::TransitionImageForPresentation(vk::CommandBuffer commandBuffer, uint32_t imageIndex) const
+{
+	vk::ImageMemoryBarrier2 presentBarrier;
+	presentBarrier.srcStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput;
+	presentBarrier.srcAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite;
+	presentBarrier.dstStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput;
+	presentBarrier.dstAccessMask = vk::AccessFlagBits2::eNone;
+	presentBarrier.oldLayout = vk::ImageLayout::eAttachmentOptimal;
+	presentBarrier.newLayout = vk::ImageLayout::ePresentSrcKHR;
+	presentBarrier.image = GetImage(imageIndex);
+	presentBarrier.setSubresourceRange(vk::ImageSubresourceRange(
+		vk::ImageAspectFlagBits::eColor,
+		0, // baseMipLevel
+		1, // levelCount
+		0, // baseArrayLayer
+		1 // layerCount
+	));
+
+	vk::DependencyInfo presentBarrierDependencyInfo;
+	presentBarrierDependencyInfo.imageMemoryBarrierCount = 1;
+	presentBarrierDependencyInfo.pImageMemoryBarriers = &presentBarrier;
+
+	commandBuffer.pipelineBarrier2(presentBarrierDependencyInfo);
+}
+
 void Swapchain::CreateImageViews()
 {
 	m_imageViews.clear();
@@ -145,4 +195,53 @@ void Swapchain::CreateImageViews()
 		);
 		m_imageViews.push_back(g_device->Get().createImageViewUnique(createInfo));
 	}
+}
+
+RenderingInfo Swapchain::GetRenderingInfo(
+	uint32_t imageIndex,
+	std::optional<vk::ClearColorValue> clearColorValue,
+	std::optional<vk::ClearDepthStencilValue> clearDepthStencilValue) const
+{
+	RenderingInfo renderingInfo;
+
+	vk::RenderingAttachmentInfo& colorAttachment = renderingInfo.colorAttachment;
+	colorAttachment.imageView = m_colorImage->GetImageView();
+	colorAttachment.imageLayout = vk::ImageLayout::eAttachmentOptimal;
+	colorAttachment.loadOp = clearColorValue.has_value() ? vk::AttachmentLoadOp::eClear : vk::AttachmentLoadOp::eLoad;
+	colorAttachment.storeOp = vk::AttachmentStoreOp::eStore;
+	colorAttachment.resolveMode = vk::ResolveModeFlagBits::eAverage;
+	colorAttachment.resolveImageLayout = vk::ImageLayout::eAttachmentOptimal;
+	colorAttachment.resolveImageView = GetImageView(imageIndex);
+	if (clearColorValue)
+	{
+		colorAttachment.clearValue = *clearColorValue;
+	}
+
+	vk::RenderingAttachmentInfo& depthAttachment = renderingInfo.depthAttachment;
+	depthAttachment.imageView = m_depthImage->GetImageView();
+	depthAttachment.imageLayout = vk::ImageLayout::eAttachmentOptimal;
+	depthAttachment.loadOp = clearDepthStencilValue.has_value() ? vk::AttachmentLoadOp::eClear : vk::AttachmentLoadOp::eLoad;
+	depthAttachment.storeOp = vk::AttachmentStoreOp::eStore;
+	if (clearDepthStencilValue)
+	{
+		depthAttachment.clearValue = *clearDepthStencilValue;
+	}
+
+	renderingInfo.info.renderArea.extent = vk::Extent2D(m_imageDescription.extent.width, m_imageDescription.extent.height);
+	renderingInfo.info.colorAttachmentCount = 1;
+	renderingInfo.info.pColorAttachments = &renderingInfo.colorAttachment;
+	renderingInfo.info.pDepthAttachment = &renderingInfo.depthAttachment;
+	renderingInfo.info.layerCount = 1;
+
+	return renderingInfo;
+}
+
+PipelineRenderingCreateInfo Swapchain::GetPipelineRenderingCreateInfo() const
+{
+	PipelineRenderingCreateInfo createInfo;
+	createInfo.colorAttachmentFormats = { GetColorAttachmentFormat() };
+	createInfo.info.colorAttachmentCount = createInfo.colorAttachmentFormats.size();
+	createInfo.info.pColorAttachmentFormats = createInfo.colorAttachmentFormats.data();
+	createInfo.info.depthAttachmentFormat = GetDepthAttachmentFormat();
+	return createInfo;
 }

@@ -19,8 +19,8 @@ TexturedQuad::TexturedQuad(
 	, m_bindlessDrawParams(&bindlessDrawParams)
 {
 	ShaderCache& shaderCache = m_graphicsPipelineCache->GetShaderCache();
-	ShaderID vertexShaderID = shaderCache.CreateShader(AssetPath("/Engine/Generated/Shaders/textured_quad_vert.spv").PathOnDisk(), "main");
-	ShaderID fragmentShaderID = shaderCache.CreateShader(AssetPath("/Engine/Generated/Shaders/textured_quad_frag.spv").PathOnDisk(), "main");
+	ShaderID vertexShaderID = shaderCache.CreateShader(AssetPath("/Engine/Generated/Shaders/textured_quad_vert.spv").GetPathOnDisk(), "main");
+	ShaderID fragmentShaderID = shaderCache.CreateShader(AssetPath("/Engine/Generated/Shaders/textured_quad_frag.spv").GetPathOnDisk(), "main");
 
 	m_vertexShader = shaderCache.CreateShaderInstance(vertexShaderID);
 

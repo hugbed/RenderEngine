@@ -24,6 +24,7 @@ class SceneTree;
 class ShadowSystem;
 class RenderCommandEncoder;
 class LightSystem;
+class Swapchain;
 
 // todo: find better naming for those structures
 
@@ -77,10 +78,9 @@ public:
 	static const AssetPath kVertexShader;
 	static const AssetPath kFragmentShader;
 
-	// todo (hbedard): actually just pass the renderer
+	// todo (hbedard): actually just pass the render scene
 	MaterialSystem(
-		vk::RenderPass renderPass,
-		vk::Extent2D swapchainExtent,
+		const Swapchain& swapchain,
 		GraphicsPipelineCache& graphicsPipelineCache,
 		BindlessDescriptors& bindlessDescriptors,
 		BindlessDrawParams& bindlessDrawParams,
@@ -91,7 +91,7 @@ public:
 
 	IMPLEMENT_MOVABLE_ONLY(MaterialSystem)
 
-	void Reset(vk::RenderPass renderPass, vk::Extent2D extent);
+	void Reset(const Swapchain& swapchain);
 	
 	void Draw(RenderCommandEncoder& renderCommandEncoder, gsl::span<const MeshDrawInfo> drawCalls) const;
 
@@ -141,9 +141,7 @@ private:
 	void CreatePendingInstances();
 	void CreateAndUploadStorageBuffer(CommandRingBuffer& commandRingBuffer);
 
-	vk::RenderPass m_renderPass; // light/color pass, there could be others
-	vk::Extent2D m_imageExtent;
-
+	gsl::not_null<const Swapchain*> m_swapchain;
 	gsl::not_null<GraphicsPipelineCache*> m_graphicsPipelineCache;
 	gsl::not_null<SceneTree*> m_sceneTree;
 	gsl::not_null<LightSystem*> m_lightSystem;

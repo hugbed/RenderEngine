@@ -13,12 +13,12 @@
 
 class CommandRingBuffer;
 class RenderCommandEncoder;
+class Swapchain;
 
 class Grid
 {
 public:
-	Grid(vk::RenderPass renderPass,
-		vk::Extent2D swapchainExtent,
+	Grid(const Swapchain& swapchain,
 		GraphicsPipelineCache& graphicsPipelineCache,
 		BindlessDrawParams& bindlessDrawParams);
 
@@ -28,7 +28,7 @@ public:
 
 	void Draw(RenderCommandEncoder& renderCommandEncoder);
 
-	void Reset(vk::RenderPass renderPass, vk::Extent2D swapchainExtent);
+	void Reset(const Swapchain& swapchain);
 
 private:
 	struct GridDrawParams

@@ -299,7 +299,7 @@ ShaderID ShaderCache::CreateShader(const std::filesystem::path& filePath)
 ShaderID ShaderCache::CreateShader(const std::filesystem::path& filePath, std::string entryPoint)
 {
 	std::string filePathStr = filePath.string();
-	uint64_t filenameID = fnv_hash(reinterpret_cast<const uint8_t*>(filePathStr.c_str()), filePathStr.size());
+	uint64_t filenameID = fnv_hash_data(reinterpret_cast<const uint8_t*>(filePathStr.c_str()), filePathStr.size());
 	auto shaderIt = m_filenameHashToShaderID.find(filenameID);
 	if (shaderIt != m_filenameHashToShaderID.end())
 		return shaderIt->second;
@@ -349,7 +349,7 @@ vk::PipelineShaderStageCreateInfo ShaderCache::GetShaderStageInfo(ShaderInstance
 {
 	ShaderID shaderID = m_instanceIDToShaderID[id];
 	const SmallVector<vk::SpecializationMapEntry>& specializationEntries = m_specializationEntries[id];
-	const ShaderReflection& reflection = *m_reflections[shaderID];
+	gsl::not_null<ShaderReflection*> reflection = m_reflections[shaderID].get();
 
 	size_t dataSize = ::GetSpecializationEntriesTotalSize(specializationEntries);
 
@@ -361,7 +361,7 @@ vk::PipelineShaderStageCreateInfo ShaderCache::GetShaderStageInfo(ShaderInstance
 
 	return vk::PipelineShaderStageCreateInfo(
 		vk::PipelineShaderStageCreateFlags(),
-		spirv_vk::execution_model_to_shader_stage(reflection.comp.get_execution_model()),
+		spirv_vk::execution_model_to_shader_stage(reflection->comp.get_execution_model()),
 		m_modules[shaderID].get(),
 		m_entryPoints[shaderID].c_str(),
 		&specializationInfo

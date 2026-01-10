@@ -123,6 +123,18 @@ public:
 		}
 	}
 
+	void BindPushConstant(uint32_t index, uint32_t value)
+	{
+		vk::PipelineLayout pipelineLayout = m_graphicsPipelineCache->GetPipelineLayout(m_pipelineID, 0);
+
+		// Set material index push constant
+		m_commandBuffer->pushConstants(
+			pipelineLayout,
+			vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+			index * sizeof(uint32_t), sizeof(uint32_t), &value
+		);
+	}
+
 private:
 	gsl::not_null<GraphicsPipelineCache*> m_graphicsPipelineCache;
 	gsl::not_null<const BindlessDrawParams*> m_bindlessDrawParams;

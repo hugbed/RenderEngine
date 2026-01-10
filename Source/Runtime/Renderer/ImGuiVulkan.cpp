@@ -1,8 +1,9 @@
 #include <Renderer/ImGuiVulkan.h>
 
 #include <RHI/PhysicalDevice.h>
+#include <RHI/Swapchain.h>
 
-namespace
+namespace ImGuiVulkan_Private
 {
 	static void CheckVkResult(VkResult result)
 	{
@@ -12,7 +13,6 @@ namespace
 
 ImGuiVulkan::ImGuiVulkan(const Resources& resources)
 	: m_device(resources.device)
-	, m_renderPass(resources.renderPass)
 {
 	Init(resources);
 }
@@ -24,6 +24,8 @@ ImGuiVulkan::~ImGuiVulkan()
 
 void ImGuiVulkan::Init(const Resources& resources)
 {
+	using namespace ImGuiVulkan_Private;
+
 	// Create a descriptor pool specifically for IMGUI
 	VkDescriptorPoolSize poolSizes[] =
 	{
@@ -62,6 +64,7 @@ void ImGuiVulkan::Init(const Resources& resources)
 
 	// Setup Platform/Renderer backends
 	ImGui_ImplGlfw_InitForVulkan(resources.window, true);
+
 	ImGui_ImplVulkan_InitInfo init_info = {};
 	init_info.Instance = resources.instance;
 	init_info.PhysicalDevice = resources.physicalDevice;
@@ -73,27 +76,15 @@ void ImGuiVulkan::Init(const Resources& resources)
 	init_info.Allocator = nullptr;
 	init_info.MinImageCount = 2;
 	init_info.ImageCount = resources.imageCount;
-	init_info.CheckVkResultFn = &::CheckVkResult;
-	init_info.PipelineInfoMain.RenderPass = m_renderPass;
+	init_info.CheckVkResultFn = &CheckVkResult;
 	init_info.PipelineInfoMain.MSAASamples = (VkSampleCountFlagBits)resources.MSAASamples;
+	init_info.PipelineInfoMain.PipelineRenderingCreateInfo = resources.pipelineRenderingCreateInfo;
+	init_info.UseDynamicRendering = true;
 	if (!ImGui_ImplVulkan_Init(&init_info))
 	{
 		vkDestroyDescriptorPool(m_device, m_imguiDescriptorPool, nullptr);
 		assert(false && "Could not initialize imgui");
 		return;
-	}
-
-	// Create secondary command buffers
-	{
-		m_imguiCommandBuffers.clear();
-
-		m_secondaryCommandPool = g_device->Get().createCommandPoolUnique(vk::CommandPoolCreateInfo(
-			vk::CommandPoolCreateFlagBits::eResetCommandBuffer, g_physicalDevice->GetQueueFamilies().graphicsFamily.value()
-		));
-
-		m_imguiCommandBuffers = g_device->Get().allocateCommandBuffersUnique(vk::CommandBufferAllocateInfo(
-			m_secondaryCommandPool.get(), vk::CommandBufferLevel::eSecondary, resources.imageCount
-		));
 	}
 }
 
@@ -103,9 +94,6 @@ void ImGuiVulkan::Shutdown()
 	ImGui_ImplGlfw_Shutdown();
 	ImGui::DestroyContext();
 
-	m_imguiCommandBuffers.clear();
-	m_secondaryCommandPool.reset();
-
 	if (m_imguiDescriptorPool != VK_NULL_HANDLE)
 		vkDestroyDescriptorPool(m_device, m_imguiDescriptorPool, nullptr);
 }
@@ -113,7 +101,6 @@ void ImGuiVulkan::Shutdown()
 void ImGuiVulkan::Reset(const Resources& resources)
 {
 	m_device = resources.device;
-	m_renderPass = resources.renderPass;
 
 	Shutdown();
 	Init(resources);
@@ -126,20 +113,17 @@ void ImGuiVulkan::BeginFrame()
 	ImGui::NewFrame();
 }
 
-void ImGuiVulkan::RecordCommands(uint32_t frameIndex, VkFramebuffer framebuffer)
+void ImGuiVulkan::Render(vk::CommandBuffer commandBuffer, uint32_t imageIndex, const Swapchain& swapchain)
 {
-	auto& commandBuffer = m_imguiCommandBuffers[frameIndex];
-	vk::CommandBufferInheritanceInfo info(
-		m_renderPass, 0, framebuffer
-	);
-	commandBuffer->begin({ vk::CommandBufferUsageFlagBits::eRenderPassContinue, &info });
+	RenderingInfo renderingInfo = swapchain.GetRenderingInfo(imageIndex, {}, {});
+	commandBuffer.beginRendering(&renderingInfo.info);
 	{
 		if (ImDrawData* drawData = ImGui::GetDrawData())
 		{
-			ImGui_ImplVulkan_RenderDrawData(drawData, *commandBuffer);
+			ImGui_ImplVulkan_RenderDrawData(drawData, commandBuffer);
 		}
 	}
-	commandBuffer->end();
+	commandBuffer.endRendering();
 }
 
 void ImGuiVulkan::EndFrame()

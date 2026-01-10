@@ -70,3 +70,9 @@ set(ASSIMP_LIBRAIRIES assimp PARENT_SCOPE)
 
 # tomlplusplus
 set(TOML_PLUS_PLUS_INCLUDE_DIRS ${PROJECT_SOURCE_DIR}/tomlplusplus/include PARENT_SCOPE)
+
+# tinyexr
+set(TINYEXR_INCLUDE_DIRS
+    ${PROJECT_SOURCE_DIR}/tinyexr
+    ${PROJECT_SOURCE_DIR}/tinyexr/deps/miniz
+        PARENT_SCOPE)

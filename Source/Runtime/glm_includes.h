@@ -11,3 +11,14 @@
 #include <glm/gtx/hash.hpp>
 #include <glm/gtx/norm.hpp>
 #include <glm/gtx/type_aligned.hpp>
+
+namespace glm_vk
+{
+    // OpenGL -> Vulkan invert y, half z
+    const glm::mat4 kClip = glm::mat4(
+        1.0f, 0.0f, 0.0f, 0.0f,
+        0.0f, -1.0f, 0.0f, 0.0f,
+        0.0f, 0.0f, 0.5f, 0.0f,
+        0.0f, 0.0f, 0.5f, 1.0f
+    );
+}

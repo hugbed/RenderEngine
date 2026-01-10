@@ -14,12 +14,12 @@
 struct Vertex
 {
 	glm::vec3 pos;
-	glm::vec2 texCoord;
 	glm::vec3 normal;
+	glm::vec2 uv;
 
 	bool operator==(const Vertex& other) const
 	{
-		return pos == other.pos && texCoord == other.texCoord && normal == other.normal;
+		return pos == other.pos && uv == other.uv && normal == other.normal;
 	}
 };
 

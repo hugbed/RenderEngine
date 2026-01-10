@@ -3,6 +3,7 @@
 #include <Renderer/CameraViewSystem.h>
 #include <Renderer/Bindless.h>
 #include <Renderer/Grid.h>
+#include <Renderer/ImageBasedLightSystem.h>
 #include <Renderer/LightSystem.h>
 #include <Renderer/MeshAllocator.h>
 #include <Renderer/Renderer.h>
@@ -33,8 +34,7 @@ RenderScene::RenderScene(Renderer& renderer)
 	, m_cameraViewSystem(std::make_unique<CameraViewSystem>(
 		m_renderer->GetImageExtent()))
 	, m_materialSystem(std::make_unique<MaterialSystem>(
-		m_renderer->GetRenderPass(),
-		m_renderer->GetImageExtent(),
+		m_renderer->GetSwapchain(),
 		*m_renderer->GetGraphicsPipelineCache(),
 		*m_renderer->GetBindlessDescriptors(),
 		*m_renderer->GetBindlessDrawParams(),
@@ -42,13 +42,18 @@ RenderScene::RenderScene(Renderer& renderer)
 		*m_lightSystem,
 		*m_shadowSystem))
 	, m_grid(std::make_unique<Grid>(
-		m_renderer->GetRenderPass(),
-		m_renderer->GetImageExtent(),
+		m_renderer->GetSwapchain(),
 		*m_renderer->GetGraphicsPipelineCache(),
 		*m_renderer->GetBindlessDrawParams()))
 	, m_skybox(std::make_unique<Skybox>(
-		m_renderer->GetRenderPass(),
-		m_renderer->GetImageExtent(),
+		m_renderer->GetSwapchain(),
+		*m_renderer->GetGraphicsPipelineCache(),
+		*m_renderer->GetBindlessDescriptors(),
+		*m_renderer->GetBindlessDrawParams(),
+		*m_renderer->GetTextureCache()))
+	, m_iblSystem(std::make_unique<ImageBasedLightSystem>(
+		m_renderer->GetSwapchain(),
+		*this,
 		*m_renderer->GetGraphicsPipelineCache(),
 		*m_renderer->GetBindlessDescriptors(),
 		*m_renderer->GetBindlessDrawParams(),
@@ -58,21 +63,15 @@ RenderScene::RenderScene(Renderer& renderer)
 
 RenderScene::~RenderScene() = default;
 
-
-vk::CommandBuffer RenderScene::GetBasePassCommandBuffer() const
-{
-	return m_basePassCommandBuffers[m_renderer->GetImageIndex()].get();
-}
-
 void RenderScene::Init()
 {
-	CreateBasePassCommandBuffers();
-
 	m_cameraViewSystem->Init(*m_renderer);
 
 	m_materialSystem->SetViewBufferHandles(m_cameraViewSystem->GetViewBufferHandles());
 	m_grid->SetViewBufferHandles(m_cameraViewSystem->GetViewBufferHandles());
 	m_skybox->SetViewBufferHandles(m_cameraViewSystem->GetViewBufferHandles());
+	
+	m_iblSystem->Init();
 
 	PopulateMeshDrawCalls();
 	SortOpaqueMeshes();
@@ -81,39 +80,26 @@ void RenderScene::Init()
 
 void RenderScene::Reset()
 {
-	vk::Extent2D newExtent = m_renderer->GetImageExtent();
-	vk::RenderPass newRenderPass = m_renderer->GetRenderPass();
-	m_cameraViewSystem->Reset(newExtent);
-	//m_phongMaterialSystem->Reset(newRenderPass, newExtent);
-	m_materialSystem->Reset(newRenderPass, newExtent);
-	m_grid->Reset(newRenderPass, newExtent);
-	m_skybox->Reset(newRenderPass, newExtent);
-
-	CreateBasePassCommandBuffers();
+	const Swapchain& swapchain = m_renderer->GetSwapchain();
+	m_cameraViewSystem->Reset(swapchain);
+	m_materialSystem->Reset(swapchain);
+	m_grid->Reset(swapchain);
+	m_skybox->Reset(swapchain);
+	m_iblSystem->Reset(swapchain);
 }
 
 void RenderScene::UploadToGPU()
 {
-	m_sceneTree->UploadToGPU(m_renderer->GetCommandRingBuffer());
-	m_meshAllocator->UploadToGPU(m_renderer->GetCommandRingBuffer());
-	m_lightSystem->UploadToGPU(m_renderer->GetCommandRingBuffer());
-	m_shadowSystem->UploadToGPU(m_renderer->GetCommandRingBuffer());
-	m_cameraViewSystem->UploadToGPU(m_renderer->GetCommandRingBuffer());
-	m_materialSystem->UploadToGPU(m_renderer->GetCommandRingBuffer());
-	m_grid->UploadToGPU(m_renderer->GetCommandRingBuffer());
-	m_skybox->UploadToGPU(m_renderer->GetCommandRingBuffer());
-}
-
-void RenderScene::CreateBasePassCommandBuffers()
-{
-	m_basePassCommandBuffers.clear();
-	m_commandPool.reset();
-	m_commandPool = g_device->Get().createCommandPoolUnique(vk::CommandPoolCreateInfo(
-		vk::CommandPoolCreateFlagBits::eResetCommandBuffer, g_physicalDevice->GetQueueFamilies().graphicsFamily.value()
-	));
-	m_basePassCommandBuffers = g_device->Get().allocateCommandBuffersUnique(vk::CommandBufferAllocateInfo(
-		m_commandPool.get(), vk::CommandBufferLevel::eSecondary, m_renderer->GetImageCount()
-	));
+	CommandRingBuffer& commandRingBuffer = m_renderer->GetCommandRingBuffer();
+	m_sceneTree->UploadToGPU(commandRingBuffer);
+	m_meshAllocator->UploadToGPU(commandRingBuffer);
+	m_lightSystem->UploadToGPU(commandRingBuffer);
+	m_shadowSystem->UploadToGPU(commandRingBuffer);
+	m_cameraViewSystem->UploadToGPU(commandRingBuffer);
+	m_materialSystem->UploadToGPU(commandRingBuffer);
+	m_grid->UploadToGPU(commandRingBuffer);
+	m_skybox->UploadToGPU(commandRingBuffer);
+	m_iblSystem->UploadToGPU(commandRingBuffer);
 }
 
 void RenderScene::PopulateMeshDrawCalls()
@@ -220,7 +206,6 @@ void RenderScene::RenderShadowDepthPass() const
 	gsl::not_null<GraphicsPipelineCache*> graphicsPipelineCache = m_renderer->GetGraphicsPipelineCache();
 	gsl::not_null<BindlessDescriptors*> bindlessDescriptors = m_renderer->GetBindlessDescriptors();
 	gsl::not_null<BindlessDrawParams*> bindlessDrawParams = m_renderer->GetBindlessDrawParams();
-	vk::RenderPass renderPass = m_renderer->GetRenderPass();
 	uint32_t imageIndex = m_renderer->GetImageIndex();
 	uint32_t frameIndex = m_renderer->GetFrameIndex();
 
@@ -237,25 +222,24 @@ void RenderScene::RenderBasePass() const
 	gsl::not_null<GraphicsPipelineCache*> graphicsPipelineCache = m_renderer->GetGraphicsPipelineCache();
 	gsl::not_null<BindlessDescriptors*> bindlessDescriptors = m_renderer->GetBindlessDescriptors();
 	gsl::not_null<BindlessDrawParams*> bindlessDrawParams = m_renderer->GetBindlessDrawParams();
-	vk::CommandBuffer mainCommandBuffer = m_renderer->GetCommandRingBuffer().GetCommandBuffer();
-	vk::RenderPass renderPass = m_renderer->GetRenderPass();
-	uint32_t imageIndex = m_renderer->GetImageIndex();
-	uint32_t frameIndex = m_renderer->GetFrameIndex();
+	vk::CommandBuffer commandBuffer = m_renderer->GetCommandRingBuffer().GetCommandBuffer();
 
-	// Base pass (into a secondary command buffer // todo (hbedard): why?
-	vk::CommandBuffer basePassCommandBuffer = m_basePassCommandBuffers[imageIndex].get();
-	vk::CommandBufferInheritanceInfo info(renderPass, 0, m_renderer->GetFramebuffer().Get());
-	basePassCommandBuffer.begin({ vk::CommandBufferUsageFlagBits::eRenderPassContinue, &info });
+	RenderingInfo renderingInfo = m_renderer->GetRenderingInfo(
+		vk::ClearColorValue(std::array<float, 4>{ 0.0f, 0.0f, 0.0f, 1.0f }),
+		vk::ClearDepthStencilValue(1.0f, 0.0f)
+	);
+	commandBuffer.beginRendering(renderingInfo.info);
 	{
 		RenderCommandEncoder renderCommandEncoder(*graphicsPipelineCache, *m_materialSystem, *bindlessDrawParams);
-		renderCommandEncoder.BeginRender(basePassCommandBuffer, m_renderer->GetFrameIndex());
+		renderCommandEncoder.BeginRender(commandBuffer, m_renderer->GetFrameIndex());
 		renderCommandEncoder.BindBindlessDescriptorSet(bindlessDescriptors->GetPipelineLayout(), bindlessDescriptors->GetDescriptorSet());
 		RenderBasePassMeshes(renderCommandEncoder, m_opaqueMeshes);
 		RenderBasePassMeshes(renderCommandEncoder, m_translucentMeshes);
-		m_skybox->Draw(renderCommandEncoder);
+		m_skybox->Render(renderCommandEncoder);
+		m_iblSystem->Render(renderCommandEncoder); // todo (hbedard): this needs another pass
 		renderCommandEncoder.EndRender();
 	}
-	basePassCommandBuffer.end();
+	commandBuffer.endRendering();
 }
 
 void RenderScene::RenderBasePassMeshes(RenderCommandEncoder& renderCommandEncoder, const std::vector<MeshDrawInfo>& drawCalls) const

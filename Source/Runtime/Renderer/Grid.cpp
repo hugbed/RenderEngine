@@ -2,20 +2,20 @@
 
 #include <Renderer/RenderCommandEncoder.h>
 #include <RHI/CommandRingBuffer.h>
+#include <RHI/Swapchain.h>
 
-Grid::Grid(vk::RenderPass renderPass,
-	vk::Extent2D swapchainExtent,
+Grid::Grid(const Swapchain& swapchain,
 	GraphicsPipelineCache& graphicsPipelineCache,
 	BindlessDrawParams& bindlessDrawParams)
 	: m_graphicsPipelineCache(&graphicsPipelineCache)
 	, m_bindlessDrawParams(&bindlessDrawParams)
 {
 	ShaderCache& shaderCache = m_graphicsPipelineCache->GetShaderCache();
-	ShaderID vertexShaderID = shaderCache.CreateShader(AssetPath("/Engine/Generated/Shaders/grid_vert.spv").PathOnDisk(), "main");
-	ShaderID fragmentShaderID = shaderCache.CreateShader(AssetPath("/Engine/Generated/Shaders/grid_frag.spv").PathOnDisk(), "main");
+	ShaderID vertexShaderID = shaderCache.CreateShader(AssetPath("/Engine/Generated/Shaders/grid_vert.spv").GetPathOnDisk(), "main");
+	ShaderID fragmentShaderID = shaderCache.CreateShader(AssetPath("/Engine/Generated/Shaders/grid_frag.spv").GetPathOnDisk(), "main");
 	vertexShader = shaderCache.CreateShaderInstance(vertexShaderID);
 	fragmentShader = shaderCache.CreateShaderInstance(fragmentShaderID);
-	Reset(renderPass, swapchainExtent);
+	Reset(swapchain);
 
 	m_drawParamsHandle = m_bindlessDrawParams->DeclareParams<GridDrawParams>();
 }
@@ -46,9 +46,9 @@ void Grid::Draw(RenderCommandEncoder& renderCommandEncoder)
 	commandBuffer.draw(6, 1, 0, 0);
 }
 
-void Grid::Reset(vk::RenderPass renderPass, vk::Extent2D swapchainExtent)
+void Grid::Reset(const Swapchain& swapchain)
 {
-	GraphicsPipelineInfo info(renderPass, swapchainExtent);
+	GraphicsPipelineInfo info(swapchain.GetPipelineRenderingCreateInfo(), swapchain.GetImageExtent());
 	info.blendEnable = true;
 	info.depthWriteEnable = true;
 	pipelineID = m_graphicsPipelineCache->CreateGraphicsPipeline(

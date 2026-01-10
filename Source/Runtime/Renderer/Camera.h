@@ -109,15 +109,7 @@ private:
 
 	void UpdateProjectionMatrix()
 	{
-		// OpenGL -> Vulkan invert y, half z
-		auto clip = glm::mat4(
-			1.0f, 0.0f, 0.0f, 0.0f,
-			0.0f, -1.0f, 0.0f, 0.0f,
-			0.0f, 0.0f, 0.5f, 0.0f,
-			0.0f, 0.0f, 0.5f, 1.0f
-		);
-
-		m_projMatrix = clip * glm::perspective(
+		m_projMatrix = glm_vk::kClip * glm::perspective(
 			glm::radians(GetFieldOfView()),
 			m_imageWidth / (float)m_imageHeight,
 			GetNearPlane(), GetFarPlane()

@@ -2,7 +2,8 @@
 
 #include <RHI/ShaderCache.h>
 #include <RHI/Buffers.h>
-#include "SmallVector.h"
+#include <RHI/SmallVector.h>
+#include <RHI/vk_structs.h>
 #include <gsl/pointers>
 #include <vulkan/vulkan.hpp>
 
@@ -36,19 +37,24 @@ namespace GraphicsPipelineHelpers
 
 struct GraphicsPipelineInfo
 {
-	GraphicsPipelineInfo(vk::RenderPass renderPass, vk::Extent2D viewportExtent);
+	GraphicsPipelineInfo(vk::RenderPass renderPass, vk::Extent2D imageExtent);
+
+	GraphicsPipelineInfo(PipelineRenderingCreateInfo renderingCreateInfo, vk::Extent2D imageExtent);
 
 	vk::PrimitiveTopology primitiveTopology = vk::PrimitiveTopology::eTriangleList;
-	vk::SampleCountFlagBits sampleCount;
+	vk::SampleCountFlagBits sampleCount = vk::SampleCountFlagBits::e1;
 	vk::CullModeFlagBits cullMode = vk::CullModeFlagBits::eBack;
 	vk::Extent2D viewportExtent;
 	vk::RenderPass renderPass; // could be an internal RenderPassID
+	PipelineRenderingCreateInfo renderingCreateInfo;
 	bool blendEnable = false; // todo (hbedard): support mask
 	bool depthTestEnable = true;
 	bool depthWriteEnable = true;
+	bool useDynamicRendering = true;
 };
 
 using GraphicsPipelineID = uint32_t;
+inline constexpr GraphicsPipelineID kInvalidGraphicsPipelineID = (std::numeric_limits<uint32_t>::max)();
 
 // Handles all graphics pipeline that share the same layout
 class GraphicsPipelineCache
@@ -89,7 +95,6 @@ private:
 		ShaderInstanceID fragmentShader;
 	};
 
-	// todo (hbedard): convert to linear arrays
 	// GrapicsPipelineID -> Array Index
 	std::vector<GraphicsPipelineShaders> m_shaders; // [id]
 	std::vector<vk::UniquePipeline> m_pipelines; // [id]

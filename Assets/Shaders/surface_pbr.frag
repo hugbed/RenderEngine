@@ -21,7 +21,6 @@ layout(push_constant)
     } pc;
 
 #include "view.glsl"
-
 #include "pbr.glsl"
 
 layout(set = 1, binding = 0) uniform DrawParameters {

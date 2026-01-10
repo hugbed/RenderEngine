@@ -10,6 +10,8 @@
 #include <optional>
 #include <cstdint>
 
+class Swapchain;
+
 class ImGuiVulkan
 {
 public:
@@ -23,7 +25,8 @@ public:
 		VkQueue queue;
 		uint32_t imageCount;
 		VkSampleCountFlagBits MSAASamples;
-		VkRenderPass renderPass;
+		vk::Extent2D extent;
+		vk::PipelineRenderingCreateInfo pipelineRenderingCreateInfo;
 	};
 
 	ImGuiVulkan(const Resources& resources);
@@ -32,19 +35,13 @@ public:
 	void Reset(const Resources& resources);
 
 	void BeginFrame();
-	void RecordCommands(uint32_t frameIndex, VkFramebuffer framebuffer);
+	void Render(vk::CommandBuffer commandBuffer, uint32_t imageIndex, const Swapchain& swapchain);
 	void EndFrame();
-
-	vk::CommandBuffer GetCommandBuffer(uint32_t frameIndex) const { return m_imguiCommandBuffers[frameIndex].get(); }
 
 private:
 	VkDevice m_device = VK_NULL_HANDLE;
-	VkRenderPass m_renderPass = VK_NULL_HANDLE;
-
 	ImGui_ImplVulkanH_Window m_imguiWindow;
 	VkDescriptorPool m_imguiDescriptorPool = VK_NULL_HANDLE;
-	std::vector<vk::UniqueCommandBuffer> m_imguiCommandBuffers;
-	vk::UniqueCommandPool m_secondaryCommandPool;
 
 	void Init(const Resources& resources);
 	void Shutdown();

@@ -48,8 +48,11 @@ public:
 	// ImageViewType::e2D
 	TextureHandle LoadTexture(const AssetPath& assetPath);
 
-	// ImageViewType::eCube
+	// ImageViewType::eCube (6 separate .jpg or .png)
 	TextureHandle LoadCubeMapFaces(gsl::span<AssetPath> filenames); // todo, this is the same as LoadTexture but with vk::ImageViewType::eCube
+
+	// ImageViewType::eCube (.exr)
+	TextureHandle LoadHdri(const AssetPath& exrPath);
 
 	vk::Sampler CreateSampler(uint32_t nbMipLevels);
 

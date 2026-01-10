@@ -22,3 +22,6 @@
 [submodule "ThirdParty/imgui"]
 	path = ThirdParty/imgui
 	url = git@github.com:hugbed/imgui.git
+[submodule "ThirdParty/tinyexr"]
+	path = ThirdParty/tinyexr
+	url = git@github.com:syoyo/tinyexr.git

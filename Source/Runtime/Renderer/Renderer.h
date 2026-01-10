@@ -2,10 +2,11 @@
 
 #include <Renderer/Bindless.h>
 #include <RHI/RenderLoop.h>
-#include <vulkan/vulkan.hpp>
+#include <RHI/vk_structs.h>
 #include <gsl/pointers>
 
 #include <memory>
+#include <optional>
 
 class BindlessDescriptors;
 class BindlessDrawParams;
@@ -35,14 +36,16 @@ public:
 	void Render(vk::CommandBuffer commandBuffer, uint32_t imageIndex) override;
 	virtual void UpdateImGui() {}
 
-	vk::RenderPass GetRenderPass() const;
 	vk::Extent2D GetImageExtent() const;
 	vk::Instance GetInstance() const;
 	const Window& GetWindow() const;
 	const Swapchain& GetSwapchain() const;
-	const Framebuffer& GetFramebuffer() const;
 	uint32_t GetImageIndex() const;
 	uint32_t GetImageCount() const;
+
+	RenderingInfo GetRenderingInfo(
+		std::optional<vk::ClearColorValue> clearColorValue = std::nullopt,
+		std::optional<vk::ClearDepthStencilValue> clearDepthValue = std::nullopt) const;
 
 	gsl::not_null<GraphicsPipelineCache*> GetGraphicsPipelineCache() const;
 	gsl::not_null<BindlessDescriptors*> GetBindlessDescriptors() const;
@@ -52,8 +55,6 @@ public:
 
 protected:
 	vk::Instance m_instance;
-	std::unique_ptr<RenderPass> m_renderPass;
-	std::vector<Framebuffer> m_framebuffers;
 	std::unique_ptr<ShaderCache> m_shaderCache;
 	std::unique_ptr<GraphicsPipelineCache> m_graphicsPipelineCache;
 	std::unique_ptr<BindlessDescriptors> m_bindlessDescriptors;

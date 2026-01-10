@@ -10,6 +10,7 @@
 
 class CommandRingBuffer;
 class Renderer;
+class Swapchain;
 
 // todo (hbedard): I don't like the name system everywhere
 class CameraViewSystem
@@ -19,7 +20,7 @@ public:
 	~CameraViewSystem();
 
 	void Init(Renderer& renderer);
-	void Reset(vk::Extent2D newImageExtent);
+	void Reset(const Swapchain& swapchain);
 	void UploadToGPU(CommandRingBuffer& commandRingBuffer);
 	void Update(uint32_t concurrentFrameIndex);
 

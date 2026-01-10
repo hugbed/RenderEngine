@@ -37,8 +37,13 @@ Device::Device(const Instance& instance, const PhysicalDevice& physicalDevice)
 		);
 	}
 
-	vk::PhysicalDeviceFeatures2 deviceFeatures;
 	vk::PhysicalDeviceDescriptorIndexingFeatures descriptorIndexingFeatures;
+	vk::PhysicalDeviceDynamicRenderingFeaturesKHR dynamicRenderingFeature(true);
+	vk::PhysicalDeviceSynchronization2FeaturesKHR synchronizationFeature(true);
+	descriptorIndexingFeatures.pNext = &dynamicRenderingFeature;
+	dynamicRenderingFeature.pNext = &synchronizationFeature;
+
+	vk::PhysicalDeviceFeatures2 deviceFeatures;
 	deviceFeatures.pNext = descriptorIndexingFeatures;
 	vkGetPhysicalDeviceFeatures2(physicalDevice.Get(), deviceFeatures);
 	deviceFeatures.features.samplerAnisotropy = true;

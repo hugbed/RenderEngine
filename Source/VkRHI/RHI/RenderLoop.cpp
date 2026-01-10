@@ -101,7 +101,11 @@ void RenderLoop::Render()
 	auto commandBuffer = m_commandRingBuffer.ResetAndGetCommandBuffer();
 	commandBuffer.begin({ vk::CommandBufferUsageFlagBits::eOneTimeSubmit });
 	{
+		m_swapchain->TransitionImageForRendering(commandBuffer, m_imageIndex);
+
 		Render(commandBuffer, m_imageIndex);
+
+		m_swapchain->TransitionImageForPresentation(commandBuffer, m_imageIndex);
 	}
 	commandBuffer.end();
 
