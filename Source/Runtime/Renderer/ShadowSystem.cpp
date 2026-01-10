@@ -316,22 +316,27 @@ void ShadowSystem::Update(const Camera& camera, BoundingBox sceneBoundingBox)
 	}
 }
 
-void ShadowSystem::Render(RenderCommandEncoder& renderCommandEncoder, const std::vector<MeshDrawInfo> drawCommands) const
+void ShadowSystem::Render(const std::vector<MeshDrawInfo> drawCommands) const
 {
 	if (GetShadowCount() == 0)
 	{
 		return;
 	}
 
+	gsl::not_null<GraphicsPipelineCache*> graphicsPipelineCache = m_renderer->GetGraphicsPipelineCache();
+	gsl::not_null<BindlessDescriptors*> bindlessDescriptors = m_renderer->GetBindlessDescriptors();
+	gsl::not_null<BindlessDrawParams*> bindlessDrawParams = m_renderer->GetBindlessDrawParams();
+	gsl::not_null<RenderScene*> renderScene = m_renderer->GetRenderScene();
+	gsl::not_null<MeshAllocator*> meshAllocator = renderScene->GetMeshAllocator();
+	vk::CommandBuffer commandBuffer = m_renderer->GetCommandRingBuffer().GetCommandBuffer();
+
+	// Render into shadow depth maps
+	RenderCommandEncoder renderCommandEncoder(*graphicsPipelineCache, *bindlessDrawParams);
+	renderCommandEncoder.BeginRender(commandBuffer, m_renderer->GetFrameIndex());
+	renderCommandEncoder.BindBindlessDescriptorSet(bindlessDescriptors->GetPipelineLayout(), bindlessDescriptors->GetDescriptorSet());
 	renderCommandEncoder.BindDrawParams(m_drawParamsHandle);
 
-	vk::CommandBuffer commandBuffer = renderCommandEncoder.GetCommandBuffer();
-
-	gsl::not_null<RenderScene*> renderScene = m_renderer->GetRenderScene();
-	gsl::not_null<GraphicsPipelineCache*> graphicsPipelineCache = m_renderer->GetGraphicsPipelineCache();
-
 	// Bind the one big vertex + index buffers
-	gsl::not_null<MeshAllocator*> meshAllocator = renderScene->GetMeshAllocator();
 	meshAllocator->BindGeometry(commandBuffer);
 
 	for (ShadowID id = 0; id < (ShadowID)m_depthImages.size(); ++id)
@@ -366,6 +371,8 @@ void ShadowSystem::Render(RenderCommandEncoder& renderCommandEncoder, const std:
 		}
 		commandBuffer.endRendering();
 	}
+
+	renderCommandEncoder.EndRender();
 }
 
 CombinedImageSampler ShadowSystem::GetCombinedImageSampler(ShadowID id) const

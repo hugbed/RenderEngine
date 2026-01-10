@@ -15,6 +15,7 @@ class RenderCommandEncoder;
 class RenderScene;
 class Renderer;
 class Swapchain;
+class Image;
 
 class ImageBasedLightSystem
 {
@@ -47,14 +48,16 @@ private:
     BindlessDrawParamsHandle m_drawParamsHandle = BindlessDrawParamsHandle::Invalid;
     std::vector<BufferHandle> m_viewBufferHandles;
 
-    gsl::not_null<Renderer*> m_renderer;
+    vk::Extent2D m_envMapExtent = vk::Extent2D(1024, 1024);
+    vk::Format m_envMapFormat = vk::Format::eR16G16B16A16Unorm;
+    std::unique_ptr<Image> m_preFilteredEnvironmentMapImage;
 
+    gsl::not_null<Renderer*> m_renderer;
     GraphicsPipelineID m_envCubePipeline = kInvalidGraphicsPipelineID;
     std::unique_ptr<UniqueBufferWithStaging> m_mvpBuffer;
 
     // Unprocessed texture
     TextureHandle m_hdriTextureHandle = TextureHandle::Invalid;
 
-    TextureHandle m_dfgLutHandle = TextureHandle::Invalid;
-    TextureHandle m_preFilteredEnvironmentMapHandle = TextureHandle::Invalid;
+    vk::UniqueSampler m_sampler; // use the same sampler for all images
 };

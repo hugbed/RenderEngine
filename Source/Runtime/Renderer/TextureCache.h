@@ -54,6 +54,10 @@ public:
 	// ImageViewType::eCube (.exr)
 	TextureHandle LoadHdri(const AssetPath& exrPath);
 
+	vk::Format GetHdriFormat() const { return vk::Format::eR32G32B32A32Sfloat; }
+
+	vk::Format GetTextureFormat() const { return vk::Format::eR16G16B16A16Unorm; }
+
 	vk::Sampler CreateSampler(uint32_t nbMipLevels);
 
 	void UploadTextures(CommandRingBuffer& commandRingBuffer);

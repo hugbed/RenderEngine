@@ -51,7 +51,7 @@ public:
 	
 	void Update(const Camera& camera, BoundingBox sceneBoundingBox);
 
-	void Render(RenderCommandEncoder& renderCommandEncoder, const std::vector<MeshDrawInfo> drawCommands) const;
+	void Render(const std::vector<MeshDrawInfo> drawCommands) const;
 
 	size_t GetShadowCount() const { return m_lights.size(); }
 

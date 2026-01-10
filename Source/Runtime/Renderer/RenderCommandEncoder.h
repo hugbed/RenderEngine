@@ -13,7 +13,6 @@ class RenderCommandEncoder
 public:
 	RenderCommandEncoder(
 		GraphicsPipelineCache& graphicsPipelineCache,
-		MaterialSystem& materialSystem,
 		const BindlessDrawParams& bindlessDrawParams
 	)
 		: m_graphicsPipelineCache(&graphicsPipelineCache)

@@ -203,16 +203,8 @@ void RenderScene::RenderShadowDepthPass() const
 	std::copy(m_opaqueMeshes.begin(), m_opaqueMeshes.end(), drawCalls.begin());
 	std::copy(m_translucentMeshes.begin(), m_translucentMeshes.end(), drawCalls.begin() + m_opaqueMeshes.size());
 
-	gsl::not_null<GraphicsPipelineCache*> graphicsPipelineCache = m_renderer->GetGraphicsPipelineCache();
-	gsl::not_null<BindlessDescriptors*> bindlessDescriptors = m_renderer->GetBindlessDescriptors();
-	gsl::not_null<BindlessDrawParams*> bindlessDrawParams = m_renderer->GetBindlessDrawParams();
-
 	// Render into shadow depth maps
-	RenderCommandEncoder renderCommandEncoder(*graphicsPipelineCache, *m_materialSystem, *bindlessDrawParams);
-	renderCommandEncoder.BeginRender(commandBuffer, m_renderer->GetFrameIndex());
-	renderCommandEncoder.BindBindlessDescriptorSet(bindlessDescriptors->GetPipelineLayout(), bindlessDescriptors->GetDescriptorSet());
-	m_shadowSystem->Render(renderCommandEncoder, drawCalls);
-	renderCommandEncoder.EndRender();
+	m_shadowSystem->Render(drawCalls);
 }
 
 void RenderScene::RenderBasePass() const
@@ -228,7 +220,7 @@ void RenderScene::RenderBasePass() const
 	);
 	commandBuffer.beginRendering(renderingInfo.info);
 	{
-		RenderCommandEncoder renderCommandEncoder(*graphicsPipelineCache, *m_materialSystem, *bindlessDrawParams);
+		RenderCommandEncoder renderCommandEncoder(*graphicsPipelineCache, *bindlessDrawParams);
 		renderCommandEncoder.BeginRender(commandBuffer, m_renderer->GetFrameIndex());
 		renderCommandEncoder.BindBindlessDescriptorSet(bindlessDescriptors->GetPipelineLayout(), bindlessDescriptors->GetDescriptorSet());
 		RenderBasePassMeshes(renderCommandEncoder, m_opaqueMeshes);

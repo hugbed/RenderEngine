@@ -78,7 +78,7 @@ TextureHandle TextureCache::CreateAndUploadTextureImage(const AssetPath& assetPa
 	m_textures[imageViewTypeIndex].push_back(
 		std::make_unique<Texture>(
 			texWidth, texHeight, static_cast<uint32_t>(4UL * sizeof(stbi_us)),
-			vk::Format::eR16G16B16A16Unorm,
+			GetTextureFormat(),
 			vk::ImageTiling::eOptimal,
 			vk::ImageUsageFlagBits::eTransferSrc |
 			vk::ImageUsageFlagBits::eTransferDst | // src and dst for mipmaps blit
@@ -138,7 +138,7 @@ TextureHandle TextureCache::LoadHdri(const AssetPath& exrPath)
 	m_textures[imageViewTypeIndex].push_back(
 		std::make_unique<Texture>(
 			exr.width, exr.height, static_cast<uint32_t>(4UL * sizeof(float)),
-			vk::Format::eR32G32B32A32Sfloat,
+			GetHdriFormat(),
 			vk::ImageTiling::eOptimal,
 			vk::ImageUsageFlagBits::eTransferSrc |
 			vk::ImageUsageFlagBits::eTransferDst | // src and dst for mipmaps blit
@@ -255,7 +255,7 @@ TextureHandle TextureCache::LoadCubeMapFaces(gsl::span<AssetPath> filePaths)
 	m_textures[samplerTypeIndex].push_back(
 		std::make_unique<Texture>(
 			width, height, static_cast<uint32_t>(4UL * sizeof(stbi_us)),
-			vk::Format::eR16G16B16A16Unorm,
+			GetTextureFormat(),
 			vk::ImageTiling::eOptimal,
 			vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
 			vk::ImageAspectFlagBits::eColor,
