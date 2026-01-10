@@ -23,14 +23,7 @@ RenderScene::RenderScene(Renderer& renderer)
 	, m_meshAllocator(std::make_unique<MeshAllocator>())
 	, m_sceneTree(std::make_unique<SceneTree>(*m_renderer->GetBindlessDescriptors()))
 	, m_lightSystem(std::make_unique<LightSystem>(*m_renderer->GetBindlessDescriptors()))
-	, m_shadowSystem(std::make_unique<ShadowSystem>(
-		vk::Extent2D(4096, 4096),
-		*m_renderer->GetGraphicsPipelineCache(),
-		*m_renderer->GetBindlessDescriptors(),
-		*m_renderer->GetBindlessDrawParams(),
-		*m_meshAllocator,
-		*m_sceneTree,
-		*m_lightSystem))
+	, m_shadowSystem(std::make_unique<ShadowSystem>(vk::Extent2D(4096, 4096), *m_renderer))
 	, m_cameraViewSystem(std::make_unique<CameraViewSystem>(
 		m_renderer->GetImageExtent()))
 	, m_materialSystem(std::make_unique<MaterialSystem>(
@@ -51,13 +44,9 @@ RenderScene::RenderScene(Renderer& renderer)
 		*m_renderer->GetBindlessDescriptors(),
 		*m_renderer->GetBindlessDrawParams(),
 		*m_renderer->GetTextureCache()))
-	, m_iblSystem(std::make_unique<ImageBasedLightSystem>(
-		m_renderer->GetSwapchain(),
-		*this,
-		*m_renderer->GetGraphicsPipelineCache(),
-		*m_renderer->GetBindlessDescriptors(),
-		*m_renderer->GetBindlessDrawParams(),
-		*m_renderer->GetTextureCache()))
+	, m_iblSystem(std::make_unique<ImageBasedLightSystem>(*m_renderer))
+	, m_areShadowsDirty(true)
+	, m_areEnvironmentMapsDirty(true)
 {
 }
 
@@ -185,7 +174,18 @@ void RenderScene::Render()
 		m_areShadowsDirty = false;
 	}
 
+	if (m_areEnvironmentMapsDirty)
+	{
+		RenderEnvironmentMaps();
+		m_areEnvironmentMapsDirty = false;
+	}
+
 	RenderBasePass();
+}
+
+void RenderScene::RenderEnvironmentMaps() const
+{
+	m_iblSystem->Render(); // todo (hbedard): this needs another pass
 }
 
 void RenderScene::RenderShadowDepthPass() const
@@ -206,14 +206,12 @@ void RenderScene::RenderShadowDepthPass() const
 	gsl::not_null<GraphicsPipelineCache*> graphicsPipelineCache = m_renderer->GetGraphicsPipelineCache();
 	gsl::not_null<BindlessDescriptors*> bindlessDescriptors = m_renderer->GetBindlessDescriptors();
 	gsl::not_null<BindlessDrawParams*> bindlessDrawParams = m_renderer->GetBindlessDrawParams();
-	uint32_t imageIndex = m_renderer->GetImageIndex();
-	uint32_t frameIndex = m_renderer->GetFrameIndex();
 
 	// Render into shadow depth maps
 	RenderCommandEncoder renderCommandEncoder(*graphicsPipelineCache, *m_materialSystem, *bindlessDrawParams);
 	renderCommandEncoder.BeginRender(commandBuffer, m_renderer->GetFrameIndex());
 	renderCommandEncoder.BindBindlessDescriptorSet(bindlessDescriptors->GetPipelineLayout(), bindlessDescriptors->GetDescriptorSet());
-	GetShadowSystem()->Render(renderCommandEncoder, drawCalls);
+	m_shadowSystem->Render(renderCommandEncoder, drawCalls);
 	renderCommandEncoder.EndRender();
 }
 
@@ -236,7 +234,6 @@ void RenderScene::RenderBasePass() const
 		RenderBasePassMeshes(renderCommandEncoder, m_opaqueMeshes);
 		RenderBasePassMeshes(renderCommandEncoder, m_translucentMeshes);
 		m_skybox->Render(renderCommandEncoder);
-		m_iblSystem->Render(renderCommandEncoder); // todo (hbedard): this needs another pass
 		renderCommandEncoder.EndRender();
 	}
 	commandBuffer.endRendering();

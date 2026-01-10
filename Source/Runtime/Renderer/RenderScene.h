@@ -55,12 +55,14 @@ private:
 
 	std::vector<MeshDrawInfo> m_opaqueMeshes;
 	std::vector<MeshDrawInfo> m_translucentMeshes;
-	bool m_areShadowsDirty = true; // render shadows once on start
+	bool m_areShadowsDirty : 1;
+	bool m_areEnvironmentMapsDirty : 1;
 
 	void PopulateMeshDrawCalls();
 	void SortOpaqueMeshes();
 	void SortTranslucentMeshes();
 
+	void RenderEnvironmentMaps() const;
 	void RenderShadowDepthPass() const;
 	void RenderBasePass() const;
 	void RenderBasePassMeshes(RenderCommandEncoder& renderCommandEncoder, const std::vector<MeshDrawInfo>& drawCalls) const;

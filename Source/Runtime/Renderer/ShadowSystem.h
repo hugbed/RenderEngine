@@ -26,6 +26,7 @@ struct ViewProperties;
 struct CombinedImageSampler;
 class CommandRingBuffer;
 class RenderCommandEncoder;
+class Renderer;
 
 struct ShadowData
 {
@@ -38,15 +39,7 @@ using ShadowID = uint32_t;
 class ShadowSystem
 {
 public:
-	ShadowSystem(
-		vk::Extent2D extent,
-		GraphicsPipelineCache& graphicsPipelineCache,
-		BindlessDescriptors& bindlessDescriptors,
-		BindlessDrawParams& bindlessDrawParams,
-		MeshAllocator& meshAllocator,
-		SceneTree& sceneTree,
-		LightSystem& lightSystem
-	);
+	ShadowSystem(vk::Extent2D shadowMapExtent, Renderer& renderer);
 
 	IMPLEMENT_MOVABLE_ONLY(ShadowSystem)
 
@@ -96,22 +89,16 @@ private:
 	static const AssetPath kVertexShaderFile;
 	static const AssetPath kFragmentShaderFile;
 
-	vk::Extent2D m_extent;
-	vk::UniqueRenderPass m_renderPass;
-
-	gsl::not_null<GraphicsPipelineCache*> m_graphicsPipelineCache;
-	gsl::not_null<MeshAllocator*> m_meshAllocator;
-	gsl::not_null<SceneTree*> m_sceneTree;
-	gsl::not_null<LightSystem*> m_lightSystem;
-	gsl::not_null<BindlessDescriptors*> m_bindlessDescriptors;
-	gsl::not_null<BindlessDrawParams*> m_bindlessDrawParams;
+	vk::Format m_depthFormat;
+	vk::Extent2D m_shadowMapExtent;
+	gsl::not_null<Renderer*> m_renderer;
 
 	// ShadowID -> Array index
 	std::vector<LightID> m_lights; // casting shadows
 	std::vector<ViewProperties> m_shadowViews;
 	std::vector<MaterialShadow> m_materialShadows;
 	std::vector<std::unique_ptr<Image>> m_depthImages; // todo: replace with Image (remove nullptr)
-	std::vector<vk::UniqueFramebuffer> m_framebuffers;
+	//std::vector<vk::UniqueFramebuffer> m_framebuffers;
 
 	// Use these resources for all shadow map rendering
 	vk::UniqueSampler m_sampler; // use the same sampler for all images

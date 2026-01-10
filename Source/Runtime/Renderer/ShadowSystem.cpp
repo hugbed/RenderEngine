@@ -2,6 +2,8 @@
 
 #include <Renderer/ViewProperties.h>
 #include <Renderer/RenderCommandEncoder.h>
+#include <Renderer/Renderer.h>
+#include <Renderer/RenderScene.h>
 
 #include <utility>
 
@@ -32,59 +34,14 @@ namespace
 		);
 	}
 
-	[[nodiscard]] vk::UniqueRenderPass CreateShadowMapRenderPass()
+	[[nodiscard]] GraphicsPipelineInfo GetGraphicsPipelineInfo(vk::Format depthFormat, vk::Extent2D shadowMapExtent)
 	{
-		vk::AttachmentDescription depthAttachment(
-			vk::AttachmentDescriptionFlags(),
-			g_physicalDevice->FindDepthFormat(),
-			vk::SampleCountFlagBits::e1,
-			vk::AttachmentLoadOp::eClear,
-			vk::AttachmentStoreOp::eStore,
-			vk::AttachmentLoadOp::eDontCare, // stencilLoadOp
-			vk::AttachmentStoreOp::eDontCare, // stencilStoreOp
-			vk::ImageLayout::eUndefined, // initialLayout
-			vk::ImageLayout::eDepthStencilReadOnlyOptimal	// finalLayout
-		);
-		vk::AttachmentReference depthAttachmentRef(
-			0, vk::ImageLayout::eDepthStencilAttachmentOptimal
-		);
+		PipelineRenderingCreateInfo createInfo;
+		createInfo.info.colorAttachmentCount = 0;
+		createInfo.info.depthAttachmentFormat = depthFormat;
 
-		vk::SubpassDescription subpass(
-			vk::SubpassDescriptionFlags(),
-			vk::PipelineBindPoint::eGraphics,
-			0, nullptr, // input attachments
-			0, nullptr, nullptr, // color attachments
-			&depthAttachmentRef
-		);
-
-		std::array<vk::SubpassDependency, 2> dependencies = {
-			vk::SubpassDependency(
-				VK_SUBPASS_EXTERNAL, 0,
-				vk::PipelineStageFlagBits::eFragmentShader, vk::PipelineStageFlagBits::eEarlyFragmentTests,
-				vk::AccessFlagBits::eShaderRead, vk::AccessFlagBits::eDepthStencilAttachmentWrite,
-				vk::DependencyFlagBits::eByRegion
-			),
-			vk::SubpassDependency(
-				0, VK_SUBPASS_EXTERNAL,
-				vk::PipelineStageFlagBits::eLateFragmentTests, vk::PipelineStageFlagBits::eFragmentShader,
-				vk::AccessFlagBits::eDepthStencilAttachmentWrite, vk::AccessFlagBits::eShaderRead,
-				vk::DependencyFlagBits::eByRegion
-			)
-		};
-
-		return g_device->Get().createRenderPassUnique(vk::RenderPassCreateInfo(
-			vk::RenderPassCreateFlags(),
-			1, &depthAttachment,
-			1, &subpass,
-			static_cast<uint32_t>(dependencies.size()), dependencies.data()
-		));
-	}
-
-	[[nodiscard]] GraphicsPipelineInfo GetGraphicsPipelineInfo(vk::RenderPass renderPass, vk::Extent2D extent)
-	{
-		GraphicsPipelineInfo info(renderPass, extent);
+		GraphicsPipelineInfo info(createInfo, shadowMapExtent);
 		info.sampleCount = vk::SampleCountFlagBits::e1;
-		info.useDynamicRendering = false; // todo (hbedard): until we remove the render pass
 
 		// Use front culling to prevent peter-panning
 		// note that this prevents from rendering shadows
@@ -137,11 +94,11 @@ namespace
 		);
 	}
 
-	[[nodiscard]] std::unique_ptr<Image> CreateDepthImage(vk::Extent2D extent)
+	[[nodiscard]] std::unique_ptr<Image> CreateDepthImage(vk::Format depthFormat, vk::Extent2D extent)
 	{
 		return std::make_unique<Image>(
 			extent.width, extent.height,
-			g_physicalDevice->FindDepthFormat(),
+			depthFormat,
 			vk::ImageTiling::eOptimal,
 			vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled,
 			vk::ImageAspectFlagBits::eDepth,
@@ -151,16 +108,22 @@ namespace
 		);
 	}
 
-	[[nodiscard]] vk::UniqueFramebuffer CreateFramebuffer(vk::RenderPass renderPass, vk::Extent2D extent, const vk::ImageView& imageView)
+	RenderingInfo GetRenderingInfo(vk::ImageView imageView, vk::Extent2D shadowMapExtent)
 	{
-		vk::FramebufferCreateInfo createInfo(
-			vk::FramebufferCreateFlags(),
-			renderPass,
-			1, &imageView,
-			extent.width, extent.height,
-			1 // layers
-		);
-		return g_device->Get().createFramebufferUnique(createInfo);
+		RenderingInfo renderingInfo;
+
+		vk::RenderingAttachmentInfo& depthAttachment = renderingInfo.depthAttachment;
+		depthAttachment.imageView = imageView;
+		depthAttachment.imageLayout = vk::ImageLayout::eAttachmentOptimal;
+		depthAttachment.loadOp = vk::AttachmentLoadOp::eClear;
+		depthAttachment.storeOp = vk::AttachmentStoreOp::eStore;
+		depthAttachment.clearValue = vk::ClearDepthStencilValue(1.0f, 0.0f);
+
+		renderingInfo.info.renderArea.extent = shadowMapExtent;
+		renderingInfo.info.pDepthAttachment = &renderingInfo.depthAttachment;
+		renderingInfo.info.layerCount = 1;
+
+		return renderingInfo;
 	}
 
 	glm::mat4 ComputeDirectionalLightViewMatrix(glm::vec3 lightDirection)
@@ -235,16 +198,8 @@ namespace
 		// skip position for directional lights
 		//m_viewUniforms.pos = m_light.pos;
 
-		// OpenGL -> Vulkan invert y, half z
-		auto clip = glm::mat4(
-			1.0f, 0.0f, 0.0f, 0.0f,
-			0.0f, -1.0f, 0.0f, 0.0f,
-			0.0f, 0.0f, 0.5f, 0.0f,
-			0.0f, 0.0f, 0.5f, 1.0f
-		);
-
 		return ViewProperties{
-			shadowView, clip * proj, glm::vec3()
+			shadowView, glm_vk::kClip * proj, glm::vec3()
 		};
 	}
 }
@@ -252,39 +207,23 @@ namespace
 const AssetPath ShadowSystem::kVertexShaderFile("/Engine/Generated/Shaders/shadow_map_vert.spv");
 const AssetPath ShadowSystem::kFragmentShaderFile("/Engine/Generated/Shaders/shadow_map_frag.spv");
 
-ShadowSystem::ShadowSystem(
-	vk::Extent2D extent,
-	GraphicsPipelineCache& graphicsPipelineCache,
-	BindlessDescriptors& bindlessDescriptors,
-	BindlessDrawParams& bindlessDrawParams,
-	MeshAllocator& meshAllocator,
-	SceneTree& sceneTree,
-	LightSystem& lightSystem
-)
-	: m_extent(extent)
-	, m_graphicsPipelineCache(&graphicsPipelineCache)
-	, m_meshAllocator(&meshAllocator)
-	, m_sceneTree(&sceneTree)
-	, m_lightSystem(&lightSystem)
-	, m_bindlessDescriptors(&bindlessDescriptors)
-	, m_bindlessDrawParams(&bindlessDrawParams)
+ShadowSystem::ShadowSystem(vk::Extent2D shadowMapExtent, Renderer& renderer)
+	: m_shadowMapExtent(shadowMapExtent)
+	, m_renderer(&renderer)
+	, m_depthFormat(g_physicalDevice->FindDepthFormat())
 {
 	m_sampler = ::CreateSampler(vk::SamplerAddressMode::eClampToEdge);
-	m_renderPass = ::CreateShadowMapRenderPass();
-	m_drawParamsHandle = m_bindlessDrawParams->DeclareParams<ShadowMapDrawParams>();
+	m_drawParamsHandle = m_renderer->GetBindlessDrawParams()->DeclareParams<ShadowMapDrawParams>();
 }
 
 void ShadowSystem::Reset()
 {
-	m_graphicsPipelineCache->ResetGraphicsPipeline(
-		m_graphicsPipelineID, ::GetGraphicsPipelineInfo(*m_renderPass, m_extent)
+	m_renderer->GetGraphicsPipelineCache()->ResetGraphicsPipeline(
+		m_graphicsPipelineID, ::GetGraphicsPipelineInfo(m_depthFormat, m_shadowMapExtent)
 	);
 	
 	for (ShadowID id = 0; id < m_depthImages.size(); ++id)
-		m_depthImages[id] = ::CreateDepthImage(m_extent);
-
-	for (ShadowID id = 0; id < m_framebuffers.size(); ++id)
-		m_framebuffers[id] = ::CreateFramebuffer(*m_renderPass, m_extent, m_depthImages[id]->GetImageView());
+		m_depthImages[id] = ::CreateDepthImage(m_depthFormat, m_shadowMapExtent);
 }
 
 ShadowID ShadowSystem::CreateShadowMap(LightID lightID)
@@ -292,9 +231,8 @@ ShadowID ShadowSystem::CreateShadowMap(LightID lightID)
 	ShadowID id = static_cast<ShadowID>(m_lights.size());
 	m_lights.push_back(lightID);
 	m_shadowViews.push_back({});
-	m_depthImages.push_back(::CreateDepthImage(m_extent));
-	m_framebuffers.push_back(::CreateFramebuffer(*m_renderPass, m_extent, m_depthImages.back()->GetImageView()));
-	TextureHandle textureHandle = m_bindlessDescriptors->StoreTexture(m_depthImages.back()->GetImageView(), m_sampler.get());
+	m_depthImages.push_back(::CreateDepthImage(m_depthFormat, m_shadowMapExtent));
+	TextureHandle textureHandle = m_renderer->GetBindlessDescriptors()->StoreTexture(m_depthImages.back()->GetImageView(), m_sampler.get());
 	m_materialShadows.push_back(MaterialShadow{ glm::identity<glm::aligned_mat4>(), textureHandle });
 	return id;
 }
@@ -307,27 +245,32 @@ void ShadowSystem::UploadToGPU(CommandRingBuffer& commandRingBuffer)
 	}
 
 	CreateGraphicsPipeline();
+
+	gsl::not_null<BindlessDescriptors*> bindlessDescriptors = m_renderer->GetBindlessDescriptors();
+	gsl::not_null<BindlessDrawParams*> bindlessDrawParams = m_renderer->GetBindlessDrawParams();
 	
 	m_shadowViewsBuffer = ::CreateStorageBuffer(m_shadowViews.size() * sizeof(m_shadowViews[0]));
 	m_materialShadowsBuffer = ::CreateStorageBuffer(m_materialShadows.size() * sizeof(m_materialShadows[0]));
-	m_materialShadowsBufferHandle = m_bindlessDescriptors->StoreBuffer(m_materialShadowsBuffer->Get(), vk::BufferUsageFlagBits::eStorageBuffer);
+	m_materialShadowsBufferHandle = bindlessDescriptors->StoreBuffer(m_materialShadowsBuffer->Get(), vk::BufferUsageFlagBits::eStorageBuffer);
 
-	m_drawParams.meshTransforms = m_sceneTree->GetTransformsBufferHandle();
-	m_drawParams.shadowViews = m_bindlessDescriptors->StoreBuffer(m_shadowViewsBuffer->Get(), vk::BufferUsageFlagBits::eStorageBuffer);
-	m_bindlessDrawParams->DefineParams(m_drawParamsHandle, m_drawParams);
+	gsl::not_null<RenderScene*> renderScene = m_renderer->GetRenderScene();
+	m_drawParams.meshTransforms = renderScene->GetSceneTree()->GetTransformsBufferHandle();
+	m_drawParams.shadowViews = bindlessDescriptors->StoreBuffer(m_shadowViewsBuffer->Get(), vk::BufferUsageFlagBits::eStorageBuffer);
+	bindlessDrawParams->DefineParams(m_drawParamsHandle, m_drawParams);
 }
 
 void ShadowSystem::CreateGraphicsPipeline()
 {
-	ShaderCache& shaderCache = m_graphicsPipelineCache->GetShaderCache();
+	gsl::not_null<GraphicsPipelineCache*> graphicsPipelineCache = m_renderer->GetGraphicsPipelineCache();
+	ShaderCache& shaderCache = graphicsPipelineCache->GetShaderCache();
 	ShaderID vertexShaderID = shaderCache.CreateShader(kVertexShaderFile.GetPathOnDisk());
 	ShaderID fragmentShaderID = shaderCache.CreateShader(kFragmentShaderFile.GetPathOnDisk());
 	ShaderInstanceID vertexShaderInstanceID = shaderCache.CreateShaderInstance(vertexShaderID);
 	ShaderInstanceID fragmentShaderInstanceID = shaderCache.CreateShaderInstance(fragmentShaderID);
-	m_graphicsPipelineID = m_graphicsPipelineCache->CreateGraphicsPipeline(
+	m_graphicsPipelineID = graphicsPipelineCache->CreateGraphicsPipeline(
 		vertexShaderInstanceID,
 		fragmentShaderInstanceID,
-		::GetGraphicsPipelineInfo(*m_renderPass, m_extent)
+		::GetGraphicsPipelineInfo(m_depthFormat, m_shadowMapExtent)
 	);
 }
 
@@ -338,18 +281,23 @@ void ShadowSystem::Update(const Camera& camera, BoundingBox sceneBoundingBox)
 		return;
 	}
 
-	BoundingBox sceneBox = m_sceneTree->ComputeWorldBoundingBox();
+	gsl::not_null<RenderScene*> renderScene = m_renderer->GetRenderScene();
+	gsl::not_null<SceneTree*> sceneTree = renderScene->GetSceneTree();
+	gsl::not_null<LightSystem*> lightSystem = renderScene->GetLightSystem();
+
+	m_drawParams.meshTransforms = sceneTree->GetTransformsBufferHandle();
+	BoundingBox sceneBox = sceneTree->ComputeWorldBoundingBox();
 
 	for (ShadowID id = 0; id < m_lights.size(); ++id)
 	{
-		const Light& light = m_lightSystem->GetLight(m_lights[id]);
+		const Light& light = lightSystem->GetLight(m_lights[id]);
 
 		m_shadowViews[id] = ::ComputeShadowTransform(
-			m_lightSystem->GetLight(id),
+			lightSystem->GetLight(id),
 			camera,
 			sceneBox,
-			m_sceneTree->GetBoundingBoxes(),
-			m_sceneTree->GetTransforms()
+			sceneTree->GetBoundingBoxes(),
+			sceneTree->GetTransforms()
 		);
 
 		m_materialShadows[id].transform = m_shadowViews[id].proj * m_shadowViews[id].view;
@@ -379,24 +327,22 @@ void ShadowSystem::Render(RenderCommandEncoder& renderCommandEncoder, const std:
 
 	vk::CommandBuffer commandBuffer = renderCommandEncoder.GetCommandBuffer();
 
-	// Bind the one big vertex + index buffers
-	m_meshAllocator->BindGeometry(commandBuffer);
+	gsl::not_null<RenderScene*> renderScene = m_renderer->GetRenderScene();
+	gsl::not_null<GraphicsPipelineCache*> graphicsPipelineCache = m_renderer->GetGraphicsPipelineCache();
 
-	for (ShadowID id = 0; id < (ShadowID)m_framebuffers.size(); ++id)
+	// Bind the one big vertex + index buffers
+	gsl::not_null<MeshAllocator*> meshAllocator = renderScene->GetMeshAllocator();
+	meshAllocator->BindGeometry(commandBuffer);
+
+	for (ShadowID id = 0; id < (ShadowID)m_depthImages.size(); ++id)
 	{
-		vk::ClearValue clearValues;
-		clearValues.depthStencil = vk::ClearDepthStencilValue(1.0f, 0);
-		auto renderPassInfo = vk::RenderPassBeginInfo(
-			m_renderPass.get(), m_framebuffers[id].get(),
-			vk::Rect2D(vk::Offset2D(0, 0), m_extent),
-			1, &clearValues
-		);
-		commandBuffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
+		RenderingInfo renderingInfo = GetRenderingInfo(m_depthImages[id]->GetImageView(), m_shadowMapExtent);
+		commandBuffer.beginRendering(renderingInfo.info);
 		{
 			renderCommandEncoder.BindPipeline(m_graphicsPipelineID);
 
 			// Shadow transforms
-			vk::PipelineLayout pipelineLayout = m_graphicsPipelineCache->GetPipelineLayout(m_graphicsPipelineID);
+			vk::PipelineLayout pipelineLayout = graphicsPipelineCache->GetPipelineLayout(m_graphicsPipelineID);
 			uint32_t shadowIndex = (uint32_t)id;
 			commandBuffer.pushConstants(
 				pipelineLayout,
@@ -418,7 +364,7 @@ void ShadowSystem::Render(RenderCommandEncoder& renderCommandEncoder, const std:
 				commandBuffer.drawIndexed(drawItem.mesh.nbIndices, 1, drawItem.mesh.indexOffset, 0, 0);
 			}
 		}
-		commandBuffer.endRenderPass();
+		commandBuffer.endRendering();
 	}
 }
 
